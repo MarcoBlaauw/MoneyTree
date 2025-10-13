@@ -34,6 +34,16 @@ asdf install
 
 The API will be available on [http://localhost:4000](http://localhost:4000).
 
+## Database Tasks
+
+Run these commands from `apps/money_tree` whenever you need to manage the database manually:
+
+```bash
+mix ecto.create
+mix ecto.migrate
+mix run priv/repo/seeds.exs
+```
+
 ## Running Checks
 
 Run the test suite before opening a pull request:

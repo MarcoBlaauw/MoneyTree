@@ -2,7 +2,12 @@ import Config
 
 config :money_tree,
   ecto_repos: [MoneyTree.Repo],
-  generators: [timestamp_type: :utc_datetime]
+  generators: [binary_id: true, timestamp_type: :utc_datetime_usec]
+
+config :money_tree, MoneyTree.Repo,
+  migration_primary_key: [type: :binary_id],
+  migration_foreign_key: [type: :binary_id],
+  migration_timestamps: [type: :utc_datetime_usec]
 
 config :money_tree, MoneyTreeWeb.Endpoint,
   url: [host: "localhost"],

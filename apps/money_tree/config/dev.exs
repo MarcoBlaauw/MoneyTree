@@ -1,14 +1,27 @@
 import Config
 
 # Configure your database
+dev_db_username =
+  System.get_env("DEV_DATABASE_USERNAME") || System.get_env("DATABASE_USERNAME") || "postgres"
+
+dev_db_password =
+  System.get_env("DEV_DATABASE_PASSWORD") || System.get_env("DATABASE_PASSWORD") || "postgres"
+
+dev_db_host =
+  System.get_env("DEV_DATABASE_HOST") || System.get_env("DATABASE_HOST") || "localhost"
+
+dev_db_port =
+  System.get_env("DEV_DATABASE_PORT") || System.get_env("DATABASE_PORT") || "5432"
+
 config :money_tree, MoneyTree.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "money_tree_dev",
+  username: dev_db_username,
+  password: dev_db_password,
+  hostname: dev_db_host,
+  port: String.to_integer(dev_db_port),
+  database: System.get_env("DEV_DATABASE_NAME") || "money_tree_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
-  pool_size: 10
+  pool_size: String.to_integer(System.get_env("DEV_DATABASE_POOL_SIZE") || "10")
 
 # For development, we disable any cache and enable
 # debugging and code reloading.

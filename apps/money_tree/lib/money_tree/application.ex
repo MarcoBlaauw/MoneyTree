@@ -9,6 +9,7 @@ defmodule MoneyTree.Application do
 
     children = [
       MoneyTreeWeb.Telemetry,
+      MoneyTree.Vault,
       MoneyTree.Repo,
       {Oban, oban_config},
       {DNSCluster, query: Application.get_env(:money_tree, :dns_cluster_query) || :ignore},
