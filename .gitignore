@@ -1,0 +1,8 @@
+/.asdf/
+/.env
+/.env.*
+/apps/*/_build/
+/apps/*/deps/
+/apps/*/tmp/
+/apps/*/priv/plts/
+.elixir_ls/

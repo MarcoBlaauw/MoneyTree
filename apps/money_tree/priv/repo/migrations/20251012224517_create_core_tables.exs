@@ -72,7 +72,10 @@ defmodule MoneyTree.Repo.Migrations.CreateCoreTables do
 
     create table(:transactions, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :external_id, :string, null: false
       add :amount, :decimal, precision: 18, scale: 2, null: false
       add :currency, :string, size: 3, null: false

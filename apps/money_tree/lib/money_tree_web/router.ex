@@ -5,8 +5,34 @@ defmodule MoneyTreeWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :api_auth do
+    plug MoneyTreeWeb.Plugs.Authenticate
+  end
+
+  pipeline :api_owner do
+    plug MoneyTreeWeb.Plugs.Authenticate, roles: [:owner]
+  end
+
   scope "/api", MoneyTreeWeb do
     pipe_through :api
+
+    get "/healthz", HealthController, :health
+    get "/metrics", HealthController, :metrics
+    post "/register", AuthController, :register
+    post "/login", AuthController, :login
+
+    scope "/" do
+      pipe_through :api_auth
+
+      delete "/logout", AuthController, :logout
+      get "/me", AuthController, :me
+    end
+
+    scope "/owner" do
+      pipe_through :api_owner
+
+      get "/dashboard", AuthController, :owner_dashboard
+    end
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

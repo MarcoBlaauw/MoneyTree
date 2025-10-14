@@ -1,5 +1,9 @@
 import Config
 
+config :phoenix,
+       :filter_parameters,
+       ~w(password password_confirmation token secret session authorization refresh_token encrypted_full_name)
+
 config :money_tree,
   ecto_repos: [MoneyTree.Repo],
   generators: [binary_id: true, timestamp_type: :utc_datetime_usec]
@@ -8,6 +12,11 @@ config :money_tree, MoneyTree.Repo,
   migration_primary_key: [type: :binary_id],
   migration_foreign_key: [type: :binary_id],
   migration_timestamps: [type: :utc_datetime_usec]
+
+config :money_tree, MoneyTree.Accounts, session_ttl: 60 * 60 * 24 * 30
+
+config :money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop
+config :money_tree, :secure_cookies, true
 
 config :money_tree, MoneyTreeWeb.Endpoint,
   url: [host: "localhost"],
@@ -39,15 +48,16 @@ config :money_tree, MoneyTree.Mailer, adapter: Swoosh.Adapters.Local
 
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id]
+  metadata: [:request_id, :remote_ip, :user_id, :user_role]
+
+config :logger, :default_metadata, %{service: "money_tree"}
 
 config :phoenix, :json_library, Jason
 
 config :opentelemetry, :resource, service: %{name: "money_tree"}
 
-config :opentelemetry, :processors,
-  [
-    {:otel_batch_processor, %{exporter: {:opentelemetry_exporter, %{}}}}
-  ]
+config :opentelemetry, :processors, [
+  {:otel_batch_processor, %{exporter: {:opentelemetry_exporter, %{}}}}
+]
 
 import_config "#{config_env()}.exs"

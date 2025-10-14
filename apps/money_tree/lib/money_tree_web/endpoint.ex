@@ -35,6 +35,7 @@ defmodule MoneyTreeWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
+  plug MoneyTreeWeb.Plugs.SetLoggerMetadata
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
   plug Plug.Parsers,

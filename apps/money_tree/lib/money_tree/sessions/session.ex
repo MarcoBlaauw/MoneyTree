@@ -21,7 +21,7 @@ defmodule MoneyTree.Sessions.Session do
     field :last_used_at, :utc_datetime_usec
     field :ip_address, :string
     field :user_agent, :string
-    field :encrypted_metadata, EncryptedMap
+    field :encrypted_metadata, EncryptedMap, default: %{}
 
     belongs_to :user, User
 

@@ -7,6 +7,8 @@ defmodule MoneyTree.Application do
   def start(_type, _args) do
     oban_config = Application.fetch_env!(:money_tree, Oban)
 
+    :ok = MoneyTree.Observability.setup()
+
     children = [
       MoneyTreeWeb.Telemetry,
       MoneyTree.Vault,

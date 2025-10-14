@@ -4,7 +4,7 @@ MoneyTree is a Phoenix-powered financial management API designed to support secu
 
 ## Development Environment
 
-MoneyTree targets Elixir **1.14** and Erlang/OTP **25**. Install them via [asdf](https://asdf-vm.com/) (or [mise](https://mise.jdx.dev/)) using the provided `.tool-versions` file:
+MoneyTree targets Elixir **1.16** and Erlang/OTP **26**. Install them via [asdf](https://asdf-vm.com/) (or [mise](https://mise.jdx.dev/)) using the provided `.tool-versions` file:
 
 ```bash
 asdf install
@@ -14,7 +14,7 @@ asdf install
 
 ## Initial Setup
 
-1. Copy the example environment file and adjust secrets to your needs:
+1. Copy the example environment file and adjust secrets (including the Cloak vault key) to your needs:
    ```bash
    cp .env.example .env
    ```
@@ -46,18 +46,15 @@ mix run priv/repo/seeds.exs
 
 ## Running Checks
 
-Run the test suite before opening a pull request:
+Quality checks should be run from `apps/money_tree`:
 
-```bash
-cd apps/money_tree
-mix test
-```
+- `mix deps.get` – install or update dependencies.
+- `mix compile --warnings-as-errors` – ensure the codebase compiles cleanly.
+- `mix lint` – runs `mix format --check-formatted` and `mix credo --strict`.
+- `mix test` – execute the test suite (uses the SQL sandbox).
+- `mix dialyzer --halt-exit-status` – static analysis; the first run will build and cache the PLT.
 
-Format the codebase as needed:
-
-```bash
-mix format
-```
+Format sources as you work with `mix format`.
 
 ## Background Processing
 
@@ -72,6 +69,11 @@ mix oban.migrations
 ## Telemetry & Observability
 
 Telemetry pollers are supervised alongside an OpenTelemetry exporter. Configure an OTLP endpoint via `OTEL_EXPORTER_OTLP_ENDPOINT` and hook the metrics into your observability stack. `req` is preconfigured to reuse the global Finch pool for outbound HTTP calls.
+
+### Operational Endpoints
+
+- `GET /api/healthz` returns database and Oban queue health (HTTP 503 on degraded status).
+- `GET /api/metrics` exposes lightweight queue metrics and database latency readings for scraping.
 
 ## Product Vision & Roadmap
 

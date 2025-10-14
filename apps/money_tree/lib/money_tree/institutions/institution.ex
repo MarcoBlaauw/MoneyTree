@@ -40,7 +40,9 @@ defmodule MoneyTree.Institutions.Institution do
     ])
     |> validate_required([:name, :slug, :external_id])
     |> update_change(:slug, &normalize_slug/1)
-    |> validate_format(:slug, ~r/^[a-z0-9-]+$/, message: "must contain lowercase letters, numbers, or hyphens")
+    |> validate_format(:slug, ~r/^[a-z0-9-]+$/,
+      message: "must contain lowercase letters, numbers, or hyphens"
+    )
     |> validate_length(:name, min: 2, max: 160)
     |> validate_website_url()
     |> unique_constraint(:slug)

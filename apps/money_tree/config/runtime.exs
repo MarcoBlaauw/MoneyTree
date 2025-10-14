@@ -20,8 +20,7 @@ if config_env() != :test do
     ]
 
   if otlp_endpoint = System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT") do
-    config :opentelemetry, :exporters,
-      otlp: [endpoint: otlp_endpoint, protocol: :http_protobuf]
+    config :opentelemetry, :exporters, otlp: [endpoint: otlp_endpoint, protocol: :http_protobuf]
   end
 end
 
@@ -51,9 +50,7 @@ config :money_tree, MoneyTree.Vault,
   ciphers: [
     default: {
       Cloak.Ciphers.AES.GCM,
-      tag: "AES.GCM.V1",
-      key: decoded_vault_key,
-      iv_length: 12
+      tag: "AES.GCM.V1", key: decoded_vault_key, iv_length: 12
     }
   ]
 

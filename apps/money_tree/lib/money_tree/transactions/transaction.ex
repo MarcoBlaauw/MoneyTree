@@ -83,7 +83,9 @@ defmodule MoneyTree.Transactions.Transaction do
   defp normalize_currency(other), do: other
 
   defp validate_status(:status, status) when status in @supported_statuses, do: []
-  defp validate_status(:status, _status), do: [status: "must be one of #{Enum.join(@supported_statuses, ", ")}"]
+
+  defp validate_status(:status, _status),
+    do: [status: "must be one of #{Enum.join(@supported_statuses, ", ")}"]
 
   defp validate_decimal(changeset, field) do
     validate_change(changeset, field, fn ^field, value ->
