@@ -5,7 +5,7 @@ defmodule MoneyTreeWeb.Gettext do
   By using [Gettext](https://hexdocs.pm/gettext),
   your module gains a set of macros for translations, for example:
 
-      import MoneyTreeWeb.Gettext
+      use Gettext, backend: MoneyTreeWeb.Gettext
 
       # Simple translation
       gettext("Here is the string to translate")
@@ -20,5 +20,5 @@ defmodule MoneyTreeWeb.Gettext do
 
   See the [Gettext Docs](https://hexdocs.pm/gettext) for detailed usage.
   """
-  use Gettext, otp_app: :money_tree
+  use Gettext.Backend, otp_app: :money_tree
 end

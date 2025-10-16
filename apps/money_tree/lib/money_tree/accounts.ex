@@ -3,6 +3,7 @@ defmodule MoneyTree.Accounts do
   Context responsible for user lifecycle operations, password management, and session tokens.
   """
 
+  import Bitwise
   import Ecto.Query, warn: false
 
   alias Ecto.Changeset

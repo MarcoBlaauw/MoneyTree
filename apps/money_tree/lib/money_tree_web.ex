@@ -42,7 +42,7 @@ defmodule MoneyTreeWeb do
         layouts: [html: MoneyTreeWeb.Layouts]
 
       import Plug.Conn
-      import MoneyTreeWeb.Gettext
+      use Gettext, backend: MoneyTreeWeb.Gettext
 
       unquote(verified_routes())
     end

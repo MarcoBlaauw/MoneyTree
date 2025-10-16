@@ -5,8 +5,6 @@ defmodule MoneyTreeWeb.Plugs.SetLoggerMetadata do
 
   @behaviour Plug
 
-  import Plug.Conn
-
   require Logger
 
   @impl true

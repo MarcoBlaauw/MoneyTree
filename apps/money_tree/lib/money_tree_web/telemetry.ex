@@ -2,6 +2,7 @@ defmodule MoneyTreeWeb.Telemetry do
   use Supervisor
 
   import Telemetry.Metrics
+  require Logger
 
   def start_link(arg) do
     Supervisor.start_link(__MODULE__, arg, name: __MODULE__)
@@ -11,10 +12,11 @@ defmodule MoneyTreeWeb.Telemetry do
   def init(_arg) do
     exporter_config = Application.get_env(:money_tree, :opentelemetry_exporter, [])
 
-    children = [
-      {OpentelemetryExporter, exporter_config},
-      {:telemetry_poller, measurements: periodic_measurements(), period: 10_000}
-    ]
+    children =
+      exporter_child(exporter_config) ++
+        [
+          {:telemetry_poller, measurements: periodic_measurements(), period: 10_000}
+        ]
 
     Supervisor.init(children, strategy: :one_for_one)
   end
@@ -71,5 +73,23 @@ defmodule MoneyTreeWeb.Telemetry do
 
   defp periodic_measurements do
     []
+  end
+
+  defp exporter_child(config) do
+    cond do
+      config in [nil, [], false, :disabled] ->
+        []
+
+      Code.ensure_loaded?(OpentelemetryExporter) and
+          function_exported?(OpentelemetryExporter, :child_spec, 1) ->
+        [{OpentelemetryExporter, config}]
+
+      true ->
+        Logger.warning(
+          "Skipping OpentelemetryExporter child because no compatible child_spec/1 is available"
+        )
+
+        []
+    end
   end
 end

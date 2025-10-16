@@ -3,7 +3,7 @@ defmodule MoneyTree.Health do
   Helpers for reporting application health and operational metrics.
   """
 
-  import Ecto.Query, only: [from: 2, select: 3, group_by: 3, where: 3]
+  import Ecto.Query, only: [select: 3, group_by: 3, where: 3]
 
   alias Ecto.Adapters.SQL
   alias MoneyTree.Repo

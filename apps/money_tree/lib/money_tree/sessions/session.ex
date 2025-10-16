@@ -21,7 +21,7 @@ defmodule MoneyTree.Sessions.Session do
     field :last_used_at, :utc_datetime_usec
     field :ip_address, :string
     field :user_agent, :string
-    field :encrypted_metadata, EncryptedMap, default: %{}
+    field :encrypted_metadata, EncryptedMap
 
     belongs_to :user, User
 
@@ -44,6 +44,7 @@ defmodule MoneyTree.Sessions.Session do
     |> validate_required([:token_hash, :context, :expires_at, :user_id])
     |> validate_length(:context, min: 1, max: 64)
     |> validate_user_agent()
+    |> ensure_encrypted_metadata()
     |> foreign_key_constraint(:user_id)
     |> unique_constraint(:token_hash)
     |> unique_constraint(:context, name: :sessions_user_id_context_index)
@@ -51,5 +52,20 @@ defmodule MoneyTree.Sessions.Session do
 
   defp validate_user_agent(changeset) do
     validate_length(changeset, :user_agent, max: 512)
+  end
+
+  defp ensure_encrypted_metadata(changeset) do
+    metadata = get_field(changeset, :encrypted_metadata)
+
+    cond do
+      is_map(metadata) ->
+        changeset
+
+      is_nil(metadata) ->
+        put_change(changeset, :encrypted_metadata, %{})
+
+      true ->
+        add_error(changeset, :encrypted_metadata, "must be a map")
+    end
   end
 end
