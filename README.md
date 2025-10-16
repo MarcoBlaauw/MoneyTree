@@ -22,15 +22,27 @@ asdf install
    ```bash
    source .env
    ```
-3. Install dependencies, set up the database, and run required Oban migrations:
+   These variables include the `DATABASE_URL` expected by the Phoenix app and match the credentials defined in `docker-compose.yml`.
+
+3. Start the PostgreSQL database container:
+   ```bash
+   docker compose up -d db
+   ```
+4. Install dependencies, set up the database, and run required Oban migrations:
    ```bash
    cd apps/money_tree
    mix setup
    ```
-4. Start the Phoenix server:
+5. Start the Phoenix server:
    ```bash
    mix phx.server
    ```
+
+When you're finished working, stop the database container to free resources:
+
+```bash
+docker compose stop db
+```
 
 The API will be available on [http://localhost:4000](http://localhost:4000).
 
