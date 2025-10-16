@@ -12,9 +12,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/money_tree
 
     steps:
       - name: Checkout
@@ -30,12 +27,12 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            apps/money_tree/deps
-            apps/money_tree/_build
+            deps
+            _build
             apps/money_tree/priv/plts
             ~/.mix
             ~/.hex
-          key: ${{ runner.os }}-mix-${{ env.MIX_ENV }}-${{ hashFiles('apps/money_tree/mix.lock') }}
+          key: ${{ runner.os }}-mix-${{ env.MIX_ENV }}-${{ hashFiles('mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-mix-${{ env.MIX_ENV }}-
             ${{ runner.os }}-mix-
