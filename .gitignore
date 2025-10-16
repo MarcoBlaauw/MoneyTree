@@ -1,8 +1,13 @@
 /.asdf/
 /.env
 /.env.*
-/apps/*/_build/
-/apps/*/deps/
-/apps/*/tmp/
+/_build/
+/deps/
+/tmp/
+/cover/
+/doc/
 /apps/*/priv/plts/
-.elixir_ls/
+/.elixir_ls/
+*.ez
+erl_crash.dump
+.fetch

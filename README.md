@@ -28,9 +28,8 @@ asdf install
    ```bash
    docker compose up -d db
    ```
-4. Install dependencies, set up the database, and run required Oban migrations:
+4. Install dependencies, set up the database, and run required Oban migrations from the umbrella root:
    ```bash
-   cd apps/money_tree
    mix setup
    ```
 5. Start the Phoenix server:
@@ -48,7 +47,7 @@ The API will be available on [http://localhost:4000](http://localhost:4000).
 
 ## Database Tasks
 
-Run these commands from `apps/money_tree` whenever you need to manage the database manually:
+Run these commands from the umbrella root whenever you need to manage the database manually:
 
 ```bash
 mix ecto.create
@@ -58,11 +57,11 @@ mix run priv/repo/seeds.exs
 
 ## Running Checks
 
-Quality checks should be run from `apps/money_tree`:
+Quality checks should be run from the umbrella root:
 
 - `mix deps.get` – install or update dependencies.
 - `mix compile --warnings-as-errors` – ensure the codebase compiles cleanly.
-- `mix lint` – runs `mix format --check-formatted` and `mix credo --strict`.
+- `mix lint` – runs `mix format --check-formatted` and `mix credo --strict` via the MoneyTree app.
 - `mix test` – execute the test suite (uses the SQL sandbox).
 - `mix dialyzer --halt-exit-status` – static analysis; the first run will build and cache the PLT.
 
