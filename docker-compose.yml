@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: money_tree_dev
+    volumes:
+      - money_tree_db_data:/var/lib/postgresql/data
+    env_file:
+      - .env
+
+volumes:
+  money_tree_db_data:
+    driver: local
