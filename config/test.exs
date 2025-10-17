@@ -36,7 +36,8 @@ config :swoosh, :api_client, false
 
 config :money_tree, Oban,
   testing: :inline,
-  queues: false
+  queues: false,
+  plugins: false
 
 config :logger, level: :warning
 

@@ -43,7 +43,7 @@ defmodule MoneyTree.Currency do
   def valid_code?(code) when is_binary(code) do
     code
     |> String.upcase()
-    |> MapSet.member?(@iso_code_set)
+    |> then(&MapSet.member?(@iso_code_set, &1))
   end
 
   def valid_code?(_), do: false

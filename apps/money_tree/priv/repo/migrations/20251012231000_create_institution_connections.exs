@@ -5,7 +5,9 @@ defmodule MoneyTree.Repo.Migrations.CreateInstitutionConnections do
     create table(:institution_connections, primary_key: false) do
       add :id, :binary_id, primary_key: true
       add :user_id, references(:users, type: :binary_id, on_delete: :delete_all), null: false
-      add :institution_id, references(:institutions, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :institution_id, references(:institutions, type: :binary_id, on_delete: :delete_all),
+        null: false
 
       add :teller_enrollment_id, :string
       add :teller_user_id, :string

@@ -137,14 +137,42 @@ defmodule MoneyTree.Institutions do
           {:ok, Connection.t()} | {:error, :not_found | Changeset.t()}
   def mark_sync_state(user, attrs) when is_map(attrs) do
     connection_id = fetch_identifier!(attrs, :connection_id)
-    cursor = Map.get(attrs, :cursor) || Map.get(attrs, "cursor")
-    updated_at = Map.get(attrs, :synced_at) || Map.get(attrs, "synced_at") || DateTime.utc_now()
 
     with {:ok, connection} <- fetch_owned_connection(user, connection_id) do
+      update_sync_state(connection, attrs)
+    end
+  end
+
+  @doc """
+  Persists Teller synchronization metadata directly on the provided connection.
+
+  Keys may be provided using either atoms or strings. Passing `nil` for a field explicitly
+  clears it, allowing callers to reset error information after a successful sync.
+  """
+  @spec update_sync_state(Connection.t(), map()) ::
+          {:ok, Connection.t()} | {:error, Changeset.t()}
+  def update_sync_state(%Connection{} = connection, attrs) when is_map(attrs) do
+    updates = build_sync_updates(attrs)
+
+    if updates == %{} do
+      {:ok, connection}
+    else
       connection
-      |> Connection.changeset(%{sync_cursor: cursor, sync_cursor_updated_at: updated_at})
+      |> Connection.changeset(updates)
       |> Repo.update()
     end
+  end
+
+  @doc """
+  Lists connections that are eligible for synchronization.
+
+  Revoked connections are excluded so background jobs avoid unnecessary work.
+  """
+  @spec list_connections_for_sync() :: [Connection.t()]
+  def list_connections_for_sync do
+    Connection
+    |> Repo.all()
+    |> Enum.reject(&revoked?/1)
   end
 
   @doc """
@@ -344,6 +372,72 @@ defmodule MoneyTree.Institutions do
   end
 
   defp revoked?(_connection), do: false
+
+  defp build_sync_updates(attrs) do
+    attrs = Map.new(attrs)
+
+    %{}
+    |> maybe_put(:accounts_cursor, attrs, [:accounts_cursor])
+    |> maybe_put(:transactions_cursor, attrs, [:transactions_cursor])
+    |> maybe_put(:last_synced_at, attrs, [:last_synced_at, :synced_at])
+    |> maybe_put(:last_sync_error, attrs, [:last_sync_error, :error])
+    |> maybe_put(:last_sync_error_at, attrs, [:last_sync_error_at, :error_at])
+    |> maybe_put(:sync_cursor, attrs, [:sync_cursor, :cursor])
+    |> maybe_put(:sync_cursor_updated_at, attrs, [
+      :sync_cursor_updated_at,
+      :synced_at,
+      :last_synced_at
+    ])
+    |> finalize_sync_updates()
+  end
+
+  defp maybe_put(acc, field, attrs, keys) do
+    case fetch_value(attrs, keys) do
+      {:ok, value} -> Map.put(acc, field, value)
+      :error -> acc
+    end
+  end
+
+  defp fetch_value(attrs, keys) do
+    Enum.reduce_while(List.wrap(keys), :error, fn key, acc ->
+      cond do
+        Map.has_key?(attrs, key) ->
+          {:halt, {:ok, Map.get(attrs, key)}}
+
+        is_atom(key) && Map.has_key?(attrs, Atom.to_string(key)) ->
+          {:halt, {:ok, Map.get(attrs, Atom.to_string(key))}}
+
+        is_binary(key) && Map.has_key?(attrs, key) ->
+          {:halt, {:ok, Map.get(attrs, key)}}
+
+        true ->
+          {:cont, acc}
+      end
+    end)
+  end
+
+  defp finalize_sync_updates(updates) do
+    updates =
+      case Map.fetch(updates, :last_sync_error) do
+        {:ok, nil} -> Map.put_new(updates, :last_sync_error_at, nil)
+        {:ok, _error} -> Map.put_new(updates, :last_sync_error_at, DateTime.utc_now())
+        :error -> updates
+      end
+
+    updates =
+      if Map.has_key?(updates, :accounts_cursor) or Map.has_key?(updates, :transactions_cursor) do
+        Map.put_new(updates, :last_synced_at, DateTime.utc_now())
+      else
+        updates
+      end
+
+    if Map.has_key?(updates, :last_synced_at) and
+         not Map.has_key?(updates, :sync_cursor_updated_at) do
+      Map.put(updates, :sync_cursor_updated_at, Map.get(updates, :last_synced_at))
+    else
+      updates
+    end
+  end
 
   defp apply_preloads(query, opts) do
     preloads = Keyword.get(opts, :preload, [])

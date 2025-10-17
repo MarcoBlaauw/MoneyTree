@@ -27,6 +27,11 @@ defmodule MoneyTree.Institutions.Connection do
 
     field :sync_cursor, :string
     field :sync_cursor_updated_at, :utc_datetime_usec
+    field :accounts_cursor, :string
+    field :transactions_cursor, :string
+    field :last_synced_at, :utc_datetime_usec
+    field :last_sync_error, :map
+    field :last_sync_error_at, :utc_datetime_usec
 
     belongs_to :user, User
     belongs_to :institution, Institution
@@ -48,14 +53,22 @@ defmodule MoneyTree.Institutions.Connection do
       :teller_enrollment_id,
       :teller_user_id,
       :sync_cursor,
-      :sync_cursor_updated_at
+      :sync_cursor_updated_at,
+      :accounts_cursor,
+      :transactions_cursor,
+      :last_synced_at,
+      :last_sync_error,
+      :last_sync_error_at
     ])
     |> validate_required([:user_id, :institution_id])
     |> normalize_cursor()
     |> validate_length(:teller_enrollment_id, max: 120)
     |> validate_length(:teller_user_id, max: 120)
     |> validate_length(:sync_cursor, max: 1024)
+    |> validate_length(:accounts_cursor, max: 1024)
+    |> validate_length(:transactions_cursor, max: 1024)
     |> validate_metadata_is_map()
+    |> validate_sync_error_is_map()
     |> validate_webhook_secret()
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:institution_id)
@@ -76,6 +89,16 @@ defmodule MoneyTree.Institutions.Connection do
 
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(value), do: value
+
+  defp validate_sync_error_is_map(changeset) do
+    validate_change(changeset, :last_sync_error, fn :last_sync_error, value ->
+      cond do
+        is_nil(value) -> []
+        is_map(value) -> []
+        true -> [{:last_sync_error, "must be a map"}]
+      end
+    end)
+  end
 
   defp validate_metadata_is_map(changeset) do
     validate_change(changeset, :metadata, fn :metadata, value ->
