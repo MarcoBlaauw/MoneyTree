@@ -44,7 +44,11 @@ config :money_tree, Oban,
   ],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 86_400},
-    {Oban.Plugins.Lifeline, rescue_after: 60}
+    {Oban.Plugins.Lifeline, rescue_after: 60},
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"*/30 * * * *", MoneyTree.Teller.SyncWorker, args: %{"mode" => "dispatch"}}
+     ]}
   ]
 
 config :money_tree, :opentelemetry_exporter, []

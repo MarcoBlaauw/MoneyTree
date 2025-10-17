@@ -64,6 +64,7 @@ defmodule MoneyTree.Teller.Client do
 
     api_key = Keyword.fetch!(config, :api_key)
     api_host = Keyword.get(opts, :base_url, Keyword.fetch!(config, :api_host))
+
     connect_host =
       Keyword.get(opts, :connect_base_url, Keyword.get(config, :connect_host, api_host))
 
@@ -168,7 +169,8 @@ defmodule MoneyTree.Teller.Client do
   ranges) can be supplied in the params map.
   """
   @spec list_transactions(binary(), map()) :: {:ok, list()} | {:error, map()}
-  def list_transactions(account_id, params \\ %{}) when is_binary(account_id) and is_map(params) do
+  def list_transactions(account_id, params \\ %{})
+      when is_binary(account_id) and is_map(params) do
     new() |> list_transactions(account_id, params)
   end
 
@@ -183,7 +185,9 @@ defmodule MoneyTree.Teller.Client do
       |> Enum.reject(fn {_k, v} -> is_nil(v) end)
       |> Enum.into(%{})
 
-    request(client, client.api_request, :get, "/accounts/#{account_id}/transactions", params: query)
+    request(client, client.api_request, :get, "/accounts/#{account_id}/transactions",
+      params: query
+    )
     |> normalize_response()
   end
 
@@ -219,6 +223,7 @@ defmodule MoneyTree.Teller.Client do
   end
 
   defp perform_with_retry(request, opts, retry_opts, attempt \\ 1)
+
   defp perform_with_retry(request, opts, retry_opts, _attempt) when retry_opts in [nil, []] do
     Req.request(request, opts)
   end
@@ -226,20 +231,21 @@ defmodule MoneyTree.Teller.Client do
   defp perform_with_retry(request, opts, retry_opts, attempt) do
     case Req.request(request, opts) do
       {:ok, %Req.Response{} = response} = result ->
-        if retry?(response.status, retry_opts) and attempt < Keyword.get(retry_opts, :max_attempts, 1) do
+        if retry?(response.status, retry_opts) and
+             attempt < Keyword.get(retry_opts, :max_attempts, 1) do
           backoff(attempt, retry_opts)
           perform_with_retry(request, opts, retry_opts, attempt + 1)
         else
           result
         end
 
-      {:error, %Req.TransportError{} = error} = transport_error ->
+      {:error, %Req.TransportError{} = transport_error} ->
         if Keyword.get(retry_opts, :retry_transport_errors, false) and
              attempt < Keyword.get(retry_opts, :max_attempts, 1) do
           backoff(attempt, retry_opts)
           perform_with_retry(request, opts, retry_opts, attempt + 1)
         else
-          transport_error
+          {:error, transport_error}
         end
 
       other ->
@@ -265,7 +271,8 @@ defmodule MoneyTree.Teller.Client do
     Process.sleep(delay)
   end
 
-  defp normalize_response({:ok, %Req.Response{status: status, body: body}}) when status in 200..299 do
+  defp normalize_response({:ok, %Req.Response{status: status, body: body}})
+       when status in 200..299 do
     {:ok, body}
   end
 
@@ -332,7 +339,9 @@ defmodule MoneyTree.Teller.Client do
   defp normalize_retry(_other), do: @default_retry
 
   defp maybe_put_application_id(params, nil), do: params
-  defp maybe_put_application_id(params, application_id), do: Map.put_new(params, "application_id", application_id)
+
+  defp maybe_put_application_id(params, application_id),
+    do: Map.put_new(params, "application_id", application_id)
 
   defp connect_application_id do
     Application.get_env(:money_tree, MoneyTree.Teller, [])
