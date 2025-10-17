@@ -52,19 +52,48 @@ docker compose stop db
 
 The API will be available on [http://localhost:4000](http://localhost:4000).
 
-### Teller Credentials
+### Teller Integration
 
-Teller provides sandbox credentials for development and live credentials for production. Create an account at
-[Teller](https://teller.io) and generate the following values from the Console:
+MoneyTree ships with a Teller integration for account aggregation. Teller separates sandbox and production credentials, so
+start by creating a sandbox account at [Teller](https://teller.io) and generating the following values from the Console:
 
 - **API key** – used for direct Teller API calls (`TELLER_API_KEY`).
 - **Connect application ID** – embedded in Connect URLs (`TELLER_CONNECT_APPLICATION_ID`).
 - **Webhook secret** – verifies Teller webhook signatures (`TELLER_WEBHOOK_SECRET`).
 
-Add these secrets to your environment (for example, by editing `.env` or exporting them in your shell) and ensure they are never
-committed to version control. Optional overrides (`TELLER_API_HOST`, `TELLER_CONNECT_HOST`, and `TELLER_WEBHOOK_HOST`) let you
-point to Teller sandbox URLs if they differ from the defaults, but most teams can omit them. The `req` HTTP client already
-targets the shared `MoneyTree.Finch` pool, so outbound Teller requests reuse the configured Finch connection pool.
+Store the sandbox values in `.env` (see `.env.example` for details) and never commit them to version control. When you promote to
+production, rotate the variables and restart your deployment so the new secrets take effect.
+
+#### Webhook tunnel & configuration
+
+Teller delivers account and transaction updates through webhooks. In development, expose the Phoenix endpoint to Teller with a
+tunnel such as [`cloudflared tunnel`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/install-and-setup/tunnel-guide/local/) or [`ngrok`](https://ngrok.com/):
+
+```bash
+ngrok http http://localhost:4000
+```
+
+Update the Teller webhook URL to point at the tunnel (for example, `https://<random>.ngrok.io/api/teller/webhooks`) and set
+`TELLER_WEBHOOK_HOST` if you need to override the default host in development. Always keep the tunnel process running while you
+test so Teller can deliver responses successfully.
+
+#### Teller Connect in development
+
+MoneyTree exposes Teller Connect through the Phoenix API for local testing. Use the sandbox Connect URL in your frontend (see
+`apps/money_tree/README.md`) or visit `http://localhost:4000/api/teller/connect/start` to verify that the Connect URL renders in
+the browser. The `TELLER_CONNECT_HOST` environment variable defaults to the sandbox host; only override it if Teller support
+directs you to a different environment.
+
+#### Monitoring Oban syncs
+
+Teller synchronisation work is handled by Oban jobs. Watch the queue with the built-in telemetry endpoints (`GET /api/metrics`)
+or by connecting to the database and inspecting `oban_jobs` for the `MoneyTree.Workers.TellerSync` worker. In development you can
+also start `iex -S mix phx.server` and run `Oban.drain_queue(queue: :default)` to execute pending Teller jobs manually. Failed
+jobs will retry automatically; persistent failures should be investigated using the Teller runbook (`docs/teller_runbook.md`).
+
+Optional overrides (`TELLER_API_HOST`, `TELLER_CONNECT_HOST`, and `TELLER_WEBHOOK_HOST`) let you point to Teller sandbox URLs if
+they differ from the defaults, but most teams can omit them. The `req` HTTP client already targets the shared
+`MoneyTree.Finch` pool, so outbound Teller requests reuse the configured Finch connection pool.
 
 In production deployments MoneyTree will fail to boot unless all required Teller variables are set, ensuring the integration is
 fully configured before serving traffic.
