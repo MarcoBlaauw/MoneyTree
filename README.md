@@ -45,6 +45,23 @@ docker compose stop db
 
 The API will be available on [http://localhost:4000](http://localhost:4000).
 
+### Teller Credentials
+
+Teller provides sandbox credentials for development and live credentials for production. Create an account at
+[Teller](https://teller.io) and generate the following values from the Console:
+
+- **API key** – used for direct Teller API calls (`TELLER_API_KEY`).
+- **Connect application ID** – embedded in Connect URLs (`TELLER_CONNECT_APPLICATION_ID`).
+- **Webhook secret** – verifies Teller webhook signatures (`TELLER_WEBHOOK_SECRET`).
+
+Add these secrets to your environment (for example, by editing `.env` or exporting them in your shell) and ensure they are never
+committed to version control. Optional overrides (`TELLER_API_HOST`, `TELLER_CONNECT_HOST`, and `TELLER_WEBHOOK_HOST`) let you
+point to Teller sandbox URLs if they differ from the defaults, but most teams can omit them. The `req` HTTP client already
+targets the shared `MoneyTree.Finch` pool, so outbound Teller requests reuse the configured Finch connection pool.
+
+In production deployments MoneyTree will fail to boot unless all required Teller variables are set, ensuring the integration is
+fully configured before serving traffic.
+
 ## Database Tasks
 
 Run these commands from the umbrella root whenever you need to manage the database manually:
