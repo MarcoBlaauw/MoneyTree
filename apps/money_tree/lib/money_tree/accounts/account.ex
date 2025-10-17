@@ -10,6 +10,7 @@ defmodule MoneyTree.Accounts.Account do
   alias Decimal
   alias MoneyTree.Currency
   alias MoneyTree.Encrypted.Binary
+  alias MoneyTree.Institutions.Connection
   alias MoneyTree.Institutions.Institution
   alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Users.User
@@ -33,6 +34,7 @@ defmodule MoneyTree.Accounts.Account do
 
     belongs_to :user, User
     belongs_to :institution, Institution
+    belongs_to :institution_connection, Connection
 
     has_many :transactions, Transaction
 
@@ -55,7 +57,8 @@ defmodule MoneyTree.Accounts.Account do
       :encrypted_account_number,
       :encrypted_routing_number,
       :user_id,
-      :institution_id
+      :institution_id,
+      :institution_connection_id
     ])
     |> validate_required([
       :name,
@@ -76,6 +79,7 @@ defmodule MoneyTree.Accounts.Account do
     |> validate_decimal(:limit)
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:institution_id)
+    |> foreign_key_constraint(:institution_connection_id)
     |> unique_constraint(:external_id, name: :accounts_user_id_external_id_index)
   end
 
