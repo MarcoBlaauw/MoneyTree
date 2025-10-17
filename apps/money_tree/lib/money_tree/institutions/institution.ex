@@ -9,6 +9,7 @@ defmodule MoneyTree.Institutions.Institution do
 
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Encrypted.Binary
+  alias MoneyTree.Institutions.Connection
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
@@ -22,6 +23,7 @@ defmodule MoneyTree.Institutions.Institution do
     field :encrypted_credentials, Binary
     field :metadata, :map, default: %{}
 
+    has_many :connections, Connection, on_delete: :delete_all
     has_many :accounts, Account
 
     timestamps()
