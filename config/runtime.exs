@@ -1,5 +1,36 @@
 import Config
 
+base_teller_config = Application.get_env(:money_tree, MoneyTree.Teller, [])
+
+if config_env() == :prod do
+  missing_teller_env =
+    [
+      "TELLER_API_KEY",
+      "TELLER_CONNECT_APPLICATION_ID",
+      "TELLER_WEBHOOK_SECRET"
+    ]
+    |> Enum.filter(fn env -> System.get_env(env) in [nil, ""] end)
+
+  if missing_teller_env != [] do
+    raise """
+    environment variables #{Enum.join(missing_teller_env, ", ")} are required in production for Teller integration.
+    """
+  end
+end
+
+teller_runtime_config =
+  [
+    api_key: System.get_env("TELLER_API_KEY"),
+    connect_application_id: System.get_env("TELLER_CONNECT_APPLICATION_ID"),
+    webhook_secret: System.get_env("TELLER_WEBHOOK_SECRET"),
+    api_host: System.get_env("TELLER_API_HOST"),
+    connect_host: System.get_env("TELLER_CONNECT_HOST"),
+    webhook_host: System.get_env("TELLER_WEBHOOK_HOST")
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+
+config :money_tree, MoneyTree.Teller, Keyword.merge(base_teller_config, teller_runtime_config)
+
 if config_env() != :test do
   default_limit = System.get_env("OBAN_DEFAULT_LIMIT") || "10"
   mailer_limit = System.get_env("OBAN_MAILER_LIMIT") || "5"

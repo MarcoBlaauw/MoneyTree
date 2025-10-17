@@ -28,6 +28,13 @@ config :money_tree, MoneyTreeWeb.Endpoint,
   pubsub_server: MoneyTree.PubSub,
   live_view: [signing_salt: "AQ0mt1V3"]
 
+config :money_tree, MoneyTree.Teller,
+  api_host: "https://api.teller.io",
+  connect_host: "https://connect.teller.io",
+  timeout: :timer.seconds(10),
+  finch: MoneyTree.Finch,
+  telemetry_metadata: %{service: "money_tree", integration: "teller"}
+
 config :money_tree, Oban,
   repo: MoneyTree.Repo,
   queues: [
