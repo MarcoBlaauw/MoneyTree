@@ -16,6 +16,9 @@ defmodule MoneyTreeWeb.BodyReader do
       {:ok, body, conn} ->
         conn = append_raw_body(conn, body)
         {:ok, body, conn}
+
+      {:error, _reason} = error ->
+        error
     end
   end
 

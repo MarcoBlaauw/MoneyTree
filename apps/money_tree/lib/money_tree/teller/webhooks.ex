@@ -38,24 +38,39 @@ defmodule MoneyTree.Teller.Webhooks do
       when is_binary(nonce) and is_struct(timestamp, DateTime) and is_map(payload) do
     retention = Keyword.get(opts, :retention, @default_retention)
 
-    metadata = connection.metadata || %{}
-    webhook_metadata = fetch_webhook_metadata(connection)
-    nonce_registry = Map.get(webhook_metadata, @nonces_key, %{})
+    nonce_timestamp = DateTime.to_iso8601(timestamp)
+    event_name = Map.get(payload, :event) || Map.get(payload, "event")
 
-    pruned_nonces = prune_nonces(nonce_registry, timestamp, retention)
-    updated_nonces = Map.put(pruned_nonces, nonce, DateTime.to_iso8601(timestamp))
+    Repo.transaction(fn ->
+      locked_connection = Repo.get!(Connection, connection.id, lock: "FOR UPDATE")
 
-    updated_metadata =
-      webhook_metadata
-      |> Map.put(@nonces_key, updated_nonces)
-      |> Map.put("last_event", Map.get(payload, :event) || Map.get(payload, "event"))
-      |> Map.put("last_received_at", DateTime.to_iso8601(timestamp))
+      metadata = locked_connection.metadata || %{}
+      webhook_metadata = fetch_webhook_metadata(locked_connection)
+      nonce_registry = Map.get(webhook_metadata, @nonces_key, %{})
 
-    new_metadata = Map.put(metadata, @metadata_root, updated_metadata)
+      pruned_nonces = prune_nonces(nonce_registry, timestamp, retention)
+      updated_nonces = Map.put(pruned_nonces, nonce, nonce_timestamp)
 
-    connection
-    |> Connection.changeset(%{metadata: new_metadata})
-    |> Repo.update()
+      updated_metadata =
+        webhook_metadata
+        |> Map.put(@nonces_key, updated_nonces)
+        |> Map.put("last_event", event_name)
+        |> Map.put("last_received_at", nonce_timestamp)
+
+      new_metadata = Map.put(metadata, @metadata_root, updated_metadata)
+
+      locked_connection
+      |> Connection.changeset(%{metadata: new_metadata})
+      |> Repo.update()
+      |> case do
+        {:ok, updated_connection} -> updated_connection
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+    |> case do
+      {:ok, updated_connection} -> {:ok, updated_connection}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp prune_nonces(nonce_registry, _timestamp, retention) when retention <= 0, do: nonce_registry
