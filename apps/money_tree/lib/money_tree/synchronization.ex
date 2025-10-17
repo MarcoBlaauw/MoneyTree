@@ -47,11 +47,7 @@ defmodule MoneyTree.Synchronization do
       %{
         "connection_id" => connection.id,
         "mode" => mode,
-        "telemetry_metadata" => %{
-          "mode" => mode,
-          "user_id" => connection.user_id,
-          "institution_id" => connection.institution_id
-        }
+        "telemetry_metadata" => telemetry_metadata(connection, mode, opts)
       }
 
     job_opts =
@@ -73,4 +69,25 @@ defmodule MoneyTree.Synchronization do
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp telemetry_metadata(connection, mode, opts) do
+    extra_metadata =
+      opts
+      |> Keyword.get(:telemetry_metadata, %{})
+      |> Map.new()
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Enum.into(%{}, fn {key, value} -> {normalize_key(key), value} end)
+
+    base_metadata = %{
+      "mode" => mode,
+      "user_id" => connection.user_id,
+      "institution_id" => connection.institution_id
+    }
+
+    Map.merge(base_metadata, extra_metadata)
+  end
+
+  defp normalize_key(key) when is_binary(key), do: key
+  defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp normalize_key(key), do: to_string(key)
 end

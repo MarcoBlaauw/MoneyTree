@@ -22,7 +22,7 @@ defmodule MoneyTreeWeb.Router do
     post "/login", AuthController, :login
 
     scope "/teller" do
-      post "/webhook", TellerWebhookController, :handle
+      post "/webhook", TellerWebhookController, :webhook
 
       scope "/" do
         pipe_through :api_auth

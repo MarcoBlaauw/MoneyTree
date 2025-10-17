@@ -259,6 +259,39 @@ defmodule MoneyTree.Institutions do
   end
 
   @doc """
+  Retrieves a connection by id.
+  """
+  @spec get_connection(binary(), keyword()) :: {:ok, Connection.t()} | {:error, :not_found}
+  def get_connection(connection_id, opts \\ [])
+
+  def get_connection(connection_id, opts) when is_binary(connection_id) do
+    query =
+      from c in Connection,
+        where: c.id == ^connection_id
+
+    query
+    |> apply_preloads(opts)
+    |> Repo.one()
+    |> case do
+      nil -> {:error, :not_found}
+      %Connection{} = connection -> {:ok, connection}
+    end
+  end
+
+  def get_connection(_connection_id, _opts), do: {:error, :not_found}
+
+  @doc """
+  Retrieves an active (non-revoked) connection by id.
+  """
+  @spec get_active_connection(binary(), keyword()) ::
+          {:ok, Connection.t()} | {:error, :not_found | :revoked}
+  def get_active_connection(connection_id, opts \\ []) when is_binary(connection_id) do
+    with {:ok, connection} <- get_connection(connection_id, opts) do
+      enforce_active(connection)
+    end
+  end
+
+  @doc """
   Finds an active connection using the webhook secret reference (used by Teller webhooks).
   """
   @spec get_active_connection_by_webhook(String.t(), keyword()) ::
