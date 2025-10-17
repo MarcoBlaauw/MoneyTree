@@ -20,7 +20,7 @@ defmodule MoneyTree.Institutions.Connection do
   schema "institution_connections" do
     field :encrypted_credentials, Binary
     field :webhook_secret, Binary
-    field :metadata, Map, default: %{}
+    field :metadata, Map
 
     field :teller_enrollment_id, :string
     field :teller_user_id, :string

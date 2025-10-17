@@ -53,7 +53,8 @@ defmodule MoneyTree.Institutions do
   @spec update_connection_tokens(user_ref(), map()) ::
           {:ok, Connection.t()} | {:error, :not_found | Changeset.t()}
   def update_connection_tokens(user, attrs) when is_map(attrs) do
-    with {:ok, connection} <- fetch_owned_connection(user, fetch_identifier!(attrs, :connection_id)) do
+    with {:ok, connection} <-
+           fetch_owned_connection(user, fetch_identifier!(attrs, :connection_id)) do
       updates =
         [:teller_enrollment_id, :teller_user_id]
         |> Enum.reduce(%{}, fn key, acc ->
@@ -67,12 +68,36 @@ defmodule MoneyTree.Institutions do
         end)
 
       case updates do
-        %{} -> {:ok, connection}
+        %{} ->
+          {:ok, connection}
+
         _ ->
           connection
           |> Connection.changeset(updates)
           |> Repo.update()
       end
+    end
+  end
+
+  @doc """
+  Updates a connection owned by the given user with the provided attributes.
+  """
+  @spec update_connection(user_ref(), Connection.t() | binary(), map()) ::
+          {:ok, Connection.t()} | {:error, :not_found | Changeset.t()}
+  def update_connection(user, %Connection{} = connection, attrs) when is_map(attrs) do
+    if connection.user_id == normalize_user_id(user) do
+      connection
+      |> Connection.changeset(attrs)
+      |> Repo.update()
+    else
+      {:error, :not_found}
+    end
+  end
+
+  def update_connection(user, connection_id, attrs)
+      when is_binary(connection_id) and is_map(attrs) do
+    with {:ok, connection} <- fetch_owned_connection(user, connection_id) do
+      update_connection(user, connection, attrs)
     end
   end
 
@@ -94,8 +119,12 @@ defmodule MoneyTree.Institutions do
     end)
     |> Repo.transaction()
     |> case do
-      {:ok, %{updated_connection: connection}} -> {:ok, connection, secret}
-      {:error, :connection, :not_found, _changes_so_far} -> {:error, :not_found}
+      {:ok, %{updated_connection: connection}} ->
+        {:ok, connection, secret}
+
+      {:error, :connection, :not_found, _changes_so_far} ->
+        {:error, :not_found}
+
       {:error, :updated_connection, %Changeset{} = changeset, _changes_so_far} ->
         {:error, changeset}
     end
@@ -182,11 +211,32 @@ defmodule MoneyTree.Institutions do
   end
 
   @doc """
+  Retrieves a connection for the given user by institution id, regardless of status.
+  """
+  @spec get_connection_for_institution(user_ref(), binary(), keyword()) ::
+          {:ok, Connection.t()} | {:error, :not_found}
+  def get_connection_for_institution(user, institution_id, opts \\ [])
+      when is_binary(institution_id) do
+    query =
+      from c in Connection,
+        where: c.user_id == ^normalize_user_id(user) and c.institution_id == ^institution_id
+
+    query
+    |> apply_preloads(opts)
+    |> Repo.one()
+    |> case do
+      nil -> {:error, :not_found}
+      connection -> {:ok, connection}
+    end
+  end
+
+  @doc """
   Finds an active connection using the webhook secret reference (used by Teller webhooks).
   """
   @spec get_active_connection_by_webhook(String.t(), keyword()) ::
           {:ok, Connection.t()} | {:error, :not_found | :revoked}
-  def get_active_connection_by_webhook(webhook_secret, opts \\ []) when is_binary(webhook_secret) do
+  def get_active_connection_by_webhook(webhook_secret, opts \\ [])
+      when is_binary(webhook_secret) do
     query =
       from c in Connection,
         where: c.webhook_secret == ^webhook_secret
@@ -211,7 +261,9 @@ defmodule MoneyTree.Institutions do
 
     query =
       case Keyword.get(opts, :institution_id) do
-        nil -> base_query
+        nil ->
+          base_query
+
         institution_id when is_binary(institution_id) ->
           from c in base_query, where: c.institution_id == ^institution_id
       end
@@ -227,7 +279,10 @@ defmodule MoneyTree.Institutions do
   """
   @spec preload_defaults(Connection.t() | [Connection.t()]) :: Connection.t() | [Connection.t()]
   def preload_defaults(connection_or_connections) do
-    Repo.preload(connection_or_connections, [:institution, accounts: from(a in Account, order_by: a.name)])
+    Repo.preload(connection_or_connections, [
+      :institution,
+      accounts: from(a in Account, order_by: a.name)
+    ])
   end
 
   defp ensure_institution_exists(nil), do: {:error, :institution_not_found}
@@ -251,8 +306,12 @@ defmodule MoneyTree.Institutions do
     end)
     |> Repo.transaction()
     |> case do
-      {:ok, %{updated_connection: connection}} -> {:ok, connection}
-      {:error, :connection, :not_found, _changes_so_far} -> {:error, :not_found}
+      {:ok, %{updated_connection: connection}} ->
+        {:ok, connection}
+
+      {:error, :connection, :not_found, _changes_so_far} ->
+        {:error, :not_found}
+
       {:error, :updated_connection, %Changeset{} = changeset, _changes_so_far} ->
         {:error, changeset}
     end
