@@ -4,13 +4,20 @@ MoneyTree is a Phoenix-powered financial management API designed to support secu
 
 ## Development Environment
 
-MoneyTree targets Elixir **1.16** and Erlang/OTP **26**. Install them via [asdf](https://asdf-vm.com/) (or [mise](https://mise.jdx.dev/)) using the provided `.tool-versions` file:
+MoneyTree targets Elixir **1.19.0-rc.2** and Erlang/OTP **28.1**. Install them with [mise](https://mise.jdx.dev/) or [asdf](https://asdf-vm.com/) before running any mix tasks.
 
 ```bash
-asdf install
+# Preferred: installs the exact versions declared in `.tool-versions`
+./scripts/install_toolchain.sh
+
+# Alternatively, run the commands manually
+mise install erlang@28.1 elixir@1.19.0-rc.2-otp-28
+# or
+asdf install erlang 28.1
+asdf install elixir 1.19.0-rc.2-otp-28
 ```
 
-> **Note:** If you use `mise`, run `mise install` instead.
+After installation, make sure `mix` is available on your `PATH` (`mix --version`). For `mise`, run `eval "$(mise activate bash)"` in your shell session. For `asdf`, source `${HOME}/.asdf/asdf.sh` (and `${HOME}/.asdf/completions/asdf.bash` for completions).
 
 ## Initial Setup
 
