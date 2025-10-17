@@ -70,6 +70,16 @@ defmodule MoneyTreeWeb.TellerControllerTest do
     {:ok, conn: conn, user: user}
   end
 
+  describe "authentication" do
+    test "requires a valid session for Teller endpoints", %{conn: conn} do
+      conn = Plug.Conn.delete_req_header(conn, "cookie")
+
+      response = post(conn, ~p"/api/teller/connect_token", %{})
+
+      assert response.status == 401
+    end
+  end
+
   describe "POST /api/teller/connect_token" do
     test "returns connect token payload", %{conn: conn} do
       Process.put({MoneyTreeWeb.TellerClientStub, :connect_token}, fn params ->
@@ -77,10 +87,11 @@ defmodule MoneyTreeWeb.TellerControllerTest do
         {:ok, %{"token" => "connect-token"}}
       end)
 
-      response =
-        conn
-        |> post(~p"/api/teller/connect_token", %{"institution" => "demo"})
-        |> json_response(200)
+      conn = post(conn, ~p"/api/teller/connect_token", %{"institution" => "demo"})
+
+      assert conn.resp_cookies[@session_cookie] == nil
+
+      response = json_response(conn, 200)
 
       assert response == %{"data" => %{"token" => "connect-token"}}
     end
@@ -111,6 +122,19 @@ defmodule MoneyTreeWeb.TellerControllerTest do
         |> json_response(400)
 
       assert response == %{"error" => "invalid institution"}
+    end
+
+    test "handles transport errors", %{conn: conn} do
+      Process.put({MoneyTreeWeb.TellerClientStub, :connect_token}, fn _ ->
+        {:error, %{type: :transport, details: %{message: "gateway timeout"}}}
+      end)
+
+      response =
+        conn
+        |> post(~p"/api/teller/connect_token", %{})
+        |> json_response(502)
+
+      assert response == %{"error" => "teller service unavailable"}
     end
   end
 
@@ -208,6 +232,21 @@ defmodule MoneyTreeWeb.TellerControllerTest do
       assert connection.teller_enrollment_id == "new-enroll"
     end
 
+    test "leaves session cookie untouched", %{conn: conn, institution: institution} do
+      Process.put({MoneyTreeWeb.TellerClientStub, :exchange_public_token}, fn _ ->
+        {:ok, %{"user_id" => "user", "enrollment_id" => "enroll", "access_token" => "token"}}
+      end)
+
+      conn =
+        post(conn, ~p"/api/teller/exchange", %{
+          "public_token" => "public-token",
+          "institution_id" => institution.id
+        })
+
+      assert conn.resp_cookies[@session_cookie] == nil
+      assert %{"data" => _} = json_response(conn, 200)
+    end
+
     test "requires public token", %{conn: conn} do
       response =
         conn
@@ -244,6 +283,45 @@ defmodule MoneyTreeWeb.TellerControllerTest do
         |> json_response(502)
 
       assert response == %{"error" => "teller maintenance"}
+    end
+
+    test "returns 404 when institution not found", %{conn: conn} do
+      Process.put({MoneyTreeWeb.TellerClientStub, :exchange_public_token}, fn _ ->
+        {:ok, %{"user_id" => "user"}}
+      end)
+
+      unknown_id = Ecto.UUID.generate()
+
+      response =
+        conn
+        |> post(~p"/api/teller/exchange", %{
+          "public_token" => "token",
+          "institution_id" => unknown_id
+        })
+        |> json_response(404)
+
+      assert response == %{"error" => "institution not found"}
+    end
+
+    test "returns validation errors when persistence fails", %{conn: conn, institution: institution} do
+      Process.put({MoneyTreeWeb.TellerClientStub, :exchange_public_token}, fn _ ->
+        {:ok,
+         %{
+           "user_id" => "user-id",
+           "enrollment_id" => String.duplicate("a", 200)
+         }}
+      end)
+
+      response =
+        conn
+        |> post(~p"/api/teller/exchange", %{
+          "public_token" => "token",
+          "institution_id" => institution.id
+        })
+        |> json_response(422)
+
+      assert %{"errors" => errors} = response
+      assert Map.has_key?(errors, "teller_enrollment_id")
     end
   end
 

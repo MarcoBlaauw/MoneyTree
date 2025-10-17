@@ -57,6 +57,25 @@ defmodule MoneyTree.Teller.SyncWorkerTest do
     end
   end
 
+  defmodule MissingAccountClient do
+    def list_accounts(_params) do
+      {:ok,
+       %{
+         "data" => [
+           %{
+             "name" => "Incomplete",
+             "currency" => "USD"
+           }
+         ],
+         "next_cursor" => nil
+       }}
+    end
+
+    def list_transactions(_account_id, _params) do
+      {:ok, %{"data" => [], "next_cursor" => nil}}
+    end
+  end
+
   test "perform/1 runs synchronizer and updates connection" do
     user = AccountsFixtures.user_fixture()
 
@@ -101,5 +120,23 @@ defmodule MoneyTree.Teller.SyncWorkerTest do
 
   test "dispatch mode completes when no connections exist" do
     assert :ok = SyncWorker.perform(%Job{args: %{"mode" => "dispatch"}, attempt: 1})
+  end
+
+  test "returns error when synchronizer fails" do
+    user = AccountsFixtures.user_fixture()
+    connection = InstitutionsFixtures.connection_fixture(user)
+
+    args = %{
+      "connection_id" => connection.id,
+      "client" => Atom.to_string(__MODULE__.MissingAccountClient)
+    }
+
+    assert {:error, {:missing_account_identifier, _info}} =
+             SyncWorker.perform(%Job{args: args, attempt: 2})
+
+    refreshed = Repo.get!(Connection, connection.id)
+    error_type = Map.get(refreshed.last_sync_error, :type) || Map.get(refreshed.last_sync_error, "type")
+    assert error_type == :missing_account_identifier or error_type == "missing_account_identifier"
+    assert refreshed.last_sync_error_at
   end
 end
