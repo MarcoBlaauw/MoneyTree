@@ -62,6 +62,36 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
       assert webhook_meta["nonces"][payload["nonce"]]
     end
 
+    test "logs audit events when webhook processed", %{conn: conn, secret: secret} do
+      attach_audit_listener([:teller_webhook_received, :teller_webhook_processed])
+
+      user = AccountsFixtures.user_fixture()
+      connection = InstitutionsFixtures.connection_fixture(user)
+
+      payload = %{
+        "connection_id" => connection.id,
+        "event" => "accounts.updated",
+        "nonce" => "nonce-#{System.unique_integer([:positive])}"
+      }
+
+      {body, header} = signed_payload(payload, secret)
+
+      conn =
+        conn
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("teller-signature", header)
+
+      _response = post(conn, ~p"/api/teller/webhook", body)
+
+      assert_receive {:audit_event, [:money_tree, :audit, :teller_webhook_received], received_meta}
+      assert received_meta[:connection_id] == connection.id
+      assert received_meta[:event] == "accounts.updated"
+
+      assert_receive {:audit_event, [:money_tree, :audit, :teller_webhook_processed], processed_meta}
+      assert processed_meta[:connection_id] == connection.id
+      assert processed_meta[:event] == "accounts.updated"
+    end
+
     test "returns 400 when signature is invalid", %{conn: conn} do
       payload = %{"connection_id" => "conn", "event" => "foo", "nonce" => "abc"}
       body = Jason.encode!(payload)
@@ -78,6 +108,24 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
       assert %{"error" => "invalid signature"} = json_response(response, 400)
 
       assert Repo.all(Job) == []
+    end
+
+    test "emits audit event for invalid signatures", %{conn: conn} do
+      attach_audit_listener([:teller_webhook_signature_invalid])
+
+      payload = %{"connection_id" => "conn", "event" => "foo", "nonce" => "abc"}
+      body = Jason.encode!(payload)
+      timestamp = System.system_time(:second)
+
+      conn =
+        conn
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("teller-signature", "t=#{timestamp},v1=invalid")
+
+      _response = post(conn, ~p"/api/teller/webhook", body)
+
+      assert_receive {:audit_event, [:money_tree, :audit, :teller_webhook_signature_invalid], metadata}
+      assert metadata[:remote_ip]
     end
 
     test "acknowledges unknown connections without enqueuing", %{conn: conn, secret: secret} do
@@ -202,5 +250,20 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
     header = "t=#{timestamp},v1=#{signature}"
 
     {body, header}
+  end
+
+  defp attach_audit_listener(events) do
+    handler_id = "audit-test-#{System.unique_integer([:positive])}"
+    parent = self()
+
+    telemetry_events = Enum.map(events, &[:money_tree, :audit, &1])
+
+    :telemetry.attach_many(handler_id, telemetry_events, fn event, _meas, metadata, _config ->
+      send(parent, {:audit_event, event, metadata})
+    end, nil)
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    handler_id
   end
 end
