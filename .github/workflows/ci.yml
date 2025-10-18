@@ -29,8 +29,21 @@ jobs:
         with:
           version: 10.5.2
 
-      - name: Install contract tooling
-        run: pnpm install --filter @moneytree/contracts...
+      - name: Determine pnpm store path
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -74,6 +87,18 @@ jobs:
 
       - name: Dialyzer
         run: mix dialyzer --halt-exit-status
+
+      - name: pnpm lint
+        run: pnpm lint
+
+      - name: Build shared UI styles
+        run: pnpm --filter ui build
+
+      - name: Build Phoenix assets
+        run: pnpm --filter money-tree-assets build
+
+      - name: pnpm audit
+        run: pnpm audit
 
       - name: Verify API contracts
         run: pnpm --filter @moneytree/contracts... run verify
