@@ -73,21 +73,22 @@ tunnel such as [`cloudflared tunnel`](https://developers.cloudflare.com/cloudfla
 ngrok http http://localhost:4000
 ```
 
-Update the Teller webhook URL to point at the tunnel (for example, `https://<random>.ngrok.io/api/teller/webhooks`) and set
+Update the Teller webhook URL to point at the tunnel (for example, `https://<random>.ngrok.io/api/teller/webhook`) and set
 `TELLER_WEBHOOK_HOST` if you need to override the default host in development. Always keep the tunnel process running while you
 test so Teller can deliver responses successfully.
 
 #### Teller Connect in development
 
-MoneyTree exposes Teller Connect through the Phoenix API for local testing. Use the sandbox Connect URL in your frontend (see
-`apps/money_tree/README.md`) or visit `http://localhost:4000/api/teller/connect/start` to verify that the Connect URL renders in
-the browser. The `TELLER_CONNECT_HOST` environment variable defaults to the sandbox host; only override it if Teller support
-directs you to a different environment.
+MoneyTree exposes Teller Connect through the Phoenix API for local testing. Request a Connect token from
+`POST /api/teller/connect_token` (for example, with `curl -X POST http://localhost:4000/api/teller/connect_token -H "Content-Type: application/json" -d '{"products":["accounts","transactions"]}'`)
+and pass the returned `connect_token` to the Teller Connect frontend widget. The application ID is injected automatically from
+your environment configuration. The `TELLER_CONNECT_HOST` environment variable defaults to the sandbox host; only override it if
+Teller support directs you to a different environment.
 
 #### Monitoring Oban syncs
 
 Teller synchronisation work is handled by Oban jobs. Watch the queue with the built-in telemetry endpoints (`GET /api/metrics`)
-or by connecting to the database and inspecting `oban_jobs` for the `MoneyTree.Workers.TellerSync` worker. In development you can
+or by connecting to the database and inspecting `oban_jobs` for the `MoneyTree.Teller.SyncWorker` worker. In development you can
 also start `iex -S mix phx.server` and run `Oban.drain_queue(queue: :default)` to execute pending Teller jobs manually. Failed
 jobs will retry automatically; persistent failures should be investigated using the Teller runbook (`docs/teller_runbook.md`).
 

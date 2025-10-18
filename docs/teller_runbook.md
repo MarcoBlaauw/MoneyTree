@@ -15,14 +15,16 @@ This runbook captures the day-two operations required to keep the Teller integra
 
 ## Retriggering syncs
 
-Teller synchronisation runs through `MoneyTree.Workers.TellerSync` jobs on the Oban `default` queue.
+Teller synchronisation runs through `MoneyTree.Teller.SyncWorker` jobs on the Oban `default` queue.
 
 - **Manual retry:** Use the Oban dashboard or connect to the database and run
-  `UPDATE oban_jobs SET state = 'available' WHERE worker = 'MoneyTree.Workers.TellerSync' AND state = 'retryable';`.
+  `UPDATE oban_jobs SET state = 'available' WHERE worker = 'MoneyTree.Teller.SyncWorker' AND state = 'retryable';`.
 - **Drain locally:** In development, start the server with `iex -S mix phx.server` and call
   `Oban.drain_queue(queue: :default, with_scheduled: true, with_safety: false)` to process outstanding jobs immediately.
-- **Full rebuild:** If a connection becomes unsynchronised, enqueue a fresh job via `MoneyTree.Teller.Sync.enqueue/1` from
-  `iex` with the account ID.
+- **Full rebuild:** If a connection becomes unsynchronised, fetch it in `iex`
+  (for example, `{:ok, connection} = MoneyTree.Institutions.get_connection(connection_id)`) and call
+  `MoneyTree.Synchronization.schedule_initial_sync(connection)` or
+  `MoneyTree.Synchronization.schedule_incremental_sync(connection)` to enqueue a new `MoneyTree.Teller.SyncWorker` job.
 
 ## Troubleshooting webhook failures
 
