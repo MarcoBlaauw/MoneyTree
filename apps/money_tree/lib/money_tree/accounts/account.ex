@@ -6,7 +6,9 @@ defmodule MoneyTree.Accounts.Account do
   use Ecto.Schema
 
   import Ecto.Changeset
+  import Ecto.Query
 
+  alias MoneyTree.Accounts.AccountMembership
   alias Decimal
   alias MoneyTree.Currency
   alias MoneyTree.Encrypted.Binary
@@ -20,23 +22,31 @@ defmodule MoneyTree.Accounts.Account do
   @timestamps_opts [type: :utc_datetime_usec]
 
   schema "accounts" do
-    field :name, :string
-    field :currency, :string
-    field :type, :string
-    field :subtype, :string
-    field :external_id, :string
-    field :current_balance, :decimal, default: Decimal.new("0")
-    field :available_balance, :decimal
-    field :limit, :decimal
-    field :last_synced_at, :utc_datetime_usec
-    field :encrypted_account_number, Binary
-    field :encrypted_routing_number, Binary
+    field(:name, :string)
+    field(:currency, :string)
+    field(:type, :string)
+    field(:subtype, :string)
+    field(:external_id, :string)
+    field(:current_balance, :decimal, default: Decimal.new("0"))
+    field(:available_balance, :decimal)
+    field(:limit, :decimal)
+    field(:last_synced_at, :utc_datetime_usec)
+    field(:encrypted_account_number, Binary)
+    field(:encrypted_routing_number, Binary)
 
-    belongs_to :user, User
-    belongs_to :institution, Institution
-    belongs_to :institution_connection, Connection
+    belongs_to(:user, User)
+    belongs_to(:institution, Institution)
+    belongs_to(:institution_connection, Connection)
 
-    has_many :transactions, Transaction
+    has_many(:memberships, AccountMembership)
+
+    many_to_many(:authorized_users, User,
+      join_through: AccountMembership,
+      join_keys: [account_id: :id, user_id: :id],
+      on_replace: :delete
+    )
+
+    has_many(:transactions, Transaction)
 
     timestamps()
   end
@@ -82,6 +92,25 @@ defmodule MoneyTree.Accounts.Account do
     |> foreign_key_constraint(:institution_connection_id)
     |> unique_constraint(:external_id, name: :accounts_user_id_external_id_index)
   end
+
+  def with_memberships(query) do
+    from(account in query,
+      preload: [memberships: ^from(m in AccountMembership, preload: [:user])]
+    )
+  end
+
+  def with_memberships, do: with_memberships(__MODULE__)
+
+  def with_authorized_users(query) do
+    from(account in query,
+      preload: [
+        authorized_users: ^from(u in User),
+        memberships: ^from(m in AccountMembership, preload: [:user])
+      ]
+    )
+  end
+
+  def with_authorized_users, do: with_authorized_users(__MODULE__)
 
   defp normalize_currency(currency) when is_binary(currency) do
     currency
