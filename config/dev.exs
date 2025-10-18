@@ -29,7 +29,24 @@ config :money_tree, MoneyTreeWeb.Endpoint,
   code_reloader: true,
   debug_errors: true,
   secret_key_base: "phyLbEeTQE24hcZMhVv+OA9FlwwH3+wnDnQIOffpLMPHzaOjtxVT6Sa4OaVdpRwJ",
-  watchers: []
+  watchers: [
+    tailwind: [
+      "pnpm",
+      "--filter",
+      "money-tree-assets",
+      "run",
+      "tailwind:watch",
+      cd: Path.expand("..", __DIR__)
+    ],
+    esbuild: [
+      "pnpm",
+      "--filter",
+      "money-tree-assets",
+      "run",
+      "esbuild:watch",
+      cd: Path.expand("..", __DIR__)
+    ]
+  ]
 
 config :money_tree, dev_routes: true
 

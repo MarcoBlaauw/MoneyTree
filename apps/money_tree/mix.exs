@@ -14,6 +14,7 @@ defmodule MoneyTree.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
+      releases: releases(),
       dialyzer: dialyzer()
     ]
   end
@@ -75,7 +76,11 @@ defmodule MoneyTree.MixProject do
       lint: ["format --check-formatted", "credo --strict"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "oban.migrations", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      "assets.deploy": [
+        &pnpm_assets_build/1,
+        "phx.digest"
+      ]
     ]
   end
 
@@ -85,5 +90,39 @@ defmodule MoneyTree.MixProject do
       plt_add_apps: [:mix, :iex],
       flags: [:error_handling, :race_conditions, :underspecs]
     ]
+  end
+
+  defp releases do
+    [
+      money_tree: [
+        steps: [&run_assets_deploy/1, :assemble]
+      ]
+    ]
+  end
+
+  defp run_assets_deploy(release) do
+    Mix.Task.reenable("assets.deploy")
+    Mix.Task.reenable("phx.digest")
+    Mix.Task.run("assets.deploy")
+    release
+  end
+
+  defp pnpm_assets_build(_) do
+    run_pnpm_assets!("build")
+  end
+
+  defp run_pnpm_assets!(script) do
+    root = Path.expand("../../", __DIR__)
+
+    env = [{"NODE_ENV", "production"}]
+
+    case System.cmd("pnpm", ["--filter", "money-tree-assets", "run", script],
+           cd: root,
+           env: env,
+           into: IO.stream(:stdio, :line)
+         ) do
+      {_, 0} -> :ok
+      {_, status} -> Mix.raise("assets #{script} failed with status #{status}")
+    end
   end
 end

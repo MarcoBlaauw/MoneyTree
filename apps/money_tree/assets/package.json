@@ -1,0 +1,25 @@
+{
+  "name": "money-tree-assets",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm run --parallel tailwind:watch esbuild:watch",
+    "build": "pnpm run tailwind:build && pnpm run esbuild:build",
+    "tailwind:build": "tailwindcss -c tailwind.config.cjs --input=css/app.css --output=../priv/static/assets/app.css --minify",
+    "tailwind:watch": "tailwindcss -c tailwind.config.cjs --input=css/app.css --output=../priv/static/assets/app.css --watch --poll",
+    "esbuild:build": "esbuild js/app.js --bundle --minify --sourcemap --target=es2017 --outdir=../priv/static/assets",
+    "esbuild:watch": "esbuild js/app.js --bundle --sourcemap --target=es2017 --outdir=../priv/static/assets --watch"
+  },
+  "dependencies": {
+    "@money-tree/ui": "workspace:*",
+    "phoenix": "^1.7.11",
+    "phoenix_html": "^4.1.1",
+    "phoenix_live_view": "^1.1.14"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "esbuild": "^0.25.0",
+    "postcss": "^8.4.45",
+    "tailwindcss": "3.4.x"
+  }
+}
