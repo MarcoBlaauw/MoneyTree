@@ -135,7 +135,10 @@ defmodule MoneyTree.Teller.SyncWorkerTest do
              SyncWorker.perform(%Job{args: args, attempt: 2})
 
     refreshed = Repo.get!(Connection, connection.id)
-    error_type = Map.get(refreshed.last_sync_error, :type) || Map.get(refreshed.last_sync_error, "type")
+
+    error_type =
+      Map.get(refreshed.last_sync_error, :type) || Map.get(refreshed.last_sync_error, "type")
+
     assert error_type == :missing_account_identifier or error_type == "missing_account_identifier"
     assert refreshed.last_sync_error_at
   end

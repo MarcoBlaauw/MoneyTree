@@ -17,7 +17,7 @@ defmodule MoneyTreeWeb do
   those modules here.
   """
 
-  def static_paths, do: ~w(assets favicon.ico robots.txt)
+  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
 
   def router do
     quote do
@@ -43,6 +43,43 @@ defmodule MoneyTreeWeb do
 
       import Plug.Conn
       use Gettext, backend: MoneyTreeWeb.Gettext
+
+      unquote(verified_routes())
+    end
+  end
+
+  def html do
+    quote do
+      use Phoenix.Component
+
+      import Phoenix.HTML
+      alias Phoenix.LiveView.JS
+
+      unquote(html_helpers())
+    end
+  end
+
+  def live_view do
+    quote do
+      use Phoenix.LiveView,
+        layout: {MoneyTreeWeb.Layouts, :app}
+
+      unquote(html_helpers())
+    end
+  end
+
+  def live_component do
+    quote do
+      use Phoenix.LiveComponent
+
+      unquote(html_helpers())
+    end
+  end
+
+  defp html_helpers do
+    quote do
+      import Phoenix.Component
+      import MoneyTreeWeb.CoreComponents
 
       unquote(verified_routes())
     end

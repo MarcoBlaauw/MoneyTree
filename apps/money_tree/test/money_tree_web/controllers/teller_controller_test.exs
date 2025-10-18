@@ -303,7 +303,10 @@ defmodule MoneyTreeWeb.TellerControllerTest do
       assert response == %{"error" => "institution not found"}
     end
 
-    test "returns validation errors when persistence fails", %{conn: conn, institution: institution} do
+    test "returns validation errors when persistence fails", %{
+      conn: conn,
+      institution: institution
+    } do
       Process.put({MoneyTreeWeb.TellerClientStub, :exchange_public_token}, fn _ ->
         {:ok,
          %{

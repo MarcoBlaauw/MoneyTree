@@ -235,8 +235,13 @@ defmodule MoneyTree.Teller.SynchronizerTest do
       assert info[:account_id]
 
       refreshed = Repo.get!(Connection, connection.id)
-      error_type = Map.get(refreshed.last_sync_error, :type) || Map.get(refreshed.last_sync_error, "type")
-      assert error_type == :invalid_transaction_amount or error_type == "invalid_transaction_amount"
+
+      error_type =
+        Map.get(refreshed.last_sync_error, :type) || Map.get(refreshed.last_sync_error, "type")
+
+      assert error_type == :invalid_transaction_amount or
+               error_type == "invalid_transaction_amount"
+
       assert refreshed.last_sync_error_at
     end
   end
