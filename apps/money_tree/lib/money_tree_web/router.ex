@@ -20,6 +20,7 @@ defmodule MoneyTreeWeb.Router do
     get "/metrics", HealthController, :metrics
     post "/register", AuthController, :register
     post "/login", AuthController, :login
+    post "/invitations/:token/accept", InvitationController, :accept
 
     scope "/teller" do
       post "/webhook", TellerWebhookController, :webhook
@@ -38,6 +39,8 @@ defmodule MoneyTreeWeb.Router do
 
       delete "/logout", AuthController, :logout
       get "/me", AuthController, :me
+      post "/accounts/:account_id/invitations", InvitationController, :create
+      delete "/accounts/:account_id/invitations/:id", InvitationController, :revoke
     end
 
     scope "/owner" do

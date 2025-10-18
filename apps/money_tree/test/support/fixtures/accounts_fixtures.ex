@@ -87,4 +87,17 @@ defmodule MoneyTree.AccountsFixtures do
     {:ok, session, token} = Accounts.create_session(user, attrs)
     %{session: session, token: token}
   end
+
+  def invitation_fixture(account, inviter, attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    email = Map.get(attrs, :email) || Map.get(attrs, "email") || unique_user_email()
+
+    params =
+      attrs
+      |> Map.put(:email, email)
+
+    {:ok, invitation, token} = Accounts.create_account_invitation(inviter, account, params)
+
+    %{invitation: Repo.preload(invitation, [:invitee, :inviter]), token: token}
+  end
 end

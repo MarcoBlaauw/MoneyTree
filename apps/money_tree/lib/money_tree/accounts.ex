@@ -7,12 +7,19 @@ defmodule MoneyTree.Accounts do
   import Ecto.Query, warn: false
 
   alias Ecto.Changeset
+  alias Ecto.Multi
+  alias MoneyTree.Accounts.Account
+  alias MoneyTree.Accounts.AccountInvitation
+  alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Audit
+  alias MoneyTree.Mailer
   alias MoneyTree.Repo
   alias MoneyTree.Sessions.Session
   alias MoneyTree.Users.User
+  alias Swoosh.Email
 
   @default_session_ttl 60 * 60 * 24 * 30
+  @default_invitation_ttl 60 * 60 * 24 * 7
 
   @doc """
   Registers a new user, hashing the provided password with Argon2.
@@ -155,10 +162,294 @@ defmodule MoneyTree.Accounts do
     |> Keyword.get(:session_ttl, @default_session_ttl)
   end
 
+  @doc """
+  Creates a new invitation for the given account and sends a notification email.
+  """
+  @spec create_account_invitation(User.t(), Account.t()) ::
+          {:ok, AccountInvitation.t(), String.t()} | {:error, term()}
+  def create_account_invitation(%User{} = inviter, %Account{} = account) do
+    create_account_invitation(inviter, account, %{})
+  end
+
+  @spec create_account_invitation(User.t(), Account.t(), map()) ::
+          {:ok, AccountInvitation.t(), String.t()} | {:error, term()}
+  def create_account_invitation(%User{} = inviter, %Account{} = account, attrs)
+      when is_map(attrs) do
+    with :ok <- ensure_account_access(inviter.id, account),
+         {:ok, email} <- fetch_email(attrs),
+         :ok <- ensure_not_already_member(account.id, email),
+         :ok <- ensure_no_pending_invitation(account.id, email),
+         {:ok, expires_at} <- invitation_expiration(attrs) do
+      token = generate_invitation_token()
+
+      params =
+        attrs
+        |> Map.drop([:token, "token"])
+        |> Map.put(:email, email)
+        |> Map.put(:expires_at, expires_at)
+        |> Map.put(:token_hash, hash_invitation_token(token))
+        |> Map.put(:account_id, account.id)
+        |> Map.put(:user_id, inviter.id)
+        |> Map.put_new(:status, :pending)
+
+      %AccountInvitation{}
+      |> AccountInvitation.changeset(params)
+      |> Repo.insert()
+      |> case do
+        {:ok, invitation} ->
+          deliver_invitation_email(invitation, token)
+          {:ok, invitation, token}
+
+        {:error, %Changeset{} = changeset} ->
+          {:error, changeset}
+      end
+    end
+  end
+
+  @doc """
+  Revokes a pending invitation, preventing further use of its token.
+  """
+  @spec revoke_account_invitation(User.t(), AccountInvitation.t()) ::
+          {:ok, AccountInvitation.t()} | {:error, term()}
+  def revoke_account_invitation(%User{} = actor, %AccountInvitation{} = invitation) do
+    with :ok <- ensure_account_access(actor.id, invitation.account_id),
+         :ok <- ensure_pending(invitation) do
+      invitation
+      |> Changeset.change(status: :revoked)
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Accepts an invitation token, authenticating or creating the invitee and granting membership.
+  """
+  @spec accept_account_invitation(String.t(), map()) ::
+          {:ok, AccountInvitation.t(), AccountMembership.t()} | {:error, term()}
+  def accept_account_invitation(token, params) when is_binary(token) and is_map(params) do
+    with {:ok, invitation} <- fetch_invitation(token),
+         :ok <- ensure_pending(invitation),
+         :ok <- ensure_not_expired(invitation),
+         {:ok, user} <- resolve_invitee(invitation, params),
+         :ok <- ensure_not_already_member(invitation.account_id, user.id) do
+      multi =
+        Multi.new()
+        |> Multi.insert(:membership, invitation_membership_changeset(invitation, user))
+        |> Multi.update(:invitation, invitation_accept_changeset(invitation, user))
+
+      case Repo.transaction(multi) do
+        {:ok, %{invitation: updated_invitation, membership: membership}} ->
+          {:ok, updated_invitation, membership}
+
+        {:error, :membership, %Changeset{} = changeset, _} ->
+          {:error, changeset}
+
+        {:error, :invitation, %Changeset{} = changeset, _} ->
+          {:error, changeset}
+      end
+    end
+  end
+
   defp normalize_email(email) do
     email
     |> String.trim()
     |> String.downcase()
+  end
+
+  defp fetch_email(attrs) do
+    case Map.get(attrs, :email) || Map.get(attrs, "email") do
+      nil -> {:error, :email_required}
+      email -> {:ok, normalize_email(email)}
+    end
+  end
+
+  defp ensure_account_access(user_id, %Account{} = account) do
+    ensure_account_access(user_id, account.id, account.user_id)
+  end
+
+  defp ensure_account_access(user_id, account_id) do
+    account_owner_id =
+      from(a in Account, where: a.id == ^account_id, select: a.user_id)
+      |> Repo.one()
+
+    ensure_account_access(user_id, account_id, account_owner_id)
+  end
+
+  defp ensure_account_access(user_id, account_id, owner_id) do
+    cond do
+      owner_id == user_id ->
+        :ok
+
+      Repo.exists?(
+        from m in AccountMembership,
+          where: m.account_id == ^account_id and m.user_id == ^user_id and is_nil(m.revoked_at)
+      ) ->
+        :ok
+
+      true ->
+        {:error, :unauthorized}
+    end
+  end
+
+  defp ensure_not_already_member(account_id, email) when is_binary(email) do
+    case get_user_by_email(email) do
+      nil -> :ok
+      %User{id: user_id} -> ensure_not_already_member(account_id, user_id)
+    end
+  end
+
+  defp ensure_not_already_member(account_id, user_id)
+       when is_binary(account_id) and is_binary(user_id) do
+    if Repo.exists?(
+         from m in AccountMembership,
+           where: m.account_id == ^account_id and m.user_id == ^user_id and is_nil(m.revoked_at)
+       ) do
+      {:error, :already_member}
+    else
+      :ok
+    end
+  end
+
+  defp ensure_no_pending_invitation(account_id, email) do
+    if Repo.exists?(
+         from i in AccountInvitation,
+           where: i.account_id == ^account_id and i.email == ^email and i.status == :pending
+       ) do
+      {:error, :already_invited}
+    else
+      :ok
+    end
+  end
+
+  defp invitation_expiration(attrs) do
+    case Map.get(attrs, :expires_at) || Map.get(attrs, "expires_at") do
+      nil ->
+        {:ok,
+         DateTime.utc_now()
+         |> DateTime.add(@default_invitation_ttl, :second)
+         |> DateTime.truncate(:microsecond)}
+
+      %DateTime{} = datetime ->
+        {:ok, DateTime.truncate(datetime, :microsecond)}
+
+      value when is_binary(value) ->
+        case DateTime.from_iso8601(value) do
+          {:ok, datetime, _offset} ->
+            {:ok, DateTime.truncate(datetime, :microsecond)}
+
+          {:error, _reason} ->
+            {:error, :invalid_expiration}
+        end
+
+      _other ->
+        {:error, :invalid_expiration}
+    end
+  end
+
+  defp ensure_pending(%AccountInvitation{status: :pending}), do: :ok
+  defp ensure_pending(%AccountInvitation{status: :accepted}), do: {:error, :already_accepted}
+  defp ensure_pending(%AccountInvitation{status: :revoked}), do: {:error, :revoked}
+  defp ensure_pending(%AccountInvitation{status: :expired}), do: {:error, :expired}
+
+  defp ensure_not_expired(%AccountInvitation{} = invitation) do
+    if DateTime.compare(invitation.expires_at, DateTime.utc_now()) == :lt do
+      invitation
+      |> Changeset.change(status: :expired)
+      |> Repo.update()
+
+      {:error, :expired}
+    else
+      :ok
+    end
+  end
+
+  defp resolve_invitee(%AccountInvitation{} = invitation, params) do
+    password = Map.get(params, :password) || Map.get(params, "password")
+
+    with password when is_binary(password) <- password do
+      case get_user_by_email(invitation.email) do
+        nil ->
+          encrypted_full_name =
+            Map.get(params, :encrypted_full_name) || Map.get(params, "encrypted_full_name")
+
+          if is_binary(encrypted_full_name) do
+            register_user(%{
+              email: invitation.email,
+              password: password,
+              encrypted_full_name: encrypted_full_name
+            })
+          else
+            {:error, :full_name_required}
+          end
+
+        %User{} = _existing ->
+          authenticate_user(invitation.email, password)
+      end
+    else
+      _ -> {:error, :password_required}
+    end
+  end
+
+  defp invitation_membership_changeset(%AccountInvitation{} = invitation, %User{} = user) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    %AccountMembership{}
+    |> AccountMembership.changeset(%{
+      account_id: invitation.account_id,
+      user_id: user.id,
+      role: :member,
+      invited_at: invitation.inserted_at,
+      accepted_at: now
+    })
+  end
+
+  defp invitation_accept_changeset(%AccountInvitation{} = invitation, %User{} = user) do
+    invitation
+    |> Changeset.change(%{status: :accepted, invitee_user_id: user.id})
+  end
+
+  defp fetch_invitation(token) do
+    token_hash = hash_invitation_token(token)
+
+    case Repo.one(from i in AccountInvitation, where: i.token_hash == ^token_hash) do
+      nil -> {:error, :not_found}
+      %AccountInvitation{} = invitation -> {:ok, invitation}
+    end
+  end
+
+  defp deliver_invitation_email(%AccountInvitation{} = invitation, token) do
+    sender =
+      Application.get_env(
+        :money_tree,
+        :invitation_sender,
+        {"MoneyTree", "no-reply@moneytree.app"}
+      )
+
+    invitation_link =
+      Application.get_env(
+        :money_tree,
+        :invitation_base_url,
+        "https://app.moneytree.test/invitations/#{token}"
+      )
+
+    body =
+      "You have been invited to join account #{invitation.account_id}. " <>
+        "Use the token #{token} to accept at #{invitation_link}."
+
+    Email.new()
+    |> Email.to(invitation.email)
+    |> Email.from(sender)
+    |> Email.subject("You're invited to MoneyTree")
+    |> Email.text_body(body)
+    |> Mailer.deliver()
+
+    :ok
+  end
+
+  defp get_user_by_email(email) when is_binary(email) do
+    normalized_email = normalize_email(email)
+
+    from(u in User, where: fragment("LOWER(?)", u.email) == ^normalized_email)
+    |> Repo.one()
   end
 
   defp put_password_hash(changeset) do
@@ -246,6 +537,15 @@ defmodule MoneyTree.Accounts do
   end
 
   defp hash_session_token(token) when is_binary(token) do
+    :crypto.hash(:sha256, token)
+  end
+
+  defp generate_invitation_token do
+    :crypto.strong_rand_bytes(32)
+    |> Base.url_encode64(padding: false)
+  end
+
+  defp hash_invitation_token(token) when is_binary(token) do
     :crypto.hash(:sha256, token)
   end
 end
