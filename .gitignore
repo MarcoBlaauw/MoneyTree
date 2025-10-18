@@ -15,3 +15,8 @@ node_modules/
 /.pnpm-store/
 /pnpm-debug.log
 dist/
+apps/money_tree/priv/static/assets/
+apps/money_tree/priv/static/cache_manifest.json
+apps/money_tree/priv/static/*.gz
+apps/money_tree/priv/static/*-*.ico
+apps/money_tree/priv/static/*-*.txt
