@@ -17,6 +17,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.5.2
+
+      - name: Install contract tooling
+        run: pnpm install --filter @moneytree/contracts...
+
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
@@ -59,3 +74,6 @@ jobs:
 
       - name: Dialyzer
         run: mix dialyzer --halt-exit-status
+
+      - name: Verify API contracts
+        run: pnpm --filter @moneytree/contracts... run verify

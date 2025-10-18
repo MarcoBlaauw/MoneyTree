@@ -1,0 +1,31 @@
+{
+  "name": "@moneytree/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.5.2",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "generate": "pnpm run generate:openapi && pnpm run generate:graphql",
+    "generate:openapi": "openapi-typescript \"specs/openapi.yaml\" --output \"src/generated/rest.ts\"",
+    "generate:graphql": "graphql-codegen --config codegen.ts",
+    "verify": "pnpm run verify:openapi && pnpm run verify:graphql",
+    "verify:openapi": "openapi-typescript \"specs/openapi.yaml\" --output \"src/generated/rest.ts\" --check",
+    "verify:graphql": "graphql-codegen --config codegen.ts --check"
+  },
+  "dependencies": {
+    "@graphql-typed-document-node/core": "^3.2.0",
+    "graphql": "^16.9.0"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "^5.0.4",
+    "@graphql-codegen/typescript": "^4.1.0",
+    "@graphql-codegen/typescript-operations": "^4.2.0",
+    "@graphql-codegen/typed-document-node": "^5.0.2",
+    "openapi-typescript": "^7.5.1",
+    "typescript": "^5.5.4"
+  }
+}
