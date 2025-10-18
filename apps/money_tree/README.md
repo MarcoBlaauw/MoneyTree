@@ -13,8 +13,10 @@ Ready to run in production? Please [check our deployment guides](https://hexdocs
 
 The Phoenix API exposes endpoints to help the frontend exercise Teller Connect during development:
 
-- `GET /api/teller/connect/start` – returns a sandbox Connect URL seeded with your `TELLER_CONNECT_APPLICATION_ID`.
-- `POST /api/teller/webhooks` – receives Teller webhook callbacks; run a tunnel (ngrok, cloudflared, etc.) so Teller can reach
+- `POST /api/teller/connect_token` – creates a sandbox Connect token scoped by the provided parameters.
+- `POST /api/teller/exchange` – exchanges a Teller public token for a persisted MoneyTree connection.
+- `POST /api/teller/revoke` – marks an existing Teller connection as revoked for the signed-in user.
+- `POST /api/teller/webhook` – receives Teller webhook callbacks; run a tunnel (ngrok, cloudflared, etc.) so Teller can reach
   your local server when testing end-to-end flows.
 
 Refer to the repository root `README.md` for environment variable configuration and operational runbooks.
