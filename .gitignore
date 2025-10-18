@@ -11,3 +11,7 @@
 *.ez
 erl_crash.dump
 .fetch
+node_modules/
+/.pnpm-store/
+/pnpm-debug.log
+dist/
