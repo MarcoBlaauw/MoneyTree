@@ -1,0 +1,38 @@
+openapi: 3.1.0
+info:
+  title: MoneyTree Contracts API
+  version: 0.1.0
+servers:
+  - url: https://api.moneytree.local
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      operationId: getHealth
+      responses:
+        '200':
+          description: Successful health response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      description: Application health metadata
+      properties:
+        status:
+          type: string
+          description: Current service status
+          enum:
+            - healthy
+            - degraded
+            - down
+        timestamp:
+          type: string
+          format: date-time
+          description: Time the health snapshot was produced
+      required:
+        - status
+        - timestamp

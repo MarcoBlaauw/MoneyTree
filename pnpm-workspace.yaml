@@ -2,3 +2,4 @@ packages:
   - apps/ui
   - apps/money_tree/assets
   - apps/next
+  - apps/contracts

@@ -1,0 +1,19 @@
+schema {
+  query: Query
+}
+
+type Query {
+  health: HealthSnapshot!
+}
+
+type HealthSnapshot {
+  status: HealthStatus!
+  timestamp: String!
+  version: String
+}
+
+enum HealthStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+}
