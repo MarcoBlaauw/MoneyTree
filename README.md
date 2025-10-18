@@ -116,14 +116,19 @@ mix run priv/repo/seeds.exs
 
 ## Running Checks
 
-Quality checks should be run from the umbrella root:
+Quality checks should be run from the umbrella root and mirror the CI workflow:
 
-- `mix deps.get` – install or update dependencies.
+- `pnpm install --frozen-lockfile` – install workspace dependencies using the exact lockfile versions.
+- `mix deps.get` – install or update Elixir dependencies.
 - `mix compile --warnings-as-errors` – ensure the codebase compiles cleanly.
 - `mix lint` – runs `mix format --check-formatted` and `mix credo --strict` via the MoneyTree app.
 - `mix test` – execute the test suite (uses the SQL sandbox).
 - `mix dialyzer --halt-exit-status` – static analysis; the first run will build and cache the PLT.
+- `pnpm lint` – run all workspace lint tasks (Tailwind validation in the UI package).
 - `pnpm --filter ui build` – compile the shared Tailwind preset and verify frontend styles build successfully.
+- `pnpm --filter money-tree-assets build` – build Phoenix asset bundles for the MoneyTree app.
+- `pnpm audit` – scan the workspace for known vulnerabilities.
+- `pnpm --filter @moneytree/contracts... run verify` – confirm API contract definitions are up to date.
 
 Format sources as you work with `mix format`.
 
