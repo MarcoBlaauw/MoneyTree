@@ -47,9 +47,10 @@ defmodule MoneyTree.Institutions.ConnectionTest do
 
       raw_value =
         Repo.one!(
-          from c in "institution_connections",
+          from(c in "institution_connections",
             select: c.encrypted_credentials,
             where: c.id == ^connection.id
+          )
         )
 
       assert connection.encrypted_credentials == "super-secret"
@@ -70,6 +71,48 @@ defmodule MoneyTree.Institutions.ConnectionTest do
       assert byte_size(new_secret) >= 32
       assert updated.webhook_secret == new_secret
       refute new_secret == original_secret
+    end
+  end
+
+  describe "shared access" do
+    setup do
+      owner = AccountsFixtures.user_fixture()
+      member = AccountsFixtures.user_fixture()
+      connection = InstitutionsFixtures.connection_fixture(owner)
+
+      account =
+        AccountsFixtures.account_fixture(owner, %{
+          institution_id: connection.institution_id,
+          institution_connection_id: connection.id
+        })
+
+      AccountsFixtures.primary_membership_fixture(account)
+      AccountsFixtures.membership_fixture(account, member, %{role: :member})
+
+      {:ok, owner: owner, member: member, connection: connection}
+    end
+
+    test "members can retrieve active connections", %{member: member, connection: connection} do
+      assert {:ok, fetched} =
+               Institutions.get_active_connection_for_user(member, connection.id,
+                 preload: [:accounts]
+               )
+
+      assert fetched.id == connection.id
+
+      connections = Institutions.list_active_connections(member)
+      assert Enum.map(connections, & &1.id) == [connection.id]
+    end
+
+    test "membership does not grant mutation privileges", %{
+      member: member,
+      connection: connection
+    } do
+      assert {:error, :not_found} =
+               Institutions.update_connection_tokens(member, %{
+                 connection_id: connection.id,
+                 teller_user_id: "shared-user"
+               })
     end
   end
 

@@ -14,6 +14,7 @@ defmodule MoneyTree.Institutions do
   alias Ecto.Changeset
   alias Ecto.Multi
   alias MoneyTree.Accounts.Account
+  alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Institutions.Institution
   alias MoneyTree.Repo
@@ -213,8 +214,19 @@ defmodule MoneyTree.Institutions do
           {:ok, Connection.t()} | {:error, :not_found | :revoked}
   def get_active_connection_for_user(user, connection_id, opts \\ [])
       when is_binary(connection_id) do
-    with {:ok, connection} <- fetch_owned_connection(user, connection_id, opts) do
-      enforce_active(connection)
+    user_id = normalize_user_id(user)
+
+    query =
+      user_id
+      |> authorized_connections_query()
+      |> where([c], c.id == ^connection_id)
+
+    query
+    |> apply_preloads(opts)
+    |> Repo.one()
+    |> case do
+      nil -> {:error, :not_found}
+      connection -> enforce_active(connection)
     end
   end
 
@@ -225,9 +237,12 @@ defmodule MoneyTree.Institutions do
           {:ok, Connection.t()} | {:error, :not_found | :revoked}
   def get_active_connection_for_institution(user, institution_id, opts \\ [])
       when is_binary(institution_id) do
+    user_id = normalize_user_id(user)
+
     query =
-      from c in Connection,
-        where: c.user_id == ^normalize_user_id(user) and c.institution_id == ^institution_id
+      user_id
+      |> authorized_connections_query()
+      |> where([c], c.institution_id == ^institution_id)
 
     query
     |> apply_preloads(opts)
@@ -245,9 +260,12 @@ defmodule MoneyTree.Institutions do
           {:ok, Connection.t()} | {:error, :not_found}
   def get_connection_for_institution(user, institution_id, opts \\ [])
       when is_binary(institution_id) do
+    user_id = normalize_user_id(user)
+
     query =
-      from c in Connection,
-        where: c.user_id == ^normalize_user_id(user) and c.institution_id == ^institution_id
+      user_id
+      |> authorized_connections_query()
+      |> where([c], c.institution_id == ^institution_id)
 
     query
     |> apply_preloads(opts)
@@ -266,8 +284,9 @@ defmodule MoneyTree.Institutions do
 
   def get_connection(connection_id, opts) when is_binary(connection_id) do
     query =
-      from c in Connection,
+      from(c in Connection,
         where: c.id == ^connection_id
+      )
 
     query
     |> apply_preloads(opts)
@@ -299,8 +318,9 @@ defmodule MoneyTree.Institutions do
   def get_active_connection_by_webhook(webhook_secret, opts \\ [])
       when is_binary(webhook_secret) do
     query =
-      from c in Connection,
+      from(c in Connection,
         where: c.webhook_secret == ^webhook_secret
+      )
 
     query
     |> apply_preloads(opts)
@@ -316,17 +336,16 @@ defmodule MoneyTree.Institutions do
   """
   @spec list_active_connections(user_ref(), keyword()) :: [Connection.t()]
   def list_active_connections(user, opts \\ []) do
-    base_query =
-      from c in Connection,
-        where: c.user_id == ^normalize_user_id(user)
+    user_id = normalize_user_id(user)
 
     query =
       case Keyword.get(opts, :institution_id) do
         nil ->
-          base_query
+          authorized_connections_query(user_id)
 
         institution_id when is_binary(institution_id) ->
-          from c in base_query, where: c.institution_id == ^institution_id
+          authorized_connections_query(user_id)
+          |> where([c], c.institution_id == ^institution_id)
       end
 
     query
@@ -382,14 +401,25 @@ defmodule MoneyTree.Institutions do
     preload = Keyword.get(opts, :preload, [])
 
     query =
-      from c in Connection,
+      from(c in Connection,
         where: c.id == ^connection_id and c.user_id == ^normalize_user_id(user),
         preload: ^preload
+      )
 
     case Repo.one(query) do
       nil -> {:error, :not_found}
       %Connection{} = connection -> {:ok, connection}
     end
+  end
+
+  defp authorized_connections_query(user_id) do
+    from(c in Connection,
+      left_join: a in assoc(c, :accounts),
+      left_join: m in AccountMembership,
+      on: m.account_id == a.id and m.user_id == ^user_id,
+      where: c.user_id == ^user_id or not is_nil(m.id),
+      distinct: true
+    )
   end
 
   defp enforce_active(%Connection{} = connection) do
@@ -477,7 +507,7 @@ defmodule MoneyTree.Institutions do
 
     case preloads do
       [] -> query
-      _ -> from c in query, preload: ^preloads
+      _ -> from(c in query, preload: ^preloads)
     end
   end
 

@@ -6,7 +6,9 @@ defmodule MoneyTree.Users.User do
   use Ecto.Schema
 
   import Ecto.Changeset
+  import Ecto.Query
 
+  alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Encrypted.Binary
   alias MoneyTree.Sessions.Session
@@ -18,14 +20,22 @@ defmodule MoneyTree.Users.User do
   @timestamps_opts [type: :utc_datetime_usec]
 
   schema "users" do
-    field :email, :string
-    field :password_hash, :string
-    field :encrypted_full_name, Binary
-    field :password, :string, virtual: true
-    field :role, Ecto.Enum, values: @roles, default: :member
+    field(:email, :string)
+    field(:password_hash, :string)
+    field(:encrypted_full_name, Binary)
+    field(:password, :string, virtual: true)
+    field(:role, Ecto.Enum, values: @roles, default: :member)
 
-    has_many :accounts, Account
-    has_many :sessions, Session
+    has_many(:accounts, Account)
+    has_many(:memberships, AccountMembership)
+
+    many_to_many(:shared_accounts, Account,
+      join_through: AccountMembership,
+      join_keys: [user_id: :id, account_id: :id],
+      on_replace: :delete
+    )
+
+    has_many(:sessions, Session)
 
     timestamps()
   end
@@ -58,6 +68,27 @@ defmodule MoneyTree.Users.User do
   end
 
   def roles, do: @roles
+
+  def with_memberships(query) do
+    from(user in query,
+      preload: [memberships: ^from(m in AccountMembership, preload: [:account])]
+    )
+  end
+
+  def with_memberships, do: with_memberships(__MODULE__)
+
+  def with_shared_accounts(query) do
+    from(user in query,
+      preload: [
+        shared_accounts:
+          ^from(a in Account,
+            preload: [memberships: ^from(m in AccountMembership, preload: [:user])]
+          )
+      ]
+    )
+  end
+
+  def with_shared_accounts, do: with_shared_accounts(__MODULE__)
 
   defp normalize_email(email) when is_binary(email) do
     email
