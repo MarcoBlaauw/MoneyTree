@@ -1,0 +1,12 @@
+<div class="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-6 py-10">
+  <.flash flash={@flash} :let={{kind, message}}>
+    <div class="rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm shadow">
+      <p class="font-medium capitalize text-zinc-700"><%= kind %></p>
+      <p class="text-zinc-600"><%= message %></p>
+    </div>
+  </.flash>
+
+  <main class="flex-1">
+    <%= @inner_content %>
+  </main>
+</div>
