@@ -83,11 +83,15 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
 
       _response = post(conn, ~p"/api/teller/webhook", body)
 
-      assert_receive {:audit_event, [:money_tree, :audit, :teller_webhook_received], received_meta}
+      assert_receive {:audit_event, [:money_tree, :audit, :teller_webhook_received],
+                      received_meta}
+
       assert received_meta[:connection_id] == connection.id
       assert received_meta[:event] == "accounts.updated"
 
-      assert_receive {:audit_event, [:money_tree, :audit, :teller_webhook_processed], processed_meta}
+      assert_receive {:audit_event, [:money_tree, :audit, :teller_webhook_processed],
+                      processed_meta}
+
       assert processed_meta[:connection_id] == connection.id
       assert processed_meta[:event] == "accounts.updated"
     end
@@ -124,7 +128,9 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
 
       _response = post(conn, ~p"/api/teller/webhook", body)
 
-      assert_receive {:audit_event, [:money_tree, :audit, :teller_webhook_signature_invalid], metadata}
+      assert_receive {:audit_event, [:money_tree, :audit, :teller_webhook_signature_invalid],
+                      metadata}
+
       assert metadata[:remote_ip]
     end
 
@@ -258,9 +264,14 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
 
     telemetry_events = Enum.map(events, &[:money_tree, :audit, &1])
 
-    :telemetry.attach_many(handler_id, telemetry_events, fn event, _meas, metadata, _config ->
-      send(parent, {:audit_event, event, metadata})
-    end, nil)
+    :telemetry.attach_many(
+      handler_id,
+      telemetry_events,
+      fn event, _meas, metadata, _config ->
+        send(parent, {:audit_event, event, metadata})
+      end,
+      nil
+    )
 
     on_exit(fn -> :telemetry.detach(handler_id) end)
 
