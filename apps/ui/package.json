@@ -1,0 +1,18 @@
+{
+  "name": "ui",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "BROWSERSLIST_IGNORE_OLD_DATA=1 tailwindcss -c tailwind.config.js -i ./index.css -o ./dist/index.css --minify",
+    "dev": "BROWSERSLIST_IGNORE_OLD_DATA=1 tailwindcss -c tailwind.config.js -i ./index.css -o ./dist/index.css --watch",
+    "lint": "BROWSERSLIST_IGNORE_OLD_DATA=1 tailwindcss -c tailwind.config.js -i ./index.css -o /tmp/tailwindcss.lint.css --minify"
+  },
+  "devDependencies": {
+    "@tailwindcss/forms": "^0.5.9",
+    "@tailwindcss/line-clamp": "^0.4.4",
+    "@tailwindcss/typography": "^0.5.15",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.45",
+    "tailwindcss": "^3.4.10"
+  }
+}

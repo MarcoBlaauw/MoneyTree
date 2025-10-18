@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-transparent bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-primary hover:bg-primary/10 hover:text-primary;
+  }
+
+  .card {
+    @apply rounded-lg border border-slate-200/80 bg-white/60 p-6 shadow;
+  }
+
+  .field {
+    @apply flex flex-col gap-1;
+  }
+
+  .label {
+    @apply text-sm font-medium text-slate-600;
+  }
+}

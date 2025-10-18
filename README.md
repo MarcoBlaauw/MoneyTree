@@ -44,6 +44,11 @@ After installation, make sure `mix` is available on your `PATH` (`mix --version`
    mix phx.server
    ```
 
+6. Install JavaScript dependencies with [pnpm](https://pnpm.io/) to enable the shared Tailwind preset and upcoming frontends:
+   ```bash
+   pnpm install
+   ```
+
 When you're finished working, stop the database container to free resources:
 
 ```bash
@@ -118,6 +123,7 @@ Quality checks should be run from the umbrella root:
 - `mix lint` – runs `mix format --check-formatted` and `mix credo --strict` via the MoneyTree app.
 - `mix test` – execute the test suite (uses the SQL sandbox).
 - `mix dialyzer --halt-exit-status` – static analysis; the first run will build and cache the PLT.
+- `pnpm --filter ui build` – compile the shared Tailwind preset and verify frontend styles build successfully.
 
 Format sources as you work with `mix format`.
 
