@@ -1,0 +1,17 @@
+<section class="mx-auto mt-24 w-full max-w-md space-y-8">
+  <div class="space-y-2 text-center">
+    <h1 class="text-3xl font-semibold text-zinc-900">Sign in to MoneyTree</h1>
+    <p class="text-sm text-zinc-600">Use your account credentials to access the app.</p>
+  </div>
+
+  <.simple_form for={@form} action={~p"/login"} method="post" class="space-y-4">
+    <.input field={@form[:email]} type={:email} label="Email" />
+    <.input field={@form[:password]} type={:password} label="Password" />
+
+    <.button class="w-full justify-center">Sign in</.button>
+  </.simple_form>
+
+  <p class="text-center text-sm text-zinc-500">
+    Don't have an account? Contact your administrator for an invitation.
+  </p>
+</section>
