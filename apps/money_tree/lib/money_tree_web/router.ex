@@ -1,6 +1,18 @@
 defmodule MoneyTreeWeb.Router do
   use MoneyTreeWeb, :router
 
+  import Phoenix.LiveView.Router
+
+  pipeline :browser do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :fetch_live_flash
+    plug :put_root_layout, {MoneyTreeWeb.Layouts, :root}
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+    plug MoneyTreeWeb.Plugs.FetchCurrentUser
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -11,6 +23,10 @@ defmodule MoneyTreeWeb.Router do
 
   pipeline :api_owner do
     plug MoneyTreeWeb.Plugs.Authenticate, roles: [:owner]
+  end
+
+  pipeline :require_authenticated_user do
+    plug MoneyTreeWeb.Plugs.RequireAuthenticatedUser
   end
 
   scope "/api", MoneyTreeWeb do
@@ -47,6 +63,25 @@ defmodule MoneyTreeWeb.Router do
       pipe_through :api_owner
 
       get "/dashboard", AuthController, :owner_dashboard
+    end
+  end
+
+  scope "/", MoneyTreeWeb do
+    pipe_through :browser
+
+    get "/login", SessionController, :new
+    post "/login", SessionController, :create
+    delete "/logout", SessionController, :delete
+  end
+
+  scope "/", MoneyTreeWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    live_session :app,
+      on_mount: [MoneyTreeWeb.Plugs.RequireAuthenticatedUser] do
+      live "/app/dashboard", AppDashboardLive
+      live "/app/transfers", AppTransfersLive
+      live "/app/settings", AppSettingsLive
     end
   end
 
