@@ -30,6 +30,29 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
     |> Base.encode64()
   end
 
+  @vendor_script_sources [
+    "https://cdn.plaid.com",
+    "https://cdn.teller.io",
+    "https://withpersona.com"
+  ]
+
+  @vendor_frame_sources [
+    "https://cdn.plaid.com",
+    "https://link.plaid.com",
+    "https://connect.teller.io",
+    "https://withpersona.com",
+    "https://app.withpersona.com"
+  ]
+
+  @vendor_connect_sources [
+    "https://api.plaid.com",
+    "https://cdn.plaid.com",
+    "https://connect.teller.io",
+    "https://api.teller.io",
+    "https://withpersona.com",
+    "https://api.withpersona.com"
+  ]
+
   defp build_csp_header(nonce) do
     [
       "default-src 'self'",
@@ -40,8 +63,9 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
       "img-src 'self' data:",
       "font-src 'self'",
       "style-src 'self' 'nonce-#{nonce}'",
-      "script-src 'self' 'nonce-#{nonce}'",
-      "connect-src 'self'"
+      "script-src 'self' 'nonce-#{nonce}' #{Enum.join(@vendor_script_sources, " ")}",
+      "frame-src 'self' #{Enum.join(@vendor_frame_sources, " ")}",
+      "connect-src 'self' #{Enum.join(@vendor_connect_sources, " ")}"
     ]
     |> Enum.join("; ")
   end
