@@ -1,0 +1,10 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="automationTitle">
+  <title id="automationTitle">Automation icon</title>
+  <rect x="6" y="10" width="52" height="44" rx="14" fill="#1f2937" />
+  <path d="M18 24h28c2.2 0 4 1.8 4 4v12c0 2.2-1.8 4-4 4H18c-2.2 0-4-1.8-4-4V28c0-2.2 1.8-4 4-4Z" fill="#0ea5e9" />
+  <circle cx="24" cy="34" r="6" fill="#2563eb" />
+  <path d="M24 30c2.2 0 4 1.8 4 4 0 2.2-1.8 4-4 4v-8Z" fill="#f8fafc" />
+  <path d="M36 30h6a4 4 0 0 1 4 4v0a4 4 0 0 1-4 4h-6v-8Z" fill="#0f172a" fill-opacity="0.6" />
+  <rect x="26" y="16" width="12" height="8" rx="4" fill="#2563eb" />
+  <rect x="20" y="48" width="24" height="4" rx="2" fill="#0f172a" fill-opacity="0.6" />
+</svg>
