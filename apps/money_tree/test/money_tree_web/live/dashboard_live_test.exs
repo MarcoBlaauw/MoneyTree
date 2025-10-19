@@ -9,31 +9,28 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
-  alias MoneyTreeWeb.Auth
 
-  setup %{conn: conn} do
-    user = user_fixture()
-    %{token: token} = session_fixture(user, %{context: "test"})
+  setup :register_and_log_in_user
 
-    {:ok,
-     conn: authed_conn(conn, token),
-     user: user}
-  end
+  test "includes CSP meta tags and masks balances by default", %{conn: conn, user: user} do
+    account =
+      account_fixture(user, %{
+        current_balance: Decimal.new("100.50"),
+        available_balance: Decimal.new("80.25")
+      })
 
-  test "masks balances by default and reveals them on toggle", %{conn: conn, user: user} do
-    account = account_fixture(user, %{current_balance: Decimal.new("100.50"), available_balance: Decimal.new("80.25")})
     insert_transaction(account, %{amount: Decimal.new("25.00"), description: "Coffee"})
 
     {:ok, view, html} = live(conn, ~p"/app/dashboard")
 
+    assert html =~ "<meta name=\"csp-nonce\""
+    assert html =~ "<meta name=\"csp-script-src\""
+    assert html =~ "<meta name=\"csp-style-src\""
     assert html =~ "Dashboard"
     assert html =~ "••"
     refute html =~ "USD 100.50"
 
-    view
-    |> element("#toggle-balances")
-    |> render_click()
-
+    view |> element("#toggle-balances") |> render_click()
     assert render(view) =~ "USD 100.50"
     assert render(view) =~ "USD 80.25"
   end
@@ -80,14 +77,5 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     %Transaction{}
     |> Transaction.changeset(params)
     |> Repo.insert!()
-  end
-
-  defp authed_conn(conn, token) do
-    cookie_name = Auth.session_cookie_name()
-
-    conn
-    |> recycle()
-    |> init_test_session(%{user_token: token})
-    |> put_req_cookie(cookie_name, token)
   end
 end

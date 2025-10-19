@@ -63,7 +63,7 @@ defmodule MoneyTreeWeb.CoreComponents do
   attr :field, Phoenix.HTML.FormField, required: true
   attr :type, :atom, default: :text
   attr :label, :string, default: nil
-  attr :rest, :global
+  attr :rest, :global, include: ~w(disabled min step placeholder value)
 
   def input(assigns) do
     ~H"""

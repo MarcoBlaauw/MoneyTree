@@ -27,7 +27,11 @@ defmodule MoneyTreeWeb.TransfersLive do
   end
 
   @impl true
-  def handle_event("validate", %{"transfer" => params}, %{assigns: %{current_user: user}} = socket) do
+  def handle_event(
+        "validate",
+        %{"transfer" => params},
+        %{assigns: %{current_user: user}} = socket
+      ) do
     changeset = Transfers.change_transfer(user, params)
     {:noreply, assign(socket, changeset: changeset)}
   end
@@ -61,7 +65,11 @@ defmodule MoneyTreeWeb.TransfersLive do
      |> put_flash(:info, "Transfer tools locked. Unlock to continue.")}
   end
 
-  def handle_event("unlock-interface", _params, %{assigns: %{current_user: current_user}} = socket) do
+  def handle_event(
+        "unlock-interface",
+        _params,
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
     {:noreply,
      socket
      |> assign(locked?: false, accounts: Accounts.list_accessible_accounts(current_user))
@@ -106,58 +114,57 @@ defmodule MoneyTreeWeb.TransfersLive do
           <.simple_form for={@changeset}
                         id="transfer-form"
                         phx-change="validate"
-                        phx-submit="confirm-transfer">
-            <:inner_block :let={f}>
-              <div class="space-y-4">
-                <div>
-                  <label class="text-sm font-medium text-zinc-700" for="transfer_source_account_id">From account</label>
-                  <select id="transfer_source_account_id"
-                          name="transfer[source_account_id]"
-                          class="input"
-                          disabled={@locked?}>
-                    <%= Phoenix.HTML.Form.options_for_select(account_options(@accounts), f[:source_account_id].value) %>
-                  </select>
-                  <p :for={error <- errors_on(@changeset, :source_account_id)} class="text-sm text-red-600"><%= error %></p>
-                </div>
-
-                <div>
-                  <label class="text-sm font-medium text-zinc-700" for="transfer_destination_account_id">To account</label>
-                  <select id="transfer_destination_account_id"
-                          name="transfer[destination_account_id]"
-                          class="input"
-                          disabled={@locked?}>
-                    <%= Phoenix.HTML.Form.options_for_select(account_options(@accounts), f[:destination_account_id].value) %>
-                  </select>
-                  <p :for={error <- errors_on(@changeset, :destination_account_id)} class="text-sm text-red-600"><%= error %></p>
-                </div>
-
-                <.input field={f[:amount]} label="Amount" type="number" step="0.01" min="0" disabled={@locked?} />
-                <p :for={error <- errors_on(@changeset, :amount)} class="text-sm text-red-600"><%= error %></p>
-
-                <.input field={f[:memo]} label="Memo" type="textarea" placeholder="Optional memo" disabled={@locked?} />
-                <p :for={error <- errors_on(@changeset, :memo)} class="text-sm text-red-600"><%= error %></p>
-
-                <div class="flex flex-wrap gap-2">
-                  <button type="button" class="btn btn-outline" phx-click="request-step-up">Require step-up</button>
-                  <button type="button" class="btn btn-outline" phx-click="step-up-completed">Step-up completed</button>
-                  <button type="button" class="btn btn-ghost" phx-click="cancel-step-up">Reset</button>
-                </div>
-
-                <p class="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">
-                  <span class="font-medium text-zinc-800">Verification:</span>
-                  <%= cond do %>
-                    <% @locked? -> %> Interface locked. Unlock to continue.
-                    <% @step_up_required? and @step_up_verified? -> %> Step-up complete. You may submit the transfer.
-                    <% @step_up_required? -> %> Awaiting external verification event.
-                    <% true -> %> No additional verification required.
-                  <% end %>
-                </p>
-
-                <div class="flex justify-end">
-                  <button type="submit" class="btn" disabled={@locked?}>Confirm transfer</button>
-                </div>
+                        phx-submit="confirm-transfer"
+                        :let={f}>
+            <div class="space-y-4">
+              <div>
+                <label class="text-sm font-medium text-zinc-700" for="transfer_source_account_id">From account</label>
+                <select id="transfer_source_account_id"
+                        name="transfer[source_account_id]"
+                        class="input"
+                        disabled={@locked?}>
+                  <%= Phoenix.HTML.Form.options_for_select(account_options(@accounts), f[:source_account_id].value) %>
+                </select>
+                <p :for={error <- errors_on(@changeset, :source_account_id)} class="text-sm text-red-600"><%= error %></p>
               </div>
-            </:inner_block>
+
+              <div>
+                <label class="text-sm font-medium text-zinc-700" for="transfer_destination_account_id">To account</label>
+                <select id="transfer_destination_account_id"
+                        name="transfer[destination_account_id]"
+                        class="input"
+                        disabled={@locked?}>
+                  <%= Phoenix.HTML.Form.options_for_select(account_options(@accounts), f[:destination_account_id].value) %>
+                </select>
+                <p :for={error <- errors_on(@changeset, :destination_account_id)} class="text-sm text-red-600"><%= error %></p>
+              </div>
+
+              <.input field={f[:amount]} label="Amount" type={:number} step="0.01" min="0" disabled={@locked?} />
+              <p :for={error <- errors_on(@changeset, :amount)} class="text-sm text-red-600"><%= error %></p>
+
+              <.input field={f[:memo]} label="Memo" type={:textarea} placeholder="Optional memo" disabled={@locked?} />
+              <p :for={error <- errors_on(@changeset, :memo)} class="text-sm text-red-600"><%= error %></p>
+
+              <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn btn-outline" phx-click="request-step-up">Require step-up</button>
+                <button type="button" class="btn btn-outline" phx-click="step-up-completed">Step-up completed</button>
+                <button type="button" class="btn btn-ghost" phx-click="cancel-step-up">Reset</button>
+              </div>
+
+              <p class="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-600">
+                <span class="font-medium text-zinc-800">Verification:</span>
+                <%= cond do %>
+                  <% @locked? -> %> Interface locked. Unlock to continue.
+                  <% @step_up_required? and @step_up_verified? -> %> Step-up complete. You may submit the transfer.
+                  <% @step_up_required? -> %> Awaiting external verification event.
+                  <% true -> %> No additional verification required.
+                <% end %>
+              </p>
+
+              <div class="flex justify-end">
+                <button type="submit" class="btn" disabled={@locked?}>Confirm transfer</button>
+              </div>
+            </div>
           </.simple_form>
         </div>
 
@@ -193,11 +200,15 @@ defmodule MoneyTreeWeb.TransfersLive do
 
   defp ensure_step_up(_assigns), do: :ok
 
-  defp submit_transfer(%{assigns: %{current_user: current_user}} = socket, params) do
+  defp submit_transfer(%{assigns: %{current_user: current_user}} = _socket, params) do
     Transfers.submit_transfer(current_user, params)
   end
 
-  defp transfer_success(socket, %{transfer: %TransferRequest{} = transfer, source: source, destination: destination}) do
+  defp transfer_success(socket, %{
+         transfer: %TransferRequest{} = transfer,
+         source: source,
+         destination: destination
+       }) do
     formatted_amount = Accounts.format_money(transfer.amount, transfer.currency, [])
 
     socket
@@ -230,11 +241,16 @@ defmodule MoneyTreeWeb.TransfersLive do
     |> Enum.map(&CoreComponents.translate_error/1)
   end
 
-  defp transfer_source_name(%TransferRequest{source_account: %Account{name: name}}, _source), do: name
+  defp transfer_source_name(%TransferRequest{source_account: %Account{name: name}}, _source),
+    do: name
+
   defp transfer_source_name(_transfer, %Account{name: name}), do: name
 
-  defp transfer_destination_name(%TransferRequest{destination_account: %Account{name: name}}, _dest),
-    do: name
+  defp transfer_destination_name(
+         %TransferRequest{destination_account: %Account{name: name}},
+         _dest
+       ),
+       do: name
 
   defp transfer_destination_name(_transfer, %Account{name: name}), do: name
 end

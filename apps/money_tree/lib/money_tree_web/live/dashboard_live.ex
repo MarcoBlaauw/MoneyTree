@@ -36,7 +36,11 @@ defmodule MoneyTreeWeb.DashboardLive do
      |> put_flash(:info, "Dashboard locked due to inactivity.")}
   end
 
-  def handle_event("unlock-interface", _params, %{assigns: %{current_user: current_user}} = socket) do
+  def handle_event(
+        "unlock-interface",
+        _params,
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
     {:noreply,
      socket
      |> assign(locked?: false)
@@ -44,7 +48,11 @@ defmodule MoneyTreeWeb.DashboardLive do
      |> put_flash(:info, "Dashboard unlocked.")}
   end
 
-  def handle_event("refresh-transactions", _params, %{assigns: %{current_user: current_user}} = socket) do
+  def handle_event(
+        "refresh-transactions",
+        _params,
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
     {:noreply, assign_transactions(socket, current_user)}
   end
 

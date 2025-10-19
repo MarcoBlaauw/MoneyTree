@@ -98,7 +98,7 @@ defmodule MoneyTree.Transfers do
   defp ensure_balance(%Account{} = account, %Decimal{} = amount) do
     available = account.available_balance || account.current_balance || Decimal.new("0")
 
-    if Decimal.cmp(available, amount) in [:lt] do
+    if Decimal.compare(available, amount) == :lt do
       error_changeset =
         %TransferRequest{}
         |> Changeset.change(%{})

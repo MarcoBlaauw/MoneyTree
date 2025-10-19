@@ -208,7 +208,15 @@ defmodule MoneyTree.Accounts do
     query =
       case Keyword.get(opts, :lock) do
         nil -> query
-        lock_clause -> lock(query, ^lock_clause)
+        :for_update -> lock(query, "FOR UPDATE")
+        :for_no_key_update -> lock(query, "FOR NO KEY UPDATE")
+        :for_share -> lock(query, "FOR SHARE")
+        :for_key_share -> lock(query, "FOR KEY SHARE")
+        "FOR UPDATE" -> lock(query, "FOR UPDATE")
+        "FOR NO KEY UPDATE" -> lock(query, "FOR NO KEY UPDATE")
+        "FOR SHARE" -> lock(query, "FOR SHARE")
+        "FOR KEY SHARE" -> lock(query, "FOR KEY SHARE")
+        other -> raise ArgumentError, "unsupported lock option: #{inspect(other)}"
       end
 
     case Repo.one(query) do
@@ -362,7 +370,9 @@ defmodule MoneyTree.Accounts do
   end
 
   defp latest_session_timestamp([]), do: nil
-  defp latest_session_timestamp([session | _rest]), do: session.last_used_at || session.inserted_at
+
+  defp latest_session_timestamp([session | _rest]),
+    do: session.last_used_at || session.inserted_at
 
   defp sum_decimals(values) do
     Enum.reduce(values, Decimal.new("0"), fn value, acc ->

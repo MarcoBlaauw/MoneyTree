@@ -93,6 +93,7 @@ defmodule MoneyTree.Transactions do
   end
 
   defp sanitize_page(page) when is_integer(page) and page > 0, do: page
+
   defp sanitize_page(page) when is_binary(page) do
     case Integer.parse(page) do
       {value, _} -> sanitize_page(value)

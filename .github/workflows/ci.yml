@@ -84,9 +84,11 @@ jobs:
 
       - name: Tests
         run: mix test
+        timeout-minutes: 15
 
       - name: Dialyzer
         run: mix dialyzer --halt-exit-status
+        timeout-minutes: 25
 
       - name: pnpm lint
         run: pnpm lint

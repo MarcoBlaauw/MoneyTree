@@ -1,10 +1,7 @@
 defmodule MoneyTreeWeb.AppRoutesTest do
   use MoneyTreeWeb.ConnCase, async: true
 
-  import MoneyTree.AccountsFixtures
   import Phoenix.LiveViewTest
-
-  alias MoneyTreeWeb.Auth
 
   describe "browser authentication" do
     test "redirects unauthenticated users", %{conn: conn} do
@@ -17,29 +14,18 @@ defmodule MoneyTreeWeb.AppRoutesTest do
     end
 
     test "allows authenticated users to mount LiveViews", %{conn: conn} do
-      user = user_fixture()
-      %{token: token} = session_fixture(user, %{context: "test"})
-      cookie_name = Auth.session_cookie_name()
+      {:ok, %{conn: authed_conn}} = register_and_log_in_user(%{conn: conn})
 
-      {:ok, dashboard, _html} =
-        conn |> authed_conn(cookie_name, token) |> live(~p"/app/dashboard")
+      {:ok, dashboard, _html} = live(authed_conn, ~p"/app/dashboard")
 
       assert render(dashboard) =~ "Dashboard"
 
-      {:ok, transfers, _html} =
-        conn |> authed_conn(cookie_name, token) |> live(~p"/app/transfers")
+      {:ok, transfers, _html} = live(authed_conn, ~p"/app/transfers")
 
       assert render(transfers) =~ "Transfers"
 
-      {:ok, settings, _html} = conn |> authed_conn(cookie_name, token) |> live(~p"/app/settings")
+      {:ok, settings, _html} = live(authed_conn, ~p"/app/settings")
       assert render(settings) =~ "Settings"
     end
-  end
-
-  defp authed_conn(conn, cookie_name, token) do
-    conn
-    |> recycle()
-    |> init_test_session(%{user_token: token})
-    |> put_req_cookie(cookie_name, token)
   end
 end

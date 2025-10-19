@@ -3,6 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <%= if nonce = assigns[:csp_nonce] do %>
+      <meta name="csp-nonce" content={nonce} />
+      <meta name="csp-script-src" content={"'self' 'nonce-#{nonce}'"} />
+      <meta name="csp-style-src" content={"'self' 'nonce-#{nonce}'"} />
+    <% end %>
     <.csrf_meta_tag />
     <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
     <script
