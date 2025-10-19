@@ -17,6 +17,7 @@ defmodule MoneyTree.Accounts do
   alias MoneyTree.Sessions.Session
   alias MoneyTree.Users.User
   alias Swoosh.Email
+  alias Decimal
 
   @default_session_ttl 60 * 60 * 24 * 30
   @default_invitation_ttl 60 * 60 * 24 * 7
@@ -161,6 +162,239 @@ defmodule MoneyTree.Accounts do
     Application.get_env(:money_tree, __MODULE__, [])
     |> Keyword.get(:session_ttl, @default_session_ttl)
   end
+
+  @doc """
+  Returns an Ecto query that scopes accounts to those owned or shared with the user.
+
+  The query excludes revoked memberships so downstream callers don't need to reapply
+  access checks.
+  """
+  @spec accessible_accounts_query(User.t() | binary()) :: Ecto.Query.t()
+  def accessible_accounts_query(user) do
+    user_id = normalize_user_id(user)
+
+    from account in Account,
+      left_join: membership in AccountMembership,
+      on:
+        membership.account_id == account.id and
+          membership.user_id == ^user_id and
+          is_nil(membership.revoked_at),
+      where: account.user_id == ^user_id or not is_nil(membership.id),
+      distinct: true
+  end
+
+  @doc """
+  Lists accounts the user can access, optionally preloading associations.
+  """
+  @spec list_accessible_accounts(User.t() | binary(), keyword()) :: [Account.t()]
+  def list_accessible_accounts(user, opts \\ []) do
+    accessible_accounts_query(user)
+    |> maybe_order_accounts(opts)
+    |> maybe_preload_accounts(opts)
+    |> Repo.all()
+  end
+
+  @doc """
+  Fetches an accessible account for the user.
+  """
+  @spec fetch_accessible_account(User.t() | binary(), binary(), keyword()) ::
+          {:ok, Account.t()} | {:error, :not_found}
+  def fetch_accessible_account(user, account_id, opts \\ []) do
+    query =
+      accessible_accounts_query(user)
+      |> where([account], account.id == ^account_id)
+      |> maybe_preload_accounts(opts)
+
+    query =
+      case Keyword.get(opts, :lock) do
+        nil -> query
+        lock_clause -> lock(query, ^lock_clause)
+      end
+
+    case Repo.one(query) do
+      nil -> {:error, :not_found}
+      %Account{} = account -> {:ok, account}
+    end
+  end
+
+  @doc """
+  Formats dashboard data for the provided user.
+
+  The response includes masked balance strings that can be toggled in the LiveView
+  without re-querying the database.
+  """
+  @spec dashboard_summary(User.t() | binary(), keyword()) :: %{accounts: list(), totals: list()}
+  def dashboard_summary(user, opts \\ []) do
+    accounts =
+      list_accessible_accounts(user,
+        preload: Keyword.get(opts, :preload, [:institution, :institution_connection]),
+        order_by: {:desc, :updated_at}
+      )
+
+    summaries = Enum.map(accounts, &account_summary(&1, opts))
+
+    totals =
+      summaries
+      |> Enum.group_by(& &1.account.currency)
+      |> Enum.map(fn {currency, grouped} ->
+        total_balance =
+          grouped
+          |> Enum.map(& &1.account.current_balance)
+          |> sum_decimals()
+
+        %{
+          currency: currency,
+          current_balance: format_money(total_balance, currency, opts),
+          current_balance_masked: mask_money(total_balance, currency, opts),
+          account_count: length(grouped)
+        }
+      end)
+
+    %{accounts: summaries, totals: totals}
+  end
+
+  @doc """
+  Formats user settings data for rendering.
+  """
+  @spec user_settings(User.t()) :: map()
+  def user_settings(%User{} = user) do
+    sessions = list_active_sessions(user)
+
+    %{
+      profile: %{
+        email: user.email,
+        full_name: user.encrypted_full_name,
+        role: user.role
+      },
+      security: %{
+        multi_factor_enabled: Map.get(user, :multi_factor_enabled, false),
+        last_login_at: latest_session_timestamp(sessions)
+      },
+      notifications: %{
+        transfer_alerts: true,
+        security_alerts: true
+      },
+      sessions:
+        Enum.map(sessions, fn session ->
+          %{
+            id: session.id,
+            context: session.context,
+            last_used_at: session.last_used_at,
+            user_agent: session.user_agent,
+            ip_address: session.ip_address
+          }
+        end)
+    }
+  end
+
+  @doc """
+  Lists active sessions for the user ordered by most recent activity.
+  """
+  @spec list_active_sessions(User.t() | binary()) :: [Session.t()]
+  def list_active_sessions(user) do
+    user_id = normalize_user_id(user)
+
+    from(session in Session,
+      where: session.user_id == ^user_id,
+      order_by: [desc: session.last_used_at, desc: session.inserted_at]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Formats a decimal amount using the provided ISO currency code.
+  """
+  @spec format_money(Decimal.t() | nil, String.t() | nil, keyword()) :: String.t() | nil
+  def format_money(nil, _currency, _opts), do: nil
+
+  def format_money(%Decimal{} = amount, currency, _opts) when is_binary(currency) do
+    amount
+    |> Decimal.round(2)
+    |> Decimal.to_string(:normal)
+    |> ensure_two_decimals()
+    |> prepend_currency(currency)
+  end
+
+  def format_money(amount, currency, opts) when is_binary(currency) do
+    case Decimal.cast(amount) do
+      {:ok, decimal} -> format_money(decimal, currency, opts)
+      :error -> nil
+    end
+  end
+
+  @doc """
+  Returns a masked currency string using the configured mask character.
+  """
+  @spec mask_money(Decimal.t() | nil, String.t() | nil, keyword()) :: String.t() | nil
+  def mask_money(amount, currency, opts \\ []) do
+    mask_character = Keyword.get(opts, :mask_character, "•")
+
+    amount
+    |> format_money(currency, opts)
+    |> maybe_mask(mask_character)
+  end
+
+  defp account_summary(%Account{} = account, opts) do
+    %{
+      account: account,
+      current_balance: format_money(account.current_balance, account.currency, opts),
+      current_balance_masked: mask_money(account.current_balance, account.currency, opts),
+      available_balance: format_money(account.available_balance, account.currency, opts),
+      available_balance_masked: mask_money(account.available_balance, account.currency, opts)
+    }
+  end
+
+  defp maybe_order_accounts(query, opts) do
+    case Keyword.get(opts, :order_by) do
+      nil -> order_by(query, desc: :inserted_at)
+      {:desc, field_name} -> order_by(query, [account], desc: field(account, ^field_name))
+      {:asc, field_name} -> order_by(query, [account], asc: field(account, ^field_name))
+      other when is_list(other) -> order_by(query, ^other)
+      _ -> query
+    end
+  end
+
+  defp maybe_preload_accounts(query, opts) do
+    case Keyword.get(opts, :preload) do
+      nil -> query
+      preload -> preload(query, ^preload)
+    end
+  end
+
+  defp latest_session_timestamp([]), do: nil
+  defp latest_session_timestamp([session | _rest]), do: session.last_used_at || session.inserted_at
+
+  defp sum_decimals(values) do
+    Enum.reduce(values, Decimal.new("0"), fn value, acc ->
+      case Decimal.cast(value) do
+        {:ok, decimal} -> Decimal.add(acc, decimal)
+        :error -> acc
+      end
+    end)
+  end
+
+  defp ensure_two_decimals(string) do
+    case String.split(string, ".") do
+      [whole] -> whole <> ".00"
+      [whole, fraction] -> whole <> "." <> String.pad_trailing(fraction, 2, "0")
+      _ -> string
+    end
+  end
+
+  defp prepend_currency(value, currency) do
+    [String.upcase(currency), value]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" ")
+  end
+
+  defp maybe_mask(nil, _mask_character), do: nil
+
+  defp maybe_mask(value, mask_character) do
+    Regex.replace(~r/\d/, value, mask_character)
+  end
+
+  defp normalize_user_id(%User{id: id}) when is_binary(id), do: id
+  defp normalize_user_id(id) when is_binary(id), do: id
 
   @doc """
   Creates a new invitation for the given account and sends a notification email.
