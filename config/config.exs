@@ -26,7 +26,7 @@ config :money_tree, MoneyTreeWeb.Endpoint,
     layout: false
   ],
   pubsub_server: MoneyTree.PubSub,
-  live_view: [signing_salt: "AQ0mt1V3"]
+  live_view: [signing_salt: "AQ0mt1V3", csp_nonce_assign_key: :csp_nonce]
 
 config :money_tree, MoneyTree.Teller,
   api_host: "https://api.teller.io",
