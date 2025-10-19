@@ -21,6 +21,7 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
     |> assign(assign_key, nonce)
     |> put_private(assign_key, nonce)
     |> put_resp_header("content-security-policy", build_csp_header(nonce))
+    |> put_resp_header("x-csp-nonce", nonce)
   end
 
   defp generate_nonce do

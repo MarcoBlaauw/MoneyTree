@@ -74,6 +74,12 @@ defmodule MoneyTreeWeb.Router do
     delete "/logout", SessionController, :delete
   end
 
+  scope "/app/react" do
+    pipe_through [:browser, :require_authenticated_user]
+
+    forward "/", MoneyTreeWeb.Plugs.NextProxy
+  end
+
   scope "/", MoneyTreeWeb do
     pipe_through [:browser, :require_authenticated_user]
 
