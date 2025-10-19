@@ -59,6 +59,18 @@ defmodule MoneyTreeWeb.Router do
       delete "/accounts/:account_id/invitations/:id", InvitationController, :revoke
     end
 
+    scope "/plaid" do
+      pipe_through :api_auth
+
+      post "/link_token", PlaidController, :link_token
+    end
+
+    scope "/kyc" do
+      pipe_through :api_auth
+
+      post "/session", KycController, :create_session
+    end
+
     scope "/owner" do
       pipe_through :api_owner
 

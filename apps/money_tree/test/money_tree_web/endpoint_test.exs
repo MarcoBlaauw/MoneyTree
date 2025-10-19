@@ -36,8 +36,10 @@ defmodule MoneyTreeWeb.EndpointTest do
       [header] = get_resp_header(conn, "content-security-policy")
 
       assert header =~ "default-src 'self'"
-      assert header =~ "script-src 'self' 'nonce-#{nonce}'"
+      assert header =~ "script-src 'self' 'nonce-#{nonce}' https://cdn.plaid.com https://cdn.teller.io https://withpersona.com"
       assert header =~ "style-src 'self' 'nonce-#{nonce}'"
+      assert header =~ "frame-src 'self' https://cdn.plaid.com https://link.plaid.com https://connect.teller.io https://withpersona.com https://app.withpersona.com"
+      assert header =~ "connect-src 'self' https://api.plaid.com https://cdn.plaid.com https://connect.teller.io https://api.teller.io https://withpersona.com https://api.withpersona.com"
       assert is_binary(conn.private[:csp_nonce])
     end
   end
