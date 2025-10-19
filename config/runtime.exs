@@ -2,6 +2,66 @@ import Config
 
 base_teller_config = Application.get_env(:money_tree, MoneyTree.Teller, [])
 
+default_next_upstream = [scheme: "http", host: "localhost", port: 3000, path: "/"]
+
+next_proxy_url = System.get_env("NEXT_PROXY_URL")
+
+env_upstream_overrides =
+  [:scheme, :host, :port, :path]
+  |> Enum.reduce([], fn key, acc ->
+    env_key = "NEXT_PROXY_" <> (key |> Atom.to_string() |> String.upcase())
+
+    case System.get_env(env_key) do
+      nil ->
+        acc
+
+      "" ->
+        acc
+
+      value ->
+        normalized =
+          case key do
+            :port -> String.to_integer(value)
+            _ -> value
+          end
+
+        Keyword.put(acc, key, normalized)
+    end
+  end)
+
+cond do
+  next_proxy_url ->
+    config :money_tree, MoneyTreeWeb.Plugs.NextProxy, upstream: next_proxy_url
+
+  env_upstream_overrides != [] ->
+    config :money_tree, MoneyTreeWeb.Plugs.NextProxy,
+      upstream: Keyword.merge(default_next_upstream, env_upstream_overrides)
+
+  true ->
+    :ok
+end
+
+client_timeout_overrides =
+  [
+    {:receive_timeout, System.get_env("NEXT_PROXY_RECEIVE_TIMEOUT_MS")},
+    {:pool_timeout, System.get_env("NEXT_PROXY_POOL_TIMEOUT_MS")}
+  ]
+  |> Enum.reduce([], fn
+    {_key, nil}, acc -> acc
+    {_key, ""}, acc -> acc
+    {key, value}, acc -> Keyword.put(acc, key, String.to_integer(value))
+  end)
+
+if client_timeout_overrides != [] do
+  existing =
+    Application.get_env(:money_tree, MoneyTreeWeb.Plugs.NextProxy, [])
+    |> Keyword.get(:client_opts, [])
+
+  merged_client_opts = Keyword.merge(existing, client_timeout_overrides)
+
+  config :money_tree, MoneyTreeWeb.Plugs.NextProxy, client_opts: merged_client_opts
+end
+
 if config_env() == :prod do
   missing_teller_env =
     [

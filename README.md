@@ -132,6 +132,68 @@ Quality checks should be run from the umbrella root and mirror the CI workflow:
 
 Format sources as you work with `mix format`.
 
+## Next.js frontend proxy & CSP configuration
+
+The Phoenix endpoint proxies `/app/react/*` to the Next.js app so sessions,
+CSRF tokens, and CSP nonces remain under Phoenix's control. Requests inherit the
+per-request nonce via the `x-csp-nonce` header and expose it to the Next runtime
+through middleware so inline `<Script nonce>` tags and stylesheets satisfy the
+Content-Security-Policy enforced by Phoenix.
+
+### Local development
+
+Run Phoenix and the Next development server side by side. The proxy defaults to
+`http://localhost:3000`, so the standard workflows below work without extra
+configuration:
+
+```bash
+# Terminal 1 – Phoenix (runs on http://127.0.0.1:4000)
+mix phx.server
+
+# Terminal 2 – Next.js (runs on http://127.0.0.1:3100 and serves /app/react)
+pnpm --filter next dev -- --port 3100 --hostname 127.0.0.1
+```
+
+If you bind the Next server to a different host or port, point the proxy at it
+with `NEXT_PROXY_URL=http://host:port`. Additional knobs include
+`NEXT_PROXY_RECEIVE_TIMEOUT_MS` and `NEXT_PROXY_POOL_TIMEOUT_MS` for long running
+requests. The Next app honours `NEXT_BASE_PATH` (defaults to `/app/react`), so
+adjust the base path only if you intend to mount the UI elsewhere.
+
+### Production build & deployment
+
+Build the Next app alongside Phoenix assets and start the server behind the
+proxy. A typical deployment sequence looks like:
+
+```bash
+pnpm --filter next build
+pnpm --filter next start -- --port 3100 --hostname 0.0.0.0 &
+
+export NEXT_PROXY_URL="http://127.0.0.1:3100"
+export NEXT_BASE_PATH="/app/react"
+
+_build/prod/rel/money_tree/bin/money_tree start
+```
+
+Adjust the `NEXT_PROXY_URL` host/port to match your topology (or inject the
+value via your process manager). The Phoenix release will refuse to serve Next
+responses until the upstream is reachable.
+
+### Integration testing
+
+Playwright verifies that the proxied UI preserves cookies (`credentials:
+"include"`) and respects CSP nonces. Install the Playwright browsers once and
+run the suite from the repository root:
+
+```bash
+pnpm --filter next exec playwright install --with-deps
+pnpm --filter next test:e2e
+```
+
+The Playwright configuration starts both servers automatically using the test
+database (`MIX_ENV=test`), so ensure `mix test` has been run at least once to
+prepare the schema.
+
 ### LiveView test workflow
 
 LiveView suites rely on a consistent authentication flow so CSP metadata and

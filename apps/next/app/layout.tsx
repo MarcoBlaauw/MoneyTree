@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Fira_Code, Inter } from "next/font/google";
 import "./globals.css";
 
@@ -22,9 +23,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cspNonce = headers().get("x-csp-nonce") ?? undefined;
+
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${firaCode.variable} font-sans`}>{children}</body>
+      <head>
+        <style nonce={cspNonce}>{":root { color-scheme: light; }"}</style>
+      </head>
+      <body data-csp-nonce={cspNonce} className={`${inter.variable} ${firaCode.variable} font-sans`}>
+        {children}
+      </body>
     </html>
   );
 }
