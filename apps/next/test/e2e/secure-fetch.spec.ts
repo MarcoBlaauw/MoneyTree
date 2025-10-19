@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 
 declare global {
   interface Window {
@@ -7,29 +8,35 @@ declare global {
 }
 
 const SESSION_COOKIE = "_money_tree_session";
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:4000";
 
 test.describe("Next.js secure fetch integration", () => {
   test.beforeEach(async ({ context, page }) => {
+    const email = `secure-fetch-${randomUUID()}@example.com`;
+    const password = "PlaywrightPwd12!";
+
+    const response = await page.request.post("/api/register", {
+      data: {
+        email,
+        password,
+        encrypted_full_name: "Secure Fetch Tester",
+      },
+    });
+
+    expect(response.status()).toBe(201);
+
+    const sessionToken = extractSessionToken(response.headersArray());
+    expect(sessionToken).toBeTruthy();
+
     await context.addCookies([
       {
         name: SESSION_COOKIE,
-        value: "playwright-session",
-        url: "http://127.0.0.1:4000",
+        value: sessionToken!,
+        url: BASE_URL,
         path: "/",
+        httpOnly: true,
       },
     ]);
-
-    await page.route("**/api/mock-auth", async (route) => {
-      const headers = route.request().headers();
-
-      expect(headers.cookie).toContain(`${SESSION_COOKIE}=playwright-session`);
-
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ ok: true }),
-      });
-    });
   });
 
   test("scripts receive CSP nonces and credentialed fetch succeeds", async ({ page }) => {
@@ -57,3 +64,18 @@ test.describe("Next.js secure fetch integration", () => {
     }).toBe(200);
   });
 });
+
+function extractSessionToken(headers: { name: string; value: string }[]): string | null {
+  for (const header of headers) {
+    if (header.name.toLowerCase() !== "set-cookie") continue;
+
+    const [cookiePair] = header.value.split(";");
+    const [name, ...valueParts] = cookiePair.split("=");
+
+    if (name === SESSION_COOKIE) {
+      return valueParts.join("=");
+    }
+  }
+
+  return null;
+}

@@ -53,6 +53,7 @@ defmodule MoneyTreeWeb.Router do
     scope "/" do
       pipe_through :api_auth
 
+      get "/mock-auth", MockAuthController, :show
       delete "/logout", AuthController, :logout
       get "/me", AuthController, :me
       post "/accounts/:account_id/invitations", InvitationController, :create
