@@ -5,12 +5,14 @@ export function setupDom() {
     url: "http://localhost:3000",
   });
 
-  globalThis.window = dom.window as typeof window;
-  globalThis.document = dom.window.document;
-  globalThis.HTMLElement = dom.window.HTMLElement;
-  globalThis.Node = dom.window.Node;
-  globalThis.navigator = dom.window.navigator;
-  globalThis.CustomEvent = dom.window.CustomEvent;
+  const jsdomWindow = dom.window as unknown as Window & typeof globalThis;
+
+  globalThis.window = jsdomWindow;
+  globalThis.document = jsdomWindow.document;
+  globalThis.HTMLElement = jsdomWindow.HTMLElement;
+  globalThis.Node = jsdomWindow.Node;
+  globalThis.navigator = jsdomWindow.navigator;
+  globalThis.CustomEvent = jsdomWindow.CustomEvent;
 
   return () => {
     dom.window.close();

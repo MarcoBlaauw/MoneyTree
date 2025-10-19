@@ -90,17 +90,32 @@ jobs:
         run: mix dialyzer --halt-exit-status
         timeout-minutes: 25
 
-      - name: pnpm lint
-        run: pnpm lint
-
       - name: Build shared UI styles
         run: pnpm --filter ui build
 
+      - name: Cache Next.js build artifacts
+        uses: actions/cache@v3
+        with:
+          path: |
+            apps/next/.next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('pnpm-lock.yaml', 'apps/next/package.json', 'apps/next/next.config.*', 'apps/next/tailwind.config.*', 'apps/next/tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-next-
+
+      - name: Next.js lint
+        run: pnpm --filter next lint
+
+      - name: Next.js tests
+        run: pnpm --filter next test
+
+      - name: Build Next.js app
+        run: pnpm --filter next build
+
+      - name: Next.js audit
+        run: pnpm audit --dir apps/next
+
       - name: Build Phoenix assets
         run: pnpm --filter money-tree-assets build
-
-      - name: pnpm audit
-        run: pnpm audit
 
       - name: Verify API contracts
         run: pnpm --filter @moneytree/contracts... run verify
