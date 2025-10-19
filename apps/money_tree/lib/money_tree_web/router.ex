@@ -79,9 +79,9 @@ defmodule MoneyTreeWeb.Router do
 
     live_session :app,
       on_mount: [MoneyTreeWeb.Plugs.RequireAuthenticatedUser] do
-      live "/app/dashboard", AppDashboardLive
-      live "/app/transfers", AppTransfersLive
-      live "/app/settings", AppSettingsLive
+      live "/app/dashboard", DashboardLive
+      live "/app/transfers", TransfersLive
+      live "/app/settings", SettingsLive
     end
   end
 
