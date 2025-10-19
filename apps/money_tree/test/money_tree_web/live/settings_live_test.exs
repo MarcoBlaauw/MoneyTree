@@ -4,21 +4,24 @@ defmodule MoneyTreeWeb.SettingsLiveTest do
   import MoneyTree.AccountsFixtures
   import Phoenix.LiveViewTest
 
-  alias MoneyTreeWeb.Auth
+  setup context do
+    {:ok, context} =
+      register_and_log_in_user(context,
+        user_attrs: %{full_name: "Example User"},
+        session_attrs: %{context: "browser", user_agent: "Mozilla", ip_address: "127.0.0.1"}
+      )
 
-  setup %{conn: conn} do
-    user = user_fixture(%{full_name: "Example User"})
-    %{token: token} = session_fixture(user, %{context: "browser", user_agent: "Mozilla", ip_address: "127.0.0.1"})
-    session_fixture(user, %{context: "mobile", user_agent: "iOS App"})
+    session_fixture(context.user, %{context: "mobile", user_agent: "iOS App"})
 
-    {:ok,
-     conn: authed_conn(conn, token),
-     user: user}
+    {:ok, context}
   end
 
-  test "renders profile and security information", %{conn: conn, user: user} do
+  test "renders profile, security information, and CSP meta tags", %{conn: conn, user: user} do
     {:ok, view, html} = live(conn, ~p"/app/settings")
 
+    assert html =~ "<meta name=\"csp-nonce\""
+    assert html =~ "<meta name=\"csp-script-src\""
+    assert html =~ "<meta name=\"csp-style-src\""
     assert html =~ "Settings"
     assert html =~ user.email
     assert html =~ "Example User"
@@ -38,14 +41,5 @@ defmodule MoneyTreeWeb.SettingsLiveTest do
 
     view |> element("button", "Unlock") |> render_click()
     refute render(view) =~ "Settings are locked"
-  end
-
-  defp authed_conn(conn, token) do
-    cookie_name = Auth.session_cookie_name()
-
-    conn
-    |> recycle()
-    |> init_test_session(%{user_token: token})
-    |> put_req_cookie(cookie_name, token)
   end
 end

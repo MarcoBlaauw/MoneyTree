@@ -23,7 +23,11 @@ defmodule MoneyTreeWeb.SettingsLive do
      |> put_flash(:info, "Settings locked. Unlock to view sensitive information.")}
   end
 
-  def handle_event("unlock-interface", _params, %{assigns: %{current_user: current_user}} = socket) do
+  def handle_event(
+        "unlock-interface",
+        _params,
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
     {:noreply,
      socket
      |> assign(locked?: false)
@@ -31,7 +35,11 @@ defmodule MoneyTreeWeb.SettingsLive do
      |> put_flash(:info, "Settings unlocked.")}
   end
 
-  def handle_event("refresh-settings", _params, %{assigns: %{current_user: current_user, locked?: false}} = socket) do
+  def handle_event(
+        "refresh-settings",
+        _params,
+        %{assigns: %{current_user: current_user, locked?: false}} = socket
+      ) do
     {:noreply, load_settings(socket, current_user)}
   end
 

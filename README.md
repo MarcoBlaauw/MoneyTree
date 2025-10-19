@@ -132,6 +132,32 @@ Quality checks should be run from the umbrella root and mirror the CI workflow:
 
 Format sources as you work with `mix format`.
 
+### LiveView test workflow
+
+LiveView suites rely on a consistent authentication flow so CSP metadata and
+session-locked events can be asserted reliably. Use the helpers under
+`apps/money_tree/test/support/auth_helpers.ex` to prepare a connection with a
+valid session in `setup` callbacks:
+
+```elixir
+setup context do
+  {:ok, context} =
+    register_and_log_in_user(context,
+      user_attrs: %{full_name: "Example User"},
+      session_attrs: %{context: "browser", user_agent: "Mozilla"}
+    )
+
+  {:ok, context}
+end
+```
+
+Each helper call recycles the connection, persists the session token in the
+cookie, and exposes the resulting `:conn`, `:user`, and `:session_token`
+assigns. With authentication handled centrally the LiveView tests simply mount
+the view with `live(conn, path)` and assert CSP meta tags (for example,
+`<meta name="csp-nonce" ...>`), masked balances, and the behaviour of
+session-locked events.
+
 ## Background Processing
 
 MoneyTree uses [Oban](https://hex.pm/packages/oban) with three queues (`default`, `mailers`, and `reporting`). Queue concurrency can be tuned with `OBAN_DEFAULT_LIMIT`, `OBAN_MAILER_LIMIT`, and `OBAN_REPORTING_LIMIT` environment variables. In development, Oban runs with lightweight concurrency and without peer discovery; in tests, jobs execute inline for deterministic assertions.

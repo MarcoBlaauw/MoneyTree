@@ -7,27 +7,41 @@ defmodule MoneyTreeWeb.TransfersLiveTest do
   alias Decimal
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Repo
-  alias MoneyTreeWeb.Auth
 
-  setup %{conn: conn} do
-    user = user_fixture()
-    %{token: token} = session_fixture(user, %{context: "test"})
+  setup context do
+    {:ok, context} = register_and_log_in_user(context)
 
     source_account =
-      account_fixture(user, %{name: "Checking", current_balance: Decimal.new("500.00"), available_balance: Decimal.new("400.00")})
+      account_fixture(context.user, %{
+        name: "Checking",
+        current_balance: Decimal.new("500.00"),
+        available_balance: Decimal.new("400.00")
+      })
 
     destination_account =
-      account_fixture(user, %{name: "Savings", current_balance: Decimal.new("100.00"), available_balance: Decimal.new("100.00")})
+      account_fixture(context.user, %{
+        name: "Savings",
+        current_balance: Decimal.new("100.00"),
+        available_balance: Decimal.new("100.00")
+      })
 
     {:ok,
-     conn: authed_conn(conn, token),
-     user: user,
-     source_account: source_account,
-     destination_account: destination_account}
+     Map.merge(context, %{
+       source_account: source_account,
+       destination_account: destination_account
+     })}
   end
 
-  test "validates insufficient funds", %{conn: conn, source_account: source, destination_account: destination} do
-    {:ok, view, _html} = live(conn, ~p"/app/transfers")
+  test "includes CSP meta tags and validates insufficient funds", %{
+    conn: conn,
+    source_account: source,
+    destination_account: destination
+  } do
+    {:ok, view, html} = live(conn, ~p"/app/transfers")
+
+    assert html =~ "<meta name=\"csp-nonce\""
+    assert html =~ "<meta name=\"csp-script-src\""
+    assert html =~ "<meta name=\"csp-style-src\""
 
     form =
       form(view, "#transfer-form",
@@ -42,7 +56,11 @@ defmodule MoneyTreeWeb.TransfersLiveTest do
     assert html =~ "exceeds available balance"
   end
 
-  test "requires step-up confirmation when requested", %{conn: conn, source_account: source, destination_account: destination} do
+  test "requires step-up confirmation when requested", %{
+    conn: conn,
+    source_account: source,
+    destination_account: destination
+  } do
     {:ok, view, _html} = live(conn, ~p"/app/transfers")
 
     view |> element("button", "Require step-up") |> render_click()
@@ -64,7 +82,12 @@ defmodule MoneyTreeWeb.TransfersLiveTest do
     assert html =~ "Transfer scheduled successfully"
   end
 
-  test "applies transfers and updates balances", %{conn: conn, source_account: source, destination_account: destination, user: user} do
+  test "applies transfers and updates balances", %{
+    conn: conn,
+    source_account: source,
+    destination_account: destination,
+    user: user
+  } do
     {:ok, view, _html} = live(conn, ~p"/app/transfers")
 
     form =
@@ -91,12 +114,28 @@ defmodule MoneyTreeWeb.TransfersLiveTest do
     assert render(view) =~ "Savings"
   end
 
-  defp authed_conn(conn, token) do
-    cookie_name = Auth.session_cookie_name()
+  test "locking disables transfer confirmation until unlocked", %{
+    conn: conn,
+    source_account: source,
+    destination_account: destination
+  } do
+    {:ok, view, _html} = live(conn, ~p"/app/transfers")
 
-    conn
-    |> recycle()
-    |> init_test_session(%{user_token: token})
-    |> put_req_cookie(cookie_name, token)
+    view |> element("button", "Lock") |> render_click()
+
+    form =
+      form(view, "#transfer-form",
+        transfer: %{
+          "source_account_id" => source.id,
+          "destination_account_id" => destination.id,
+          "amount" => "10.00"
+        }
+      )
+
+    assert render_submit(form) =~ "Unlock transfers before confirming a transfer."
+
+    view |> element("button", "Unlock") |> render_click()
+
+    assert render_submit(form) =~ "Transfer scheduled successfully"
   end
 end

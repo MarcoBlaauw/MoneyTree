@@ -28,6 +28,7 @@ defmodule MoneyTreeWeb.ConnCase do
       import Plug.Conn
       import Phoenix.ConnTest
       import MoneyTreeWeb.ConnCase
+      import MoneyTreeWeb.TestSupport.AuthHelpers
     end
   end
 

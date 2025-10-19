@@ -6,6 +6,8 @@ defmodule MoneyTree.Transfers.TransferRequest do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Ecto.Changeset
+
   alias Decimal
   alias MoneyTree.Accounts.Account
 
@@ -100,7 +102,7 @@ defmodule MoneyTree.Transfers.TransferRequest do
          %Decimal{} = amount <- get_field(changeset, :amount) do
       available = source.available_balance || source.current_balance || Decimal.new("0")
 
-      if Decimal.cmp(available, amount) in [:lt] do
+      if Decimal.compare(available, amount) == :lt do
         add_error(changeset, :amount, "exceeds available balance")
       else
         changeset
@@ -121,7 +123,7 @@ defmodule MoneyTree.Transfers.TransferRequest do
     find_account(accounts, get_field(changeset, :destination_account_id))
   end
 
-  defp find_account(accounts, nil), do: nil
+  defp find_account(_accounts, nil), do: nil
 
   defp find_account(accounts, id) do
     Enum.find(accounts, fn
