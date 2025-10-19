@@ -124,11 +124,15 @@ Quality checks should be run from the umbrella root and mirror the CI workflow:
 - `mix lint` – runs `mix format --check-formatted` and `mix credo --strict` via the MoneyTree app.
 - `mix test` – execute the test suite (uses the SQL sandbox).
 - `mix dialyzer --halt-exit-status` – static analysis; the first run will build and cache the PLT.
-- `pnpm lint` – run all workspace lint tasks (Tailwind validation in the UI package).
 - `pnpm --filter ui build` – compile the shared Tailwind preset and verify frontend styles build successfully.
+- `pnpm --filter next lint` – lint the Next.js frontend with the same rules enforced in CI.
+- `pnpm --filter next test` – execute the Next.js unit tests (Playwright unit harness).
+- `pnpm --filter next build` – build the Next.js application; CI caches `apps/next/.next/cache` so subsequent builds are faster.
+- `pnpm audit --dir apps/next` – scan the Next.js workspace dependencies for known vulnerabilities.
 - `pnpm --filter money-tree-assets build` – build Phoenix asset bundles for the MoneyTree app.
-- `pnpm audit` – scan the workspace for known vulnerabilities.
 - `pnpm --filter @moneytree/contracts... run verify` – confirm API contract definitions are up to date.
+
+The CI pipeline restores the `apps/next/.next/cache` directory before running the Next.js build. If you change the Next.js configuration locally and encounter stale behaviour, remove the cache directory to align with the pipeline (`rm -rf apps/next/.next/cache`).
 
 Format sources as you work with `mix format`.
 
