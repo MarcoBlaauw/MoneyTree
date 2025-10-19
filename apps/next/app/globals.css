@@ -1,0 +1,15 @@
+@import "@money-tree/ui/index.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-fira-code);
+  color-scheme: light dark;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+}
