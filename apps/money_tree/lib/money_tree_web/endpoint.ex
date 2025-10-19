@@ -1,15 +1,12 @@
 defmodule MoneyTreeWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :money_tree
 
+  alias MoneyTreeWeb.Auth
+
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
-  @session_options [
-    store: :cookie,
-    key: "_money_tree_key",
-    signing_salt: "ueDhFrwe",
-    same_site: "Lax"
-  ]
+  @session_options Auth.session_plug_options()
 
   socket "/live", Phoenix.LiveView.Socket, websocket: [connect_info: [session: @session_options]]
 
@@ -46,6 +43,7 @@ defmodule MoneyTreeWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
+  plug MoneyTreeWeb.Plugs.ContentSecurityPolicy
   plug Plug.Session, @session_options
   plug MoneyTreeWeb.Router
 end
