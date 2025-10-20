@@ -7,20 +7,28 @@ defmodule MoneyTreeWeb.DashboardLive do
 
   alias Decimal
   alias MoneyTree.Accounts
+  alias MoneyTree.Assets
+  alias MoneyTree.Assets.Asset
   alias MoneyTree.Budgets
   alias MoneyTree.Loans
   alias MoneyTree.Notifications
   alias MoneyTree.Subscriptions
   alias MoneyTree.Transactions
+  alias MoneyTreeWeb.CoreComponents
 
   @impl true
   def mount(_params, _session, %{assigns: %{current_user: current_user}} = socket) do
     {:ok,
      socket
      |> assign(
-       page_title: "Dashboard",
-       show_balances?: false,
-       locked?: false
+     page_title: "Dashboard",
+      show_balances?: false,
+      locked?: false,
+      asset_form_open?: false,
+      asset_form_mode: :new,
+      asset_editing_asset: nil,
+      asset_changeset: Assets.change_asset(%Asset{}),
+      asset_accounts: []
      )
      |> load_dashboard(current_user)}
   end
@@ -59,6 +67,136 @@ defmodule MoneyTreeWeb.DashboardLive do
         %{assigns: %{current_user: current_user}} = socket
       ) do
     {:noreply, assign_metrics(socket, current_user)}
+  end
+
+  def handle_event("new-asset", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(
+       asset_form_open?: true,
+       asset_form_mode: :new,
+       asset_editing_asset: nil,
+       asset_changeset: Assets.change_asset(%Asset{})
+     )}
+  end
+
+  def handle_event("cancel-asset", _params, socket) do
+    {:noreply, reset_asset_form(socket)}
+  end
+
+  def handle_event(
+        "edit-asset",
+        %{"id" => asset_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Assets.fetch_asset(current_user, asset_id, preload: [:account]) do
+      {:ok, asset} ->
+        changeset = Assets.change_asset(asset)
+
+        {:noreply,
+         socket
+         |> assign(
+           asset_form_open?: true,
+           asset_form_mode: :edit,
+           asset_editing_asset: asset,
+           asset_changeset: changeset
+         )}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Asset not found or no longer accessible.")}
+    end
+  end
+
+  def handle_event("validate-asset", %{"asset" => params}, socket) do
+    base_asset = socket.assigns.asset_editing_asset || %Asset{}
+
+    changeset =
+      base_asset
+      |> Assets.change_asset(params)
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign(socket, asset_changeset: changeset, asset_form_open?: true)}
+  end
+
+  def handle_event(
+        "save-asset",
+        %{"asset" => params},
+        %{assigns: %{current_user: current_user, asset_form_mode: :new}} = socket
+      ) do
+    case Assets.create_asset(current_user, params, preload: [:account]) do
+      {:ok, _asset} ->
+        {:noreply,
+         socket
+         |> assign_asset_data(current_user)
+         |> reset_asset_form()
+         |> put_flash(:info, "Asset added successfully.")}
+
+      {:error, :unauthorized} ->
+        {:noreply,
+         socket
+         |> assign(asset_form_open?: true)
+         |> put_flash(:error, "You do not have permission to use that account.")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         assign(socket,
+           asset_form_open?: true,
+           asset_changeset: Map.put(changeset, :action, :validate)
+         )}
+    end
+  end
+
+  def handle_event(
+        "save-asset",
+        %{"asset" => params},
+        %{assigns: %{current_user: current_user, asset_form_mode: :edit, asset_editing_asset: %Asset{} = asset}} =
+          socket
+      ) do
+    case Assets.update_asset(current_user, asset, params, preload: [:account]) do
+      {:ok, _updated} ->
+        {:noreply,
+         socket
+         |> assign_asset_data(current_user)
+         |> reset_asset_form()
+         |> put_flash(:info, "Asset updated successfully.")}
+
+      {:error, :unauthorized} ->
+        {:noreply,
+         socket
+         |> assign(asset_form_open?: true)
+         |> put_flash(:error, "You do not have permission to update that asset.")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         assign(socket,
+           asset_form_open?: true,
+           asset_changeset: Map.put(changeset, :action, :validate)
+         )}
+    end
+  end
+
+  def handle_event(
+        "delete-asset",
+        %{"id" => asset_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    with {:ok, asset} <- Assets.fetch_asset(current_user, asset_id),
+         {:ok, _deleted} <- Assets.delete_asset(current_user, asset) do
+      {:noreply,
+       socket
+       |> assign_asset_data(current_user)
+       |> maybe_reset_form_for_deleted(asset_id)
+       |> put_flash(:info, "Asset removed successfully.")}
+    else
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Asset not found or already removed.")}
+
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, "You do not have permission to modify that asset.")}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Unable to remove the asset right now.")}
+    end
   end
 
   @impl true
@@ -147,6 +285,169 @@ defmodule MoneyTreeWeb.DashboardLive do
                   <%= visible_value(@show_balances?, total.current_balance, total.current_balance_masked) %>
                 </dd>
               </div>
+            </div>
+          </div>
+
+          <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 class="text-lg font-semibold text-zinc-900">Tangible assets</h3>
+                <p class="text-xs text-zinc-500">
+                  Track real estate, vehicles, collectibles, and other tangible holdings.
+                </p>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-zinc-500"><%= @asset_summary.total_count %> assets tracked</span>
+                <button id="new-asset"
+                        phx-click="new-asset"
+                        type="button"
+                        class="btn btn-outline">
+                  Add asset
+                </button>
+              </div>
+            </div>
+
+            <ul class="space-y-3">
+              <li :for={summary <- @asset_summary.assets}
+                  id={"asset-#{summary.asset.id}"}
+                  class="space-y-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3">
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p class="font-medium text-zinc-900"><%= summary.asset.name %></p>
+                    <p class="text-xs text-zinc-500">
+                      <%= summary.asset.asset_type %> • <%= summary.asset.account.name %>
+                    </p>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-sm font-semibold text-zinc-900">
+                      <%= visible_value(@show_balances?, summary.valuation, summary.valuation_masked) %>
+                    </p>
+                    <p class="text-xs text-zinc-500">
+                      <%= summary.asset.ownership_type %>
+                      <%= if summary.asset.location do %>
+                        • <%= summary.asset.location %>
+                      <% end %>
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap gap-3 text-xs text-zinc-500">
+                  <span :if={summary.asset.acquired_on}>
+                    Acquired <%= format_date(summary.asset.acquired_on) %>
+                  </span>
+                  <span :if={summary.asset.last_valued_on}>
+                    Last valued <%= format_date(summary.asset.last_valued_on) %>
+                  </span>
+                </div>
+
+                <p :if={summary.asset.notes} class="text-xs text-zinc-500"><%= summary.asset.notes %></p>
+
+                <p :if={not Enum.empty?(summary.asset.document_refs)} class="text-xs text-zinc-500">
+                  Documents: <%= Enum.join(summary.asset.document_refs, ", ") %>
+                </p>
+
+                <div class="flex justify-end gap-2">
+                  <button type="button"
+                          class="btn btn-outline"
+                          phx-click="edit-asset"
+                          phx-value-id={summary.asset.id}>
+                    Edit
+                  </button>
+                  <button type="button"
+                          class="btn btn-ghost text-rose-600"
+                          phx-click="delete-asset"
+                          phx-value-id={summary.asset.id}
+                          data-confirm="Are you sure you want to remove this asset?">
+                    Remove
+                  </button>
+                </div>
+              </li>
+
+              <li :if={Enum.empty?(@asset_summary.assets)}
+                  class="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500">
+                Record tangible assets to include their valuations in your dashboard metrics.
+              </li>
+            </ul>
+
+            <div class="grid gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3 sm:grid-cols-2">
+              <div :for={total <- @asset_summary.totals} class="flex items-center justify-between text-sm">
+                <span class="text-zinc-600"><%= total.currency %> • <%= total.asset_count %> assets</span>
+                <span class="font-semibold text-zinc-800">
+                  <%= visible_value(@show_balances?, total.valuation, total.valuation_masked) %>
+                </span>
+              </div>
+              <div :if={Enum.empty?(@asset_summary.totals)} class="text-sm text-zinc-500">
+                Totals appear after at least one asset valuation is recorded.
+              </div>
+            </div>
+
+            <div :if={@asset_form_open?} class="space-y-3 rounded-lg border border-zinc-100 bg-white p-4">
+              <h4 class="text-base font-semibold text-zinc-900">
+                <%= if @asset_form_mode == :edit, do: "Edit asset", else: "Add asset" %>
+              </h4>
+
+              <.simple_form for={@asset_changeset}
+                            id="asset-form"
+                            phx-change="validate-asset"
+                            phx-submit="save-asset"
+                            :let={f}>
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div class="md:col-span-2">
+                    <label class="text-sm font-medium text-zinc-700" for="asset_account_id">Account</label>
+                    <select id="asset_account_id"
+                            name="asset[account_id]"
+                            class="input">
+                      <%= Phoenix.HTML.Form.options_for_select(asset_account_options(@asset_accounts), f[:account_id].value ||
+                        (@asset_editing_asset && @asset_editing_asset.account_id)) %>
+                    </select>
+                    <p :for={error <- errors_on(@asset_changeset, :account_id)} class="text-sm text-red-600"><%= error %></p>
+                  </div>
+
+                  <.input field={f[:name]} label="Name" />
+                  <.input field={f[:asset_type]} label="Type" />
+                  <.input field={f[:category]} label="Category" />
+                  <.input field={f[:valuation_amount]} label="Valuation amount" type={:number} step="0.01" min="0" />
+                  <.input field={f[:valuation_currency]} label="Currency" />
+                  <.input field={f[:ownership_type]} label="Ownership type" />
+                  <.input field={f[:ownership_details]} label="Ownership details" type={:textarea} />
+                  <.input field={f[:location]} label="Location" />
+                  <.input field={f[:notes]} label="Notes" type={:textarea} />
+
+                  <div>
+                    <label class="text-sm font-medium text-zinc-700" for="asset_acquired_on">Acquired on</label>
+                    <input id="asset_acquired_on"
+                           name="asset[acquired_on]"
+                           type="date"
+                           value={format_input_date(f[:acquired_on].value)}
+                           class="input" />
+                    <p :for={error <- errors_on(@asset_changeset, :acquired_on)} class="text-sm text-red-600"><%= error %></p>
+                  </div>
+
+                  <div>
+                    <label class="text-sm font-medium text-zinc-700" for="asset_last_valued_on">Last valued on</label>
+                    <input id="asset_last_valued_on"
+                           name="asset[last_valued_on]"
+                           type="date"
+                           value={format_input_date(f[:last_valued_on].value)}
+                           class="input" />
+                    <p :for={error <- errors_on(@asset_changeset, :last_valued_on)} class="text-sm text-red-600"><%= error %></p>
+                  </div>
+
+                  <div class="md:col-span-2">
+                    <.input field={f[:documents_text]}
+                            label="Document references"
+                            type={:textarea}
+                            placeholder="Enter document references separated by commas or new lines" />
+                  </div>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                  <button type="button" class="btn btn-outline" phx-click="cancel-asset">Cancel</button>
+                  <button type="submit" class="btn">
+                    <%= if @asset_form_mode == :edit, do: "Save changes", else: "Add asset" %>
+                  </button>
+                </div>
+              </.simple_form>
             </div>
           </div>
 
@@ -500,6 +801,14 @@ defmodule MoneyTreeWeb.DashboardLive do
     socket
     |> assign(:summary, Accounts.dashboard_summary(current_user))
     |> assign_metrics(current_user)
+    |> assign_asset_data(current_user)
+  end
+
+  defp assign_asset_data(socket, current_user) do
+    summary = Assets.dashboard_summary(current_user, preload: [:account])
+    accounts = Accounts.list_accessible_accounts(current_user, order_by: {:asc, :name})
+
+    assign(socket, asset_summary: summary, asset_accounts: accounts)
   end
 
   defp assign_metrics(socket, current_user) do
@@ -523,6 +832,55 @@ defmodule MoneyTreeWeb.DashboardLive do
   defp visible_value(_show?, nil, _masked), do: "--"
   defp visible_value(true, value, _masked), do: value
   defp visible_value(false, _value, masked), do: masked || "••"
+
+  defp reset_asset_form(socket) do
+    assign(socket,
+      asset_form_open?: false,
+      asset_form_mode: :new,
+      asset_editing_asset: nil,
+      asset_changeset: Assets.change_asset(%Asset{})
+    )
+  end
+
+  defp maybe_reset_form_for_deleted(socket, asset_id) do
+    deleted_id = to_string(asset_id)
+
+    case socket.assigns.asset_editing_asset do
+      %Asset{id: ^deleted_id} -> reset_asset_form(socket)
+      _ -> socket
+    end
+  end
+
+  defp asset_account_options(accounts) do
+    Enum.map(accounts, fn account ->
+      label =
+        case account.currency do
+          nil -> account.name
+          currency -> "#{account.name} (#{currency})"
+        end
+
+      {label, account.id}
+    end)
+  end
+
+  defp format_input_date(nil), do: nil
+  defp format_input_date(%Date{} = date), do: Date.to_iso8601(date)
+
+  defp format_input_date(%NaiveDateTime{} = datetime) do
+    datetime
+    |> NaiveDateTime.to_date()
+    |> Date.to_iso8601()
+  end
+
+  defp format_input_date(value) when is_binary(value) and value != "", do: value
+  defp format_input_date(_), do: nil
+
+  defp errors_on(%Ecto.Changeset{} = changeset, field) do
+    changeset
+    |> Map.get(:errors)
+    |> Keyword.get_values(field)
+    |> Enum.map(&CoreComponents.translate_error/1)
+  end
 
   defp format_timestamp(nil), do: "Pending"
 
