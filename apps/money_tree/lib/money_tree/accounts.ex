@@ -473,13 +473,36 @@ defmodule MoneyTree.Accounts do
     amount
     |> Decimal.round(2)
     |> Decimal.to_string(:normal)
-    |> ensure_two_decimals()
+    |> ensure_precision(2)
     |> prepend_currency(currency)
   end
 
   def format_money(amount, currency, opts) when is_binary(currency) do
     case Decimal.cast(amount) do
       {:ok, decimal} -> format_money(decimal, currency, opts)
+      :error -> nil
+    end
+  end
+
+  @doc """
+  Formats an APR value with a percent sign.
+  """
+  @spec format_apr(Decimal.t() | nil, keyword()) :: String.t() | nil
+  def format_apr(nil, _opts), do: nil
+
+  def format_apr(%Decimal{} = apr, opts) do
+    precision = apr_precision(opts)
+
+    apr
+    |> Decimal.round(precision)
+    |> Decimal.to_string(:normal)
+    |> ensure_precision(precision)
+    |> Kernel.<>("%")
+  end
+
+  def format_apr(apr, opts) do
+    case Decimal.cast(apr) do
+      {:ok, decimal} -> format_apr(decimal, opts)
       :error -> nil
     end
   end
@@ -496,13 +519,21 @@ defmodule MoneyTree.Accounts do
     |> maybe_mask(mask_character)
   end
 
+  defp apr_precision(opts), do: Keyword.get(opts, :apr_precision, 2)
+
   defp account_summary(%Account{} = account, opts) do
     %{
       account: account,
       current_balance: format_money(account.current_balance, account.currency, opts),
       current_balance_masked: mask_money(account.current_balance, account.currency, opts),
       available_balance: format_money(account.available_balance, account.currency, opts),
-      available_balance_masked: mask_money(account.available_balance, account.currency, opts)
+      available_balance_masked: mask_money(account.available_balance, account.currency, opts),
+      minimum_balance: format_money(account.minimum_balance, account.currency, opts),
+      minimum_balance_masked: mask_money(account.minimum_balance, account.currency, opts),
+      maximum_balance: format_money(account.maximum_balance, account.currency, opts),
+      maximum_balance_masked: mask_money(account.maximum_balance, account.currency, opts),
+      apr: format_apr(account.apr, opts),
+      fee_schedule: account.fee_schedule
     }
   end
 
@@ -571,11 +602,19 @@ defmodule MoneyTree.Accounts do
     end)
   end
 
-  defp ensure_two_decimals(string) do
+  defp ensure_precision(string, precision) when precision <= 0, do: string
+
+  defp ensure_precision(string, precision) do
     case String.split(string, ".") do
-      [whole] -> whole <> ".00"
-      [whole, fraction] -> whole <> "." <> String.pad_trailing(fraction, 2, "0")
-      _ -> string
+      [whole] ->
+        whole <> "." <> String.duplicate("0", precision)
+
+      [whole, fraction] ->
+        trimmed = String.slice(fraction, 0, precision)
+        whole <> "." <> String.pad_trailing(trimmed, precision, "0")
+
+      _ ->
+        string
     end
   end
 
@@ -644,7 +683,13 @@ defmodule MoneyTree.Accounts do
       id: account.id,
       name: account.name,
       balance: format_money(balance, currency, opts),
-      balance_masked: mask_money(balance, currency, opts)
+      balance_masked: mask_money(balance, currency, opts),
+      apr: format_apr(account.apr, opts),
+      minimum_balance: format_money(account.minimum_balance, currency, opts),
+      minimum_balance_masked: mask_money(account.minimum_balance, currency, opts),
+      maximum_balance: format_money(account.maximum_balance, currency, opts),
+      maximum_balance_masked: mask_money(account.maximum_balance, currency, opts),
+      fee_schedule: account.fee_schedule
     }
   end
 

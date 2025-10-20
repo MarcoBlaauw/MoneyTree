@@ -270,6 +270,44 @@ defmodule MoneyTreeWeb.DashboardLive do
                     <%= visible_value(@show_balances?, summary.available_balance, summary.available_balance_masked) %>
                   </span>
                 </div>
+
+                <div class="grid gap-1 text-xs text-zinc-500 sm:grid-cols-2">
+                  <div :if={summary.apr} class="flex items-center justify-between">
+                    <span>APR</span>
+                    <span class="text-zinc-700"><%= summary.apr %></span>
+                  </div>
+
+                  <div :if={summary.minimum_balance} class="flex items-center justify-between">
+                    <span>Min balance</span>
+                    <span class="text-zinc-700">
+                      <%=
+                        visible_value(
+                          @show_balances?,
+                          summary.minimum_balance,
+                          summary.minimum_balance_masked
+                        )
+                      %>
+                    </span>
+                  </div>
+
+                  <div :if={summary.maximum_balance} class="flex items-center justify-between">
+                    <span>Max balance</span>
+                    <span class="text-zinc-700">
+                      <%=
+                        visible_value(
+                          @show_balances?,
+                          summary.maximum_balance,
+                          summary.maximum_balance_masked
+                        )
+                      %>
+                    </span>
+                  </div>
+                </div>
+
+                <p :if={summary.fee_schedule} class="text-xs text-zinc-500">
+                  <span class="font-medium text-zinc-600">Fees:</span>
+                  <span class="text-zinc-700"><%= summary.fee_schedule %></span>
+                </p>
               </li>
 
               <li :if={Enum.empty?(@summary.accounts)}

@@ -33,6 +33,10 @@ defmodule MoneyTree.Accounts.Account do
     field(:last_synced_at, :utc_datetime_usec)
     field(:encrypted_account_number, Binary)
     field(:encrypted_routing_number, Binary)
+    field(:apr, :decimal)
+    field(:fee_schedule, :string)
+    field(:minimum_balance, :decimal)
+    field(:maximum_balance, :decimal)
 
     belongs_to(:user, User)
     belongs_to(:institution, Institution)
@@ -66,6 +70,10 @@ defmodule MoneyTree.Accounts.Account do
       :last_synced_at,
       :encrypted_account_number,
       :encrypted_routing_number,
+      :apr,
+      :fee_schedule,
+      :minimum_balance,
+      :maximum_balance,
       :user_id,
       :institution_id,
       :institution_connection_id
@@ -84,9 +92,14 @@ defmodule MoneyTree.Accounts.Account do
     |> validate_length(:type, min: 1, max: 60)
     |> validate_length(:subtype, max: 60)
     |> validate_length(:external_id, max: 120)
+    |> validate_length(:fee_schedule, max: 2000)
     |> validate_decimal(:current_balance)
     |> validate_decimal(:available_balance)
     |> validate_decimal(:limit)
+    |> validate_decimal(:apr, min: Decimal.new("0"), max: Decimal.new("100"))
+    |> validate_decimal(:minimum_balance, min: Decimal.new("0"))
+    |> validate_decimal(:maximum_balance, min: Decimal.new("0"))
+    |> validate_balance_range()
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:institution_id)
     |> foreign_key_constraint(:institution_connection_id)
@@ -120,25 +133,30 @@ defmodule MoneyTree.Accounts.Account do
 
   defp normalize_currency(other), do: other
 
-  defp validate_decimal(changeset, field) do
+  defp validate_decimal(changeset, field, opts \\ []) do
     validate_change(changeset, field, fn ^field, value ->
-      cond do
-        is_nil(value) ->
+      case cast_decimal(value) do
+        :skip ->
           []
 
-        match?(%Decimal{}, value) ->
-          []
-
-        is_binary(value) or is_number(value) ->
-          case Decimal.cast(value) do
-            {:ok, _decimal} -> []
-            :error -> [{field, "must be a valid decimal number"}]
-          end
-
-        true ->
+        :error ->
           [{field, "must be a valid decimal number"}]
+
+        {:ok, decimal} ->
+          validate_decimal_constraints(decimal, field, opts)
       end
     end)
+  end
+
+  defp validate_balance_range(changeset) do
+    min_balance = get_field(changeset, :minimum_balance)
+    max_balance = get_field(changeset, :maximum_balance)
+
+    if min_balance && max_balance && Decimal.compare(max_balance, min_balance) == :lt do
+      add_error(changeset, :maximum_balance, "must be greater than or equal to the minimum balance")
+    else
+      changeset
+    end
   end
 
   defp validate_currency(changeset, field) do
@@ -149,5 +167,60 @@ defmodule MoneyTree.Accounts.Account do
         [{field, "must be a valid ISO 4217 currency code"}]
       end
     end)
+  end
+
+  defp cast_decimal(nil), do: :skip
+  defp cast_decimal(%Decimal{} = decimal), do: {:ok, decimal}
+
+  defp cast_decimal(value) when is_binary(value) or is_number(value) do
+    case Decimal.cast(value) do
+      {:ok, decimal} -> {:ok, decimal}
+      :error -> :error
+    end
+  end
+
+  defp cast_decimal(_other), do: :error
+
+  defp validate_decimal_constraints(decimal, field, opts) do
+    []
+    |> maybe_validate_min(decimal, field, Keyword.get(opts, :min))
+    |> maybe_validate_max(decimal, field, Keyword.get(opts, :max))
+  end
+
+  defp maybe_validate_min(errors, _decimal, _field, nil), do: errors
+
+  defp maybe_validate_min(errors, decimal, field, limit) do
+    limit_decimal = ensure_decimal!(limit)
+
+    case Decimal.compare(decimal, limit_decimal) do
+      :lt ->
+        errors ++ [{field, "must be greater than or equal to #{Decimal.to_string(limit_decimal)}"}]
+
+      _other ->
+        errors
+    end
+  end
+
+  defp maybe_validate_max(errors, _decimal, _field, nil), do: errors
+
+  defp maybe_validate_max(errors, decimal, field, limit) do
+    limit_decimal = ensure_decimal!(limit)
+
+    case Decimal.compare(decimal, limit_decimal) do
+      :gt ->
+        errors ++ [{field, "must be less than or equal to #{Decimal.to_string(limit_decimal)}"}]
+
+      _other ->
+        errors
+    end
+  end
+
+  defp ensure_decimal!(%Decimal{} = decimal), do: decimal
+
+  defp ensure_decimal!(value) do
+    case Decimal.cast(value) do
+      {:ok, decimal} -> decimal
+      :error -> raise ArgumentError, "expected a decimal-compatible value, got: #{inspect(value)}"
+    end
   end
 end
