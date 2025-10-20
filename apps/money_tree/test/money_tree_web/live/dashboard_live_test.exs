@@ -2,10 +2,12 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
   use MoneyTreeWeb.ConnCase, async: true
 
   import MoneyTree.AccountsFixtures
+  import MoneyTree.AssetsFixtures
   import Phoenix.LiveViewTest
 
   alias Decimal
   alias MoneyTree.Accounts.Account
+  alias MoneyTree.Assets.Asset
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
 
@@ -77,6 +79,87 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     assert rendered =~ "text-rose-600"
     assert rendered =~ "text-emerald-600"
     assert rendered =~ "Subscription spend this month"
+  end
+
+  test "lists tangible assets and reveals valuations when unmasked", %{conn: conn, user: user} do
+    account = account_fixture(user, %{name: "Equity Account"})
+    asset_fixture(account, %{
+      name: "Family Home",
+      valuation_amount: Decimal.new("450000.00"),
+      valuation_currency: "USD",
+      asset_type: "real_estate",
+      document_refs: ["Deed #123"]
+    })
+
+    {:ok, view, html} = live(conn, ~p"/app/dashboard")
+
+    assert html =~ "Tangible assets"
+    assert html =~ "Family Home"
+    assert html =~ "assets tracked"
+    assert html =~ "Documents: Deed #123"
+    refute html =~ "USD 450000.00"
+
+    view |> element("#toggle-balances") |> render_click()
+
+    rendered = render(view)
+    assert rendered =~ "USD 450000.00"
+  end
+
+  test "users can manage assets from the dashboard", %{conn: conn, user: user} do
+    account = account_fixture(user, %{name: "Asset Account"})
+
+    {:ok, view, _html} = live(conn, ~p"/app/dashboard")
+
+    view |> element("#new-asset") |> render_click()
+
+    params = %{
+      "asset" => %{
+        "account_id" => account.id,
+        "name" => "Weekend Cabin",
+        "asset_type" => "real_estate",
+        "valuation_amount" => "120000",
+        "valuation_currency" => "USD",
+        "ownership_type" => "joint",
+        "location" => "Lakeside",
+        "documents_text" => "Deed #CABIN-001"
+      }
+    }
+
+    view |> form("#asset-form", params) |> render_submit()
+
+    rendered = render(view)
+    assert rendered =~ "Asset added successfully."
+    assert rendered =~ "Weekend Cabin"
+
+    asset = Repo.get_by!(Asset, name: "Weekend Cabin")
+
+    view |> element("#asset-#{asset.id} [phx-click=\"edit-asset\"]") |> render_click()
+
+    update_params = %{
+      "asset" => %{
+        "account_id" => account.id,
+        "name" => "Updated Cabin",
+        "asset_type" => "real_estate",
+        "valuation_amount" => "125000",
+        "valuation_currency" => "USD",
+        "ownership_type" => "joint",
+        "location" => "Lakeside",
+        "documents_text" => "Deed #CABIN-001\nInsurance #CABIN-INS"
+      }
+    }
+
+    view |> form("#asset-form", update_params) |> render_submit()
+
+    rendered = render(view)
+    assert rendered =~ "Asset updated successfully."
+    assert rendered =~ "Updated Cabin"
+    assert rendered =~ "Insurance #CABIN-INS"
+
+    view |> element("#asset-#{asset.id} [phx-click=\"delete-asset\"]") |> render_click()
+
+    rendered = render(view)
+    assert rendered =~ "Asset removed successfully."
+    refute rendered =~ "Updated Cabin"
   end
 
   test "locking prevents balance reveal until unlocked", %{conn: conn, user: user} do

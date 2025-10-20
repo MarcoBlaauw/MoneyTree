@@ -1,6 +1,8 @@
 alias Decimal
 alias MoneyTree.Accounts
 alias MoneyTree.Accounts.Account
+alias MoneyTree.Assets
+alias MoneyTree.Assets.Asset
 alias MoneyTree.Institutions.Institution
 alias MoneyTree.Repo
 alias MoneyTree.Sessions.Session
@@ -49,6 +51,27 @@ account =
       encrypted_routing_number: "987654321"
     })
     |> Repo.insert!()
+
+Repo.get_by(Asset, account_id: account.id, name: "Demo Home") ||
+  case Assets.create_asset(user, %{
+          account_id: account.id,
+          name: "Demo Home",
+          asset_type: "real_estate",
+          category: "primary_residence",
+          valuation_amount: Decimal.new("450000.00"),
+          valuation_currency: "USD",
+          ownership_type: "joint",
+          ownership_details: "Seed user and partner",
+          location: "123 Demo Street, Example City",
+          acquired_on: ~D[2018-05-01],
+          last_valued_on: Date.utc_today(),
+          document_refs: ["Deed #DEMO-001", "Insurance Policy #HOME-123"]
+        }) do
+    {:ok, _asset} -> :ok
+    {:error, :unauthorized} -> raise "Failed to seed asset: unauthorized"
+    {:error, %Ecto.Changeset{} = changeset} ->
+      raise "Failed to seed asset: #{inspect(changeset.errors)}"
+  end
 
 unless Repo.get_by(Session, user_id: user.id, context: "seed") do
   {:ok, _session, _token} =
