@@ -91,6 +91,34 @@ defmodule MoneyTree.Accounts.DashboardMetricsTest do
     end
   end
 
+  describe "dashboard_summary/2" do
+    test "includes formatted financial metadata" do
+      user = user_fixture()
+
+      account =
+        account_fixture(user, %{
+          name: "Premier Savings",
+          currency: "USD",
+          type: "depository",
+          apr: Decimal.from_float(3.25),
+          minimum_balance: Decimal.new(1000),
+          maximum_balance: Decimal.new(20000),
+          fee_schedule: "Monthly fee waived with $1,000 minimum",
+          current_balance: Decimal.new("2500.00")
+        })
+
+      summary = Accounts.dashboard_summary(user)
+      [entry | _] = summary.accounts
+
+      assert entry.account.id == account.id
+      assert entry.apr == "3.25%"
+      assert entry.minimum_balance == "USD 1000.00"
+      assert entry.maximum_balance == "USD 20000.00"
+      assert entry.minimum_balance_masked =~ "•"
+      assert entry.fee_schedule =~ "Monthly fee"
+    end
+  end
+
   defp insert_transaction(%Account{} = account, amount) do
     params = %{
       external_id: System.unique_integer([:positive]) |> Integer.to_string(),

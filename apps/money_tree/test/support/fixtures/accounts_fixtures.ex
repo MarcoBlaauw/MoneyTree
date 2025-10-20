@@ -53,6 +53,10 @@ defmodule MoneyTree.AccountsFixtures do
       limit: Map.get(attrs, :limit),
       institution_id: Map.get(attrs, :institution_id),
       institution_connection_id: Map.get(attrs, :institution_connection_id),
+      apr: Map.get(attrs, :apr),
+      fee_schedule: Map.get(attrs, :fee_schedule),
+      minimum_balance: Map.get(attrs, :minimum_balance),
+      maximum_balance: Map.get(attrs, :maximum_balance),
       user_id: user.id
     }
 

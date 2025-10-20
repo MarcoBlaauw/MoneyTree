@@ -19,7 +19,11 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
         name: "Household Checking",
         type: "depository",
         current_balance: Decimal.new("3100.00"),
-        available_balance: Decimal.new("2800.00")
+        available_balance: Decimal.new("2800.00"),
+        apr: Decimal.from_float(4.5),
+        fee_schedule: "Waived with direct deposit",
+        minimum_balance: Decimal.new(500),
+        maximum_balance: Decimal.new(5000)
       })
 
     credit =
@@ -70,15 +74,20 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
 
     assert html =~ "••"
     refute html =~ "USD 3100.00"
+    refute html =~ "USD 500.00"
 
     view |> element("#toggle-balances") |> render_click()
 
     rendered = render(view)
     assert rendered =~ "USD 3100.00"
+    assert rendered =~ "USD 500.00"
+    assert rendered =~ "USD 5000.00"
     assert rendered =~ "USD 120.00"
     assert rendered =~ "text-rose-600"
     assert rendered =~ "text-emerald-600"
     assert rendered =~ "Subscription spend this month"
+    assert rendered =~ "4.50%"
+    assert rendered =~ "Fees: Waived with direct deposit"
   end
 
   test "lists tangible assets and reveals valuations when unmasked", %{conn: conn, user: user} do
