@@ -31,7 +31,7 @@ asdf install nodejs latest
 
 # Enable pnpm via Corepack once Node.js is installed
 corepack enable
-corepack prepare pnpm@10.5.2 --activate
+corepack prepare pnpm@10.18.3 --activate
 ```
 
 Verify both runtimes are ready:
@@ -252,10 +252,10 @@ session-locked events.
 
 MoneyTree uses [Oban](https://hex.pm/packages/oban) with three queues (`default`, `mailers`, and `reporting`). Queue concurrency can be tuned with `OBAN_DEFAULT_LIMIT`, `OBAN_MAILER_LIMIT`, and `OBAN_REPORTING_LIMIT` environment variables. In development, Oban runs with lightweight concurrency and without peer discovery; in tests, jobs execute inline for deterministic assertions.
 
-Run Oban migrations independently (if you are not using the `mix setup` alias):
+Run the Oban migrations (if you are not using the `mix setup` alias) with the standard Ecto pipeline:
 
 ```bash
-mix oban.migrations
+mix do --app money_tree ecto.migrate
 ```
 
 ## Telemetry & Observability
