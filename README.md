@@ -19,9 +19,33 @@ asdf install elixir 1.19.0-rc.2-otp-28
 
 After installation, make sure `mix` is available on your `PATH` (`mix --version`). For `mise`, run `eval "$(mise activate bash)"` in your shell session. For `asdf`, source `${HOME}/.asdf/asdf.sh` (and `${HOME}/.asdf/completions/asdf.bash` for completions).
 
+### JavaScript toolchain
+
+The repository also contains shared UI packages and a Next.js frontend managed with **pnpm 10**. Install the Node.js and pnpm toolchain before running any JavaScript tasks:
+
+```bash
+# Install the active LTS release of Node.js (v20.x or newer). Examples:
+mise install node@20
+# or
+asdf install nodejs latest
+
+# Enable pnpm via Corepack once Node.js is installed
+corepack enable
+corepack prepare pnpm@10.5.2 --activate
+```
+
+Verify both runtimes are ready:
+
+```bash
+node --version
+pnpm --version
+```
+
 ## Initial Setup
 
-1. Copy the example environment file and adjust secrets (including the Cloak vault key) to your needs:
+1. Copy the example environment file and adjust secrets (including the Cloak vault key) to your needs
+   (see [`docs/environment-variables.md`](docs/environment-variables.md) for a full reference of
+   supported settings):
    ```bash
    cp .env.example .env
    ```

@@ -354,12 +354,41 @@ defmodule MoneyTree.Accounts do
 
   defp maybe_order_accounts(query, opts) do
     case Keyword.get(opts, :order_by) do
-      nil -> order_by(query, desc: :inserted_at)
-      {:desc, field_name} -> order_by(query, [account], desc: field(account, ^field_name))
-      {:asc, field_name} -> order_by(query, [account], asc: field(account, ^field_name))
-      other when is_list(other) -> order_by(query, ^other)
-      _ -> query
+      nil ->
+        order_by(query, desc: :inserted_at)
+
+      order ->
+        apply_account_order(query, order)
     end
+  end
+
+  defp apply_account_order(query, order) when is_list(order) do
+    Enum.reduce(order, query, fn
+      {:asc, field}, acc -> order_by(acc, [account], asc: field(account, ^normalize_account_field(field)))
+      {:desc, field}, acc -> order_by(acc, [account], desc: field(account, ^normalize_account_field(field)))
+      field, acc -> order_by(acc, [account], asc: field(account, ^normalize_account_field(field)))
+    end)
+  end
+
+  defp apply_account_order(query, {:asc, field}) do
+    order_by(query, [account], asc: field(account, ^normalize_account_field(field)))
+  end
+
+  defp apply_account_order(query, {:desc, field}) do
+    order_by(query, [account], desc: field(account, ^normalize_account_field(field)))
+  end
+
+  defp apply_account_order(query, field) do
+    order_by(query, [account], asc: field(account, ^normalize_account_field(field)))
+  end
+
+  defp normalize_account_field(field) when is_atom(field), do: field
+
+  defp normalize_account_field(field) when is_binary(field) do
+    String.to_existing_atom(field)
+  rescue
+    ArgumentError ->
+      raise ArgumentError, "unknown account order field: #{inspect(field)}"
   end
 
   defp maybe_preload_accounts(query, opts) do
@@ -776,8 +805,7 @@ defmodule MoneyTree.Accounts do
   end
 
   defp generate_session_token do
-    :crypto.strong_rand_bytes(32)
-    |> Base.url_encode64(padding: false)
+    generate_url_safe_token()
   end
 
   defp hash_session_token(token) when is_binary(token) do
@@ -785,11 +813,16 @@ defmodule MoneyTree.Accounts do
   end
 
   defp generate_invitation_token do
-    :crypto.strong_rand_bytes(32)
-    |> Base.url_encode64(padding: false)
+    generate_url_safe_token()
   end
 
   defp hash_invitation_token(token) when is_binary(token) do
     :crypto.hash(:sha256, token)
+  end
+
+  defp generate_url_safe_token(byte_length \\ 32) when is_integer(byte_length) and byte_length > 0 do
+    byte_length
+    |> :crypto.strong_rand_bytes()
+    |> Base.url_encode64(padding: false)
   end
 end
