@@ -71,7 +71,8 @@ defmodule MoneyTreeWeb.KycController do
         masked_local = "***" <> (visible || "")
         masked_local <> "@" <> domain
 
-      _ -> mask(value)
+      _ ->
+        mask(value)
     end
   end
 

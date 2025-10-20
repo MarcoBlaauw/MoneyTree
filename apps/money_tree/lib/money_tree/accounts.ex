@@ -15,6 +15,7 @@ defmodule MoneyTree.Accounts do
   alias MoneyTree.Mailer
   alias MoneyTree.Repo
   alias MoneyTree.Sessions.Session
+  alias MoneyTree.Transactions
   alias MoneyTree.Users.User
   alias Swoosh.Email
   alias Decimal
@@ -262,6 +263,159 @@ defmodule MoneyTree.Accounts do
   end
 
   @doc """
+  Returns running balance insights for active card accounts accessible to the user.
+  """
+  @spec running_card_balances(User.t() | binary(), keyword()) :: [map()]
+  def running_card_balances(user, opts \\ []) do
+    transactions_module = Keyword.get(opts, :transactions_module, Transactions)
+    lookback_days = Keyword.get(opts, :lookback_days, 30)
+
+    list_accessible_accounts(user,
+      preload: Keyword.get(opts, :preload, []),
+      order_by: Keyword.get(opts, :order_by, [{:asc, :name}])
+    )
+    |> Enum.filter(&card_account?/1)
+    |> Enum.map(fn account ->
+      current_balance = normalize_decimal(account.current_balance)
+      available_balance = normalize_optional_decimal(account.available_balance)
+      limit = normalize_optional_decimal(account.limit)
+
+      available_credit =
+        cond do
+          not is_nil(limit) ->
+            limit
+            |> Decimal.sub(current_balance)
+            |> clamp_decimal()
+
+          not is_nil(available_balance) ->
+            available_balance
+
+          true ->
+            nil
+        end
+
+      utilization =
+        cond do
+          is_nil(limit) ->
+            nil
+
+          Decimal.compare(limit, Decimal.new("0")) == :eq ->
+            nil
+
+          true ->
+            Decimal.div(current_balance, limit)
+            |> Decimal.max(Decimal.new("0"))
+        end
+
+      trend_amount = transactions_module.net_activity_for_account(account, days: lookback_days)
+
+      %{
+        account: %{
+          id: account.id,
+          name: account.name,
+          currency: account.currency,
+          type: account.type
+        },
+        current_balance: format_money(current_balance, account.currency, opts),
+        current_balance_masked: mask_money(current_balance, account.currency, opts),
+        available_credit: format_money(available_credit, account.currency, opts),
+        available_credit_masked: mask_money(available_credit, account.currency, opts),
+        utilization: utilization && Decimal.round(utilization, 4),
+        utilization_percent:
+          case utilization do
+            nil -> nil
+            %Decimal{} = value -> Decimal.mult(value, Decimal.new("100")) |> Decimal.round(2)
+          end,
+        trend_amount: format_money(trend_amount, account.currency, opts),
+        trend_amount_masked: mask_money(trend_amount, account.currency, opts),
+        trend_direction: trend_direction(trend_amount)
+      }
+    end)
+  end
+
+  @doc """
+  Calculates the household net worth for accounts accessible to the user.
+  """
+  @spec net_worth_snapshot(User.t() | binary(), keyword()) :: map()
+  def net_worth_snapshot(user, opts \\ []) do
+    accounts = list_accessible_accounts(user, preload: Keyword.get(opts, :preload, []))
+
+    {asset_total, liability_total, asset_groups, liability_groups} =
+      Enum.reduce(accounts, {Decimal.new("0"), Decimal.new("0"), %{}, %{}}, fn account,
+                                                                               {asset_acc,
+                                                                                liability_acc,
+                                                                                asset_map,
+                                                                                liability_map} ->
+        balance = normalize_decimal(account.current_balance)
+        currency = account.currency || "USD"
+        label = account_group_label(account)
+
+        cond do
+          asset_account?(account) ->
+            updated_assets =
+              Map.update(asset_map, {label, currency}, balance, &Decimal.add(&1, balance))
+
+            {Decimal.add(asset_acc, balance), liability_acc, updated_assets, liability_map}
+
+          liability_account?(account) ->
+            updated_liabilities =
+              Map.update(liability_map, {label, currency}, balance, &Decimal.add(&1, balance))
+
+            {asset_acc, Decimal.add(liability_acc, balance), asset_map, updated_liabilities}
+
+          true ->
+            {asset_acc, liability_acc, asset_map, liability_map}
+        end
+      end)
+
+    currency = primary_currency(accounts)
+    net_worth = Decimal.sub(asset_total, liability_total)
+
+    %{
+      currency: currency,
+      assets: format_money(asset_total, currency, opts),
+      assets_masked: mask_money(asset_total, currency, opts),
+      liabilities: format_money(liability_total, currency, opts),
+      liabilities_masked: mask_money(liability_total, currency, opts),
+      net_worth: format_money(net_worth, currency, opts),
+      net_worth_masked: mask_money(net_worth, currency, opts),
+      breakdown: %{
+        assets: format_group_totals(asset_groups, opts),
+        liabilities: format_group_totals(liability_groups, opts)
+      }
+    }
+  end
+
+  @doc """
+  Summarises balances across savings and investment accounts for quick dashboard rendering.
+  """
+  @spec savings_and_investments_summary(User.t() | binary(), keyword()) :: map()
+  def savings_and_investments_summary(user, opts \\ []) do
+    accounts = list_accessible_accounts(user, preload: Keyword.get(opts, :preload, []))
+
+    savings_accounts = Enum.filter(accounts, &savings_account?/1)
+    investment_accounts = Enum.filter(accounts, &investment_account?/1)
+
+    currency = primary_currency(savings_accounts ++ investment_accounts)
+
+    savings_total = sum_balances(savings_accounts)
+    investment_total = sum_balances(investment_accounts)
+    combined_total = Decimal.add(savings_total, investment_total)
+
+    %{
+      currency: currency,
+      savings_total: format_money(savings_total, currency, opts),
+      savings_total_masked: mask_money(savings_total, currency, opts),
+      investment_total: format_money(investment_total, currency, opts),
+      investment_total_masked: mask_money(investment_total, currency, opts),
+      combined_total: format_money(combined_total, currency, opts),
+      combined_total_masked: mask_money(combined_total, currency, opts),
+      savings_accounts: Enum.map(savings_accounts, &format_account_listing(&1, opts)),
+      investment_accounts: Enum.map(investment_accounts, &format_account_listing(&1, opts))
+    }
+  end
+
+  @doc """
   Formats user settings data for rendering.
   """
   @spec user_settings(User.t()) :: map()
@@ -364,9 +518,14 @@ defmodule MoneyTree.Accounts do
 
   defp apply_account_order(query, order) when is_list(order) do
     Enum.reduce(order, query, fn
-      {:asc, field}, acc -> order_by(acc, [account], asc: field(account, ^normalize_account_field(field)))
-      {:desc, field}, acc -> order_by(acc, [account], desc: field(account, ^normalize_account_field(field)))
-      field, acc -> order_by(acc, [account], asc: field(account, ^normalize_account_field(field)))
+      {:asc, field}, acc ->
+        order_by(acc, [account], asc: field(account, ^normalize_account_field(field)))
+
+      {:desc, field}, acc ->
+        order_by(acc, [account], desc: field(account, ^normalize_account_field(field)))
+
+      field, acc ->
+        order_by(acc, [account], asc: field(account, ^normalize_account_field(field)))
     end)
   end
 
@@ -431,6 +590,151 @@ defmodule MoneyTree.Accounts do
   defp maybe_mask(value, mask_character) do
     Regex.replace(~r/\d/, value, mask_character)
   end
+
+  defp normalize_decimal(nil), do: Decimal.new("0")
+  defp normalize_decimal(%Decimal{} = value), do: value
+
+  defp normalize_decimal(value) do
+    case Decimal.cast(value) do
+      {:ok, decimal} -> decimal
+      :error -> Decimal.new("0")
+    end
+  end
+
+  defp normalize_optional_decimal(nil), do: nil
+  defp normalize_optional_decimal(value), do: normalize_decimal(value)
+
+  defp clamp_decimal(%Decimal{} = value) do
+    if Decimal.compare(value, Decimal.new("0")) == :lt do
+      Decimal.new("0")
+    else
+      value
+    end
+  end
+
+  defp clamp_decimal(nil), do: nil
+
+  defp trend_direction(amount) do
+    case Decimal.compare(normalize_decimal(amount), Decimal.new("0")) do
+      :gt -> :increasing
+      :lt -> :decreasing
+      :eq -> :flat
+    end
+  end
+
+  defp format_group_totals(group_map, opts) do
+    group_map
+    |> Enum.map(fn {{label, currency}, total} ->
+      currency = currency || "USD"
+
+      %{
+        label: label,
+        total: format_money(total, currency, opts),
+        total_masked: mask_money(total, currency, opts)
+      }
+    end)
+    |> Enum.sort_by(& &1.label)
+  end
+
+  defp format_account_listing(account, opts) do
+    balance = normalize_decimal(account.current_balance)
+    currency = account.currency || "USD"
+
+    %{
+      id: account.id,
+      name: account.name,
+      balance: format_money(balance, currency, opts),
+      balance_masked: mask_money(balance, currency, opts)
+    }
+  end
+
+  defp sum_balances(accounts) do
+    Enum.reduce(accounts, Decimal.new("0"), fn account, acc ->
+      Decimal.add(acc, normalize_decimal(account.current_balance))
+    end)
+  end
+
+  defp primary_currency([]), do: "USD"
+
+  defp primary_currency(accounts) do
+    accounts
+    |> Enum.map(& &1.currency)
+    |> Enum.find("USD", fn currency -> is_binary(currency) and currency != "" end)
+  end
+
+  defp asset_account?(account) do
+    type = downcase(account.type)
+    subtype = downcase(account.subtype)
+
+    cond do
+      card_account?(account) -> false
+      loan_account?(account) -> false
+      type in ["depository", "investment", "brokerage", "retirement", "cash"] -> true
+      subtype in ["savings", "checking", "money market", "ira", "401k"] -> true
+      true -> false
+    end
+  end
+
+  defp liability_account?(account) do
+    card_account?(account) or loan_account?(account) or downcase(account.type) in ["liability"]
+  end
+
+  defp card_account?(account) do
+    type = downcase(account.type)
+    subtype = downcase(account.subtype)
+
+    type in ["credit", "card", "credit card"] or
+      subtype in ["credit", "credit card", "charge card"]
+  end
+
+  defp loan_account?(account) do
+    type = downcase(account.type)
+    subtype = downcase(account.subtype)
+
+    String.contains?(type, "loan") or String.contains?(subtype, "loan") or
+      subtype in ["mortgage", "student"]
+  end
+
+  defp savings_account?(account) do
+    subtype = downcase(account.subtype)
+    type = downcase(account.type)
+
+    subtype in ["savings", "money market"] or type == "depository"
+  end
+
+  defp investment_account?(account) do
+    type = downcase(account.type)
+    subtype = downcase(account.subtype)
+
+    type in ["investment", "brokerage", "retirement"] or
+      subtype in ["ira", "401k", "brokerage", "roth"]
+  end
+
+  defp account_group_label(account) do
+    cond do
+      card_account?(account) -> "Credit Cards"
+      loan_account?(account) -> "Loans"
+      savings_account?(account) -> "Savings"
+      investment_account?(account) -> "Investments"
+      asset_account?(account) -> titleize(account.type || "Assets")
+      true -> "Accounts"
+    end
+  end
+
+  defp titleize(nil), do: "Accounts"
+
+  defp titleize(value) do
+    value
+    |> to_string()
+    |> String.replace("_", " ")
+    |> String.downcase()
+    |> String.split()
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
+
+  defp downcase(nil), do: ""
+  defp downcase(value) when is_binary(value), do: String.downcase(value)
 
   defp normalize_user_id(%User{id: id}) when is_binary(id), do: id
   defp normalize_user_id(id) when is_binary(id), do: id
@@ -820,7 +1124,8 @@ defmodule MoneyTree.Accounts do
     :crypto.hash(:sha256, token)
   end
 
-  defp generate_url_safe_token(byte_length \\ 32) when is_integer(byte_length) and byte_length > 0 do
+  defp generate_url_safe_token(byte_length \\ 32)
+       when is_integer(byte_length) and byte_length > 0 do
     byte_length
     |> :crypto.strong_rand_bytes()
     |> Base.url_encode64(padding: false)

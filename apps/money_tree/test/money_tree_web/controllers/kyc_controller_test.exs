@@ -29,7 +29,9 @@ defmodule MoneyTreeWeb.KycControllerTest do
   describe "POST /api/kyc/session" do
     test "redacts sensitive applicant fields", %{conn: conn} do
       response =
-        post(conn, ~p"/api/kyc/session", %{applicant: %{ssn: "123-45-6789", email: "test@example.com"}})
+        post(conn, ~p"/api/kyc/session", %{
+          applicant: %{ssn: "123-45-6789", email: "test@example.com"}
+        })
 
       assert %{"data" => data} = json_response(response, 200)
       assert data["applicant"]["ssn"] == "***6789"
