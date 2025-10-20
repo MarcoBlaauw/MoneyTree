@@ -119,6 +119,6 @@ defmodule MoneyTreeWeb.SessionController do
   end
 
   defp redirect_path(conn) do
-    get_session(conn, :user_return_to) || "/app/dashboard"
+    get_session(conn, :user_return_to) || "/app"
   end
 end
