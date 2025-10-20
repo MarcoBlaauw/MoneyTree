@@ -35,6 +35,23 @@ defmodule MoneyTree.Accounts do
   end
 
   @doc """
+  Updates the role for the user identified by email.
+  """
+  @spec set_user_role(String.t(), atom() | String.t()) ::
+          {:ok, User.t()} | {:error, :invalid_role | :not_found | Changeset.t()}
+  def set_user_role(email, role) when is_binary(email) do
+    with {:ok, role_atom} <- normalize_role(role),
+         %User{} = user <- get_user_by_email(email) do
+      user
+      |> User.changeset(%{role: role_atom})
+      |> Repo.update()
+    else
+      {:error, reason} -> {:error, reason}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  @doc """
   Authenticates a user and transparently rehashes outdated Argon2 hashes.
   """
   @spec authenticate_user(String.t(), String.t()) ::
@@ -1073,6 +1090,30 @@ defmodule MoneyTree.Accounts do
     from(u in User, where: fragment("LOWER(?)", u.email) == ^normalized_email)
     |> Repo.one()
   end
+
+  defp normalize_role(role) when is_atom(role) do
+    if role in User.roles(), do: {:ok, role}, else: {:error, :invalid_role}
+  end
+
+  defp normalize_role(role) when is_binary(role) do
+    role
+    |> String.trim()
+    |> String.downcase()
+    |> case do
+      "" ->
+        {:error, :invalid_role}
+
+      normalized ->
+        case Enum.find(User.roles(), fn candidate ->
+               Atom.to_string(candidate) == normalized
+             end) do
+          nil -> {:error, :invalid_role}
+          role_atom -> {:ok, role_atom}
+        end
+    end
+  end
+
+  defp normalize_role(_), do: {:error, :invalid_role}
 
   defp put_password_hash(changeset) do
     case Changeset.fetch_change(changeset, :password) do
