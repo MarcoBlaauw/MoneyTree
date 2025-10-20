@@ -2,6 +2,7 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
   use MoneyTreeWeb.ConnCase, async: true
 
   import MoneyTree.AccountsFixtures
+  import MoneyTree.AssetsFixtures
   import Phoenix.LiveViewTest
 
   alias Decimal
@@ -27,6 +28,7 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     assert html =~ "<meta name=\"csp-script-src\""
     assert html =~ "<meta name=\"csp-style-src\""
     assert html =~ "Dashboard"
+    assert html =~ "Assets"
     assert html =~ "••"
     refute html =~ "USD 100.50"
 
@@ -59,6 +61,74 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
 
     assert html =~ "Visible Account"
     refute html =~ "Hidden Account"
+  end
+
+  test "dashboard lists only accessible assets", %{conn: conn, user: user} do
+    account = account_fixture(user, %{name: "Home"})
+    asset_fixture(user, account, %{name: "Family Home"})
+
+    other_user = user_fixture(%{email: "asset-other@example.com"})
+    other_account = account_fixture(other_user, %{name: "Other Account"})
+    asset_fixture(other_user, other_account, %{name: "Hidden Asset"})
+
+    {:ok, _view, html} = live(conn, ~p"/app/dashboard")
+
+    assert html =~ "Family Home"
+    refute html =~ "Hidden Asset"
+  end
+
+  test "user can create assets from the dashboard", %{conn: conn, user: user} do
+    account = account_fixture(user, %{name: "Asset Account"})
+
+    {:ok, view, _html} = live(conn, ~p"/app/dashboard")
+
+    view |> element("button", "Add asset") |> render_click()
+
+    params = %{
+      "name" => "New Vehicle",
+      "type" => "vehicle",
+      "valuation_amount" => "15000",
+      "valuation_currency" => "USD",
+      "valuation_date" => "2024-01-01",
+      "account_id" => account.id,
+      "ownership" => "Joint",
+      "location" => "Garage",
+      "documents" => "https://example.com/title.pdf",
+      "metadata" => ~s({"note":"leased"})
+    }
+
+    view
+    |> form("#asset-form", %{asset: params})
+    |> render_submit()
+
+    assert render(view) =~ "Asset saved."
+    assert render(view) =~ "New Vehicle"
+    assert render(view) =~ "vehicle"
+  end
+
+  test "user can edit and remove assets from the dashboard", %{conn: conn, user: user} do
+    account = account_fixture(user, %{name: "Edit Account"})
+    asset = asset_fixture(user, account, %{name: "Updatable Asset"})
+
+    {:ok, view, _html} = live(conn, ~p"/app/dashboard")
+
+    view
+    |> element("button[phx-value-id=\"#{asset.id}\"]", "Edit")
+    |> render_click()
+
+    view
+    |> form("#asset-form", %{asset: %{name: "Renamed Asset", ownership: "Solo"}})
+    |> render_submit()
+
+    assert render(view) =~ "Asset saved."
+    assert render(view) =~ "Renamed Asset"
+
+    view
+    |> element("button[phx-value-id=\"#{asset.id}\"]", "Remove")
+    |> render_click()
+
+    assert render(view) =~ "Asset removed."
+    refute render(view) =~ "Renamed Asset"
   end
 
   defp insert_transaction(%Account{} = account, attrs) do

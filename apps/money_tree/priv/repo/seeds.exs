@@ -1,6 +1,7 @@
 alias Decimal
 alias MoneyTree.Accounts
 alias MoneyTree.Accounts.Account
+alias MoneyTree.Assets.Asset
 alias MoneyTree.Institutions.Institution
 alias MoneyTree.Repo
 alias MoneyTree.Sessions.Session
@@ -49,6 +50,23 @@ account =
       encrypted_routing_number: "987654321"
     })
     |> Repo.insert!()
+
+Repo.get_by(Asset, account_id: account.id, name: "Demo Home") ||
+  %Asset{}
+  |> Asset.changeset(%{
+    account_id: account.id,
+    name: "Demo Home",
+    type: "property",
+    valuation_amount: Decimal.new("350000"),
+    valuation_currency: "USD",
+    valuation_date: Date.utc_today(),
+    ownership: "Primary residence",
+    location: "123 Seed Street, Example City",
+    documents: ["https://example.com/deed.pdf"],
+    notes: "Seeded tangible asset",
+    metadata: %{"source" => "seeds"}
+  })
+  |> Repo.insert!()
 
 unless Repo.get_by(Session, user_id: user.id, context: "seed") do
   {:ok, _session, _token} =
