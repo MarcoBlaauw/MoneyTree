@@ -22,7 +22,9 @@ defmodule MoneyTreeWeb.DashboardLive do
        asset_form_open?: false,
        asset_form_action: :new,
        asset_form_asset: %Asset{documents: []},
-       accessible_accounts: []
+       accessible_accounts: [],
+       summary: %{accounts: [], totals: []},
+       asset_summary: %{assets: [], totals: []}
      )
      |> load_dashboard(current_user)}
   end
@@ -176,7 +178,7 @@ defmodule MoneyTreeWeb.DashboardLive do
             </p>
 
             <ul class="space-y-3">
-              <li :for={summary <- @account_summary.accounts}
+              <li :for={summary <- @summary.accounts}
                   class="flex flex-col gap-1 rounded-lg border border-zinc-100 bg-zinc-50 p-3">
                 <div class="flex items-center justify-between">
                   <span class="font-medium text-zinc-900"><%= summary.account.name %></span>
@@ -202,7 +204,7 @@ defmodule MoneyTreeWeb.DashboardLive do
             <div class="mt-4 space-y-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3">
               <h3 class="text-sm font-semibold text-zinc-700">Totals</h3>
               <dl class="space-y-2">
-                <div :for={total <- @account_summary.totals}
+                <div :for={total <- @summary.totals}
                      class="flex items-center justify-between text-sm">
                   <dt class="text-zinc-600"><%= total.currency %> • <%= total.account_count %> accounts</dt>
                   <dd class="font-semibold text-zinc-800">
@@ -327,7 +329,7 @@ defmodule MoneyTreeWeb.DashboardLive do
 
   defp load_dashboard(socket, current_user) do
     socket
-    |> assign(:account_summary, Accounts.dashboard_summary(current_user))
+    |> assign(:summary, Accounts.dashboard_summary(current_user))
     |> assign(:asset_summary, Assets.dashboard_summary(current_user))
     |> ensure_accessible_accounts(current_user)
     |> assign_transactions(current_user)
