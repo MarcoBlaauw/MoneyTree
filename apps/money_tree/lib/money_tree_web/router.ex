@@ -96,6 +96,8 @@ defmodule MoneyTreeWeb.Router do
   scope "/", MoneyTreeWeb do
     pipe_through [:browser, :require_authenticated_user]
 
+    get "/app", AppController, :index
+
     live_session :app,
       on_mount: [MoneyTreeWeb.Plugs.RequireAuthenticatedUser] do
       live "/app/dashboard", DashboardLive

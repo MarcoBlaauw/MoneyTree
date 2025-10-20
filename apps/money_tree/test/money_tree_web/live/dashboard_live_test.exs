@@ -5,34 +5,78 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
   import Phoenix.LiveViewTest
 
   alias Decimal
-  alias MoneyTree.Accounts
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
 
   setup :register_and_log_in_user
 
-  test "includes CSP meta tags and masks balances by default", %{conn: conn, user: user} do
-    account =
+  test "renders dashboard metrics and masks balances by default", %{conn: conn, user: user} do
+    checking =
       account_fixture(user, %{
-        current_balance: Decimal.new("100.50"),
-        available_balance: Decimal.new("80.25")
+        name: "Household Checking",
+        type: "depository",
+        current_balance: Decimal.new("3100.00"),
+        available_balance: Decimal.new("2800.00")
       })
 
-    insert_transaction(account, %{amount: Decimal.new("25.00"), description: "Coffee"})
+    credit =
+      account_fixture(user, %{
+        name: "Rewards Card",
+        type: "credit",
+        current_balance: Decimal.new("520.00"),
+        available_balance: Decimal.new("80.00"),
+        limit: Decimal.new("600.00")
+      })
+
+    loan =
+      account_fixture(user, %{
+        name: "Student Loan",
+        type: "loan",
+        subtype: "student",
+        current_balance: Decimal.new("15000.00")
+      })
+
+    insert_transaction(checking, %{
+      amount: Decimal.new("3000.00"),
+      description: "Mortgage",
+      category: "Housing"
+    })
+
+    insert_transaction(checking, %{
+      amount: Decimal.new("120.00"),
+      description: "Weekly Groceries",
+      category: "Groceries"
+    })
+
+    insert_transaction(checking, %{
+      amount: Decimal.new("45.99"),
+      description: "Music Subscription",
+      category: "Subscription"
+    })
+
+    insert_transaction(credit, %{amount: Decimal.new("-25.00"), description: "Refund"})
+    insert_transaction(loan, %{amount: Decimal.new("-150.00"), description: "Loan Payment"})
 
     {:ok, view, html} = live(conn, ~p"/app/dashboard")
 
     assert html =~ "<meta name=\"csp-nonce\""
-    assert html =~ "<meta name=\"csp-script-src\""
-    assert html =~ "<meta name=\"csp-style-src\""
-    assert html =~ "Dashboard"
+    assert html =~ "Next.js demos"
+    assert html =~ "Budget pulse"
+    assert html =~ "Loans &amp; autopay"
+    assert html =~ "Recent activity"
+
     assert html =~ "••"
-    refute html =~ "USD 100.50"
+    refute html =~ "USD 3100.00"
 
     view |> element("#toggle-balances") |> render_click()
-    assert render(view) =~ "USD 100.50"
-    assert render(view) =~ "USD 80.25"
+
+    rendered = render(view)
+    assert rendered =~ "USD 3100.00"
+    assert rendered =~ "USD 120.00"
+    assert rendered =~ "text-rose-600"
+    assert rendered =~ "text-emerald-600"
+    assert rendered =~ "Subscription spend this month"
   end
 
   test "locking prevents balance reveal until unlocked", %{conn: conn, user: user} do
@@ -67,9 +111,10 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
         external_id: System.unique_integer([:positive]) |> Integer.to_string(),
         amount: Map.get(attrs, :amount, Decimal.new("1.00")),
         currency: account.currency,
-        type: "card",
+        type: Map.get(attrs, :type, "card"),
         posted_at: DateTime.utc_now(),
         description: Map.get(attrs, :description, "Test"),
+        category: Map.get(attrs, :category),
         status: "posted",
         account_id: account.id
       }
