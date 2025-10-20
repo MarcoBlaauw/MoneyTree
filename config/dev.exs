@@ -1,5 +1,12 @@
 import Config
 
+pnpm_executable =
+  System.find_executable("pnpm") ||
+    raise """
+    Unable to locate pnpm in PATH.
+    Install pnpm (e.g. `corepack enable pnpm`) and ensure it is on PATH before starting the dev server.
+    """
+
 # Configure your database
 dev_db_username =
   System.get_env("DEV_DATABASE_USERNAME") || System.get_env("DATABASE_USERNAME") || "postgres"
@@ -30,22 +37,22 @@ config :money_tree, MoneyTreeWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "phyLbEeTQE24hcZMhVv+OA9FlwwH3+wnDnQIOffpLMPHzaOjtxVT6Sa4OaVdpRwJ",
   watchers: [
-    tailwind: [
-      "pnpm",
-      "--filter",
-      "money-tree-assets",
-      "run",
-      "tailwind:watch",
-      cd: Path.expand("..", __DIR__)
-    ],
-    esbuild: [
-      "pnpm",
-      "--filter",
-      "money-tree-assets",
-      "run",
-      "esbuild:watch",
-      cd: Path.expand("..", __DIR__)
-    ]
+    {pnpm_executable,
+     [
+       "--filter",
+       "money-tree-assets",
+       "run",
+       "tailwind:watch",
+       cd: Path.expand("..", __DIR__)
+     ]},
+    {pnpm_executable,
+     [
+       "--filter",
+       "money-tree-assets",
+       "run",
+       "esbuild:watch",
+       cd: Path.expand("..", __DIR__)
+     ]}
   ]
 
 config :money_tree, dev_routes: true

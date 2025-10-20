@@ -1,4 +1,6 @@
-const basePath = process.env.NEXT_BASE_PATH || "/app/react";
+const isDev = process.env.NODE_ENV !== "production";
+const basePath =
+  process.env.NEXT_BASE_PATH ?? (isDev ? "" : "/app/react");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

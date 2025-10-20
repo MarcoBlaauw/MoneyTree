@@ -82,6 +82,7 @@ defmodule MoneyTreeWeb.Router do
   scope "/", MoneyTreeWeb do
     pipe_through :browser
 
+    get "/", SessionController, :new
     get "/login", SessionController, :new
     post "/login", SessionController, :create
     delete "/logout", SessionController, :delete

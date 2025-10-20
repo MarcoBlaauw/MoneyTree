@@ -3,3 +3,7 @@ packages:
   - apps/money_tree/assets
   - apps/next
   - apps/contracts
+
+onlyBuiltDependencies:
+  - esbuild
+  - unrs-resolver
