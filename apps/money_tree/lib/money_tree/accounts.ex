@@ -129,7 +129,7 @@ defmodule MoneyTree.Accounts do
     |> Session.changeset(params)
     |> Repo.insert(
       on_conflict: {:replace_all_except, [:id, :inserted_at]},
-      conflict_target: :sessions_user_id_context_index,
+      conflict_target: [:user_id, :context],
       returning: true
     )
     |> case do
