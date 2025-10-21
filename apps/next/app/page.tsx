@@ -1,4 +1,8 @@
+import React from "react";
 import Image from "next/image";
+
+import type { CurrentUserProfile } from "./lib/current-user";
+import { getCurrentUser } from "./lib/current-user";
 
 const featureHighlights = [
   {
@@ -21,7 +25,38 @@ const featureHighlights = [
   }
 ];
 
-export default function Home() {
+const quickActions = [
+  {
+    href: "/app/dashboard",
+    title: "Open dashboard",
+    description: "Review cash flow, runway, and portfolio trends at a glance.",
+  },
+  {
+    href: "/app/transfers",
+    title: "Manage transfers",
+    description: "Schedule or approve movements between your connected accounts.",
+  },
+  {
+    href: "/app/settings",
+    title: "Update settings",
+    description: "Adjust roles, security policies, and workspace preferences.",
+  },
+  {
+    href: "/control-panel",
+    title: "Visit control panel",
+    description: "Access owner-level tooling and advanced automations.",
+  },
+];
+
+type HomeContentProps = {
+  currentUser: CurrentUserProfile | null;
+};
+
+function HomeContent({ currentUser }: HomeContentProps) {
+  const isGuest = !currentUser;
+  const greetingName =
+    currentUser && (currentUser.name?.trim() || currentUser.email);
+
   return (
     <div className="bg-background text-foreground min-h-screen">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-8">
@@ -36,13 +71,24 @@ export default function Home() {
           <span className="hidden text-lg font-semibold tracking-tight sm:inline">MoneyTree</span>
         </div>
         <div className="flex items-center gap-3 text-sm font-medium">
+          {isGuest && (
+            <a
+              className="rounded-full border border-primary/30 px-5 py-2 text-primary hover:border-primary hover:text-primary transition"
+              href="/login"
+            >
+              Log in
+            </a>
+          )}
           <a
             className="rounded-full bg-primary px-5 py-2 text-primary-foreground shadow hover:bg-secondary transition"
             href="#get-started"
           >
             Start free trial
           </a>
-          <a className="rounded-full border border-primary/30 px-5 py-2 text-primary hover:border-primary hover:text-primary transition" href="#learn-more">
+          <a
+            className="rounded-full border border-primary/30 px-5 py-2 text-primary hover:border-primary hover:text-primary transition"
+            href="#learn-more"
+          >
             Learn more
           </a>
         </div>
@@ -105,6 +151,40 @@ export default function Home() {
             </div>
           </div>
         </section>
+        {currentUser && (
+          <section className="grid gap-8 rounded-3xl border border-primary/30 bg-neutral/40 p-8 shadow" aria-labelledby="quick-actions">
+            <div className="space-y-2">
+              <span className="inline-flex w-fit items-center rounded-full bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
+                Personalized overview
+              </span>
+              <h2 id="quick-actions" className="text-2xl font-semibold text-foreground">
+                Welcome back, {greetingName}!
+              </h2>
+              <p className="text-sm text-slate-300">
+                Jump right into the areas of MoneyTree you use most often. Each action opens in a new tab so you never lose your place.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {quickActions.map((action) => (
+                <a
+                  key={action.href}
+                  className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/40 p-5 transition hover:border-primary hover:bg-background/60"
+                  href={action.href}
+                >
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground group-hover:text-primary transition">
+                      {action.title}
+                    </p>
+                    <p className="text-sm text-slate-300">{action.description}</p>
+                  </div>
+                  <span className="mt-4 inline-flex items-center text-sm font-medium text-primary group-hover:translate-x-1 transition">
+                    Go now →
+                  </span>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
 
       <footer className="border-t border-primary/20 bg-neutral/40">
@@ -125,4 +205,17 @@ export default function Home() {
       </footer>
     </div>
   );
+}
+
+type CurrentUserFetcher = () => Promise<CurrentUserProfile | null>;
+
+export async function renderHomePage(
+  fetchCurrentUser: CurrentUserFetcher = getCurrentUser,
+) {
+  const currentUser = await fetchCurrentUser();
+  return <HomeContent currentUser={currentUser} />;
+}
+
+export default async function Home() {
+  return renderHomePage();
 }
