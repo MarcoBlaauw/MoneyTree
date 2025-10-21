@@ -56,6 +56,7 @@ defmodule MoneyTreeWeb.Router do
       get "/mock-auth", MockAuthController, :show
       delete "/logout", AuthController, :logout
       get "/me", AuthController, :me
+      get "/settings", SettingsController, :show
       post "/accounts/:account_id/invitations", InvitationController, :create
       delete "/accounts/:account_id/invitations/:id", InvitationController, :revoke
     end
