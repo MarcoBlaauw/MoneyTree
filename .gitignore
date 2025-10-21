@@ -20,3 +20,5 @@ apps/money_tree/priv/static/cache_manifest.json
 apps/money_tree/priv/static/*.gz
 apps/money_tree/priv/static/*-*.ico
 apps/money_tree/priv/static/*-*.txt
+teller/*.pem
+teller/*.key

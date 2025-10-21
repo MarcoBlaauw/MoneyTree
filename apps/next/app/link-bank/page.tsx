@@ -2,10 +2,37 @@ import { headers } from "next/headers";
 import Script from "next/script";
 import LinkBankClient from "./link-bank-client";
 
+function inferTellerEnvironment(connectHost: string | undefined): string | undefined {
+  if (!connectHost) {
+    return undefined;
+  }
+
+  const host = connectHost.toLowerCase();
+
+  if (host.includes("sandbox")) {
+    return "sandbox";
+  }
+
+  if (host.includes("development")) {
+    return "development";
+  }
+
+  if (host.includes("production")) {
+    return "production";
+  }
+
+  return undefined;
+}
+
 export default function LinkBankPage() {
   const headerList = headers();
   const csrfToken = headerList.get("x-csrf-token") ?? "";
   const cspNonce = headerList.get("x-csp-nonce") ?? undefined;
+  const connectHost = process.env.TELLER_CONNECT_HOST;
+  const tellerConfig = {
+    applicationId: process.env.TELLER_CONNECT_APPLICATION_ID,
+    environment: process.env.TELLER_CONNECT_ENVIRONMENT ?? inferTellerEnvironment(connectHost),
+  };
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-12">
@@ -18,7 +45,7 @@ export default function LinkBankPage() {
         </p>
       </section>
 
-      <LinkBankClient csrfToken={csrfToken} />
+      <LinkBankClient csrfToken={csrfToken} tellerConfig={tellerConfig} />
 
       <Script
         id="teller-connect-script"

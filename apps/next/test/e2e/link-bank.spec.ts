@@ -24,7 +24,43 @@ test.describe("Bank linking widgets", () => {
     ]);
 
     await interceptJson(page, /\/api\/teller\/connect_token/, {
-      data: { token: "connect-token-9876" },
+      data: { connect_token: "connect-token-9876" },
+    });
+
+    await page.route(/\/api\/teller\/exchange/, async (route) => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      expect(body.public_token).toBe("public-token-9876");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: { connection_id: "conn-123" } }),
+      });
+    });
+
+    await page.addInitScript(() => {
+      const globalWindow = window as typeof window & {
+        __tellerConnectCalls?: unknown[];
+      };
+
+      globalWindow.__tellerConnectCalls = [];
+      globalWindow.TellerConnect = {
+        setup(options) {
+          globalWindow.__tellerConnectCalls?.push(options);
+          return {
+            open() {
+              if (typeof options.onSuccess === "function") {
+                options.onSuccess({
+                  public_token: "public-token-9876",
+                  enrollment: { institution: { id: "demo-bank", name: "Demo Bank" } },
+                });
+              }
+            },
+            destroy() {
+              // noop
+            },
+          };
+        },
+      };
     });
   });
 
@@ -33,14 +69,14 @@ test.describe("Bank linking widgets", () => {
 
     await page.getByTestId("launch-teller").click();
 
-    await expect(page.getByTestId("widget-frame")).toHaveAttribute(
-      "src",
-      /connect\.teller\.io\/widget\?token=/,
-    );
-
-    const payload = await page.getByTestId("event-payload").first().textContent();
+    const payloadLocator = page.getByTestId("event-payload").first();
+    await expect(payloadLocator).toBeVisible();
+    const payload = await payloadLocator.textContent();
     expect(payload).not.toContain("connect-token-9876");
+    expect(payload).not.toContain("public-token-9876");
     expect(payload).toContain("***9876");
+
+    await expect(page.getByTestId("widget-events")).toContainText("Teller exchange succeeded");
   });
 
   test("surfaces Plaid errors", async ({ page }) => {

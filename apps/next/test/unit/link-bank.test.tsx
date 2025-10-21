@@ -47,9 +47,26 @@ const headlessStubs = {
 describe("LinkBankClient", () => {
   let restoreDom: (() => void) | undefined;
   const originalFetch = globalThis.fetch;
+  const TELLER_CONFIG = { applicationId: "app-123", environment: "sandbox" } as const;
+  let setupCalls: TellerConnectSetupOptions[];
 
   beforeEach(() => {
     restoreDom = setupDom();
+    setupCalls = [];
+    (window as unknown as { TellerConnect?: { setup: (options: TellerConnectSetupOptions) => TellerConnectInstance } }).TellerConnect =
+      {
+        setup: (options: TellerConnectSetupOptions) => {
+          setupCalls.push(options);
+          return {
+            open() {
+              // noop for tests
+            },
+            destroy() {
+              // noop for tests
+            },
+          };
+        },
+      };
   });
 
   afterEach(() => {
@@ -57,6 +74,7 @@ describe("LinkBankClient", () => {
       restoreDom();
     }
     globalThis.fetch = originalFetch;
+    delete (window as { TellerConnect?: unknown }).TellerConnect;
   });
 
   it("requests Teller tokens with credentialed fetch", async () => {
@@ -64,14 +82,23 @@ describe("LinkBankClient", () => {
       assert.equal(input, "/api/teller/connect_token");
       assert.equal(init?.credentials, "include");
       assert.equal(init?.headers && (init.headers as Record<string, string>)["x-csrf-token"], CSRF_TOKEN);
-      return createFetchResponse(200, { data: { token: "connect-token-123" } });
+      return createFetchResponse(200, { data: { connect_token: "connect-token-123" } });
     };
 
     globalThis.fetch = fetchMock as typeof globalThis.fetch;
 
-    const view = render(<LinkBankClient csrfToken={CSRF_TOKEN} components={headlessStubs} />);
+    const view = render(
+      <LinkBankClient csrfToken={CSRF_TOKEN} tellerConfig={TELLER_CONFIG} components={headlessStubs} />,
+    );
 
     fireEvent.click(view.getByTestId("launch-teller"));
+
+    await waitFor(() => {
+      assert.equal(setupCalls.length, 1);
+      assert.equal(setupCalls[0]?.connectToken, "connect-token-123");
+      assert.equal(setupCalls[0]?.applicationId, TELLER_CONFIG.applicationId);
+      assert.equal(setupCalls[0]?.environment, TELLER_CONFIG.environment);
+    });
 
     await waitFor(() => {
       const payloads = view.getAllByTestId("event-payload");
@@ -84,7 +111,9 @@ describe("LinkBankClient", () => {
     const fetchMock = async () => createFetchResponse(400, { error: "rate limit" });
     globalThis.fetch = fetchMock as typeof globalThis.fetch;
 
-    const view = render(<LinkBankClient csrfToken={CSRF_TOKEN} components={headlessStubs} />);
+    const view = render(
+      <LinkBankClient csrfToken={CSRF_TOKEN} tellerConfig={TELLER_CONFIG} components={headlessStubs} />,
+    );
 
     fireEvent.click(view.getByTestId("launch-plaid"));
 
@@ -92,3 +121,16 @@ describe("LinkBankClient", () => {
     assert.ok(error.textContent?.includes("rate limit"));
   });
 });
+
+type TellerConnectSetupOptions = {
+  applicationId?: string;
+  environment?: string;
+  connectToken: string;
+  onSuccess?: (event: Record<string, unknown>) => void;
+  onExit?: (event?: Record<string, unknown>) => void;
+};
+
+type TellerConnectInstance = {
+  open(): void;
+  destroy(): void;
+};

@@ -2,10 +2,15 @@
 
 import React from "react";
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle, Tab, TabGroup, TabList, TabPanel, TabPanels } from "@headlessui/react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { WidgetEventLog, useWidgetEvents } from "../components/widget-flow";
 
 type VendorId = "teller" | "plaid";
+
+interface TellerConnectConfig {
+  applicationId?: string;
+  environment?: string;
+}
 
 type HeadlessComponents = {
   Dialog: typeof Dialog;
@@ -44,6 +49,7 @@ interface VendorConfig {
 
 interface LinkBankClientProps {
   csrfToken: string;
+  tellerConfig?: TellerConnectConfig;
   components?: Partial<HeadlessComponents>;
 }
 
@@ -51,6 +57,87 @@ interface ModalState {
   open: boolean;
   vendor?: VendorConfig;
   payload?: Record<string, unknown>;
+}
+
+type TellerConnectSuccessEvent = Record<string, unknown>;
+type TellerConnectExitEvent = Record<string, unknown> | undefined;
+
+interface TellerConnectSetupOptions {
+  applicationId?: string;
+  environment?: string;
+  connectToken: string;
+  onSuccess?: (event: TellerConnectSuccessEvent) => void | Promise<void>;
+  onExit?: (event?: TellerConnectExitEvent) => void;
+}
+
+interface TellerConnectInstance {
+  open(): void;
+  destroy?(): void;
+}
+
+interface TellerConnectAPI {
+  setup(options: TellerConnectSetupOptions): TellerConnectInstance;
+}
+
+declare global {
+  interface Window {
+    TellerConnect?: TellerConnectAPI;
+  }
+}
+
+function asString(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  return undefined;
+}
+
+function extractConnectToken(payload: Record<string, unknown> | undefined): string | undefined {
+  if (!payload) {
+    return undefined;
+  }
+
+  const candidates = [
+    payload["connect_token"],
+    payload["connectToken"],
+    payload["token"],
+  ];
+
+  for (const candidate of candidates) {
+    const token = asString(candidate);
+    if (token) {
+      return token;
+    }
+  }
+
+  return undefined;
+}
+
+function maybeRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+}
+
+function extractPublicToken(event: TellerConnectSuccessEvent): string | undefined {
+  if (!event) {
+    return undefined;
+  }
+
+  const record = maybeRecord(event);
+
+  const candidates = [
+    record?.["public_token"],
+    record?.["publicToken"],
+  ];
+
+  for (const candidate of candidates) {
+    const token = asString(candidate);
+    if (token) {
+      return token;
+    }
+  }
+
+  return undefined;
 }
 
 const VENDORS: VendorConfig[] = [
@@ -104,12 +191,15 @@ function createFetchOptions(csrfToken: string, body: Record<string, unknown>): R
   } satisfies RequestInit;
 }
 
-export default function LinkBankClient({ csrfToken, components }: LinkBankClientProps) {
+export default function LinkBankClient({ csrfToken, tellerConfig, components }: LinkBankClientProps) {
   const { events, logEvent } = useWidgetEvents();
   const [activeVendor, setActiveVendor] = useState<VendorId>("teller");
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [errors, setErrors] = useState<Record<VendorId, string>>({ teller: "", plaid: "" });
   const [loadingVendor, setLoadingVendor] = useState<VendorId | null>(null);
+  const tellerConnectRef = useRef<TellerConnectInstance | null>(null);
+  const tellerApplicationId = tellerConfig?.applicationId;
+  const tellerEnvironment = tellerConfig?.environment ?? "sandbox";
 
   const {
     Dialog: DialogComponent,
@@ -122,6 +212,137 @@ export default function LinkBankClient({ csrfToken, components }: LinkBankClient
     TabPanel: TabPanelComponent,
     Tab: TabComponent,
   } = { ...DEFAULT_COMPONENTS, ...components } as HeadlessComponents;
+
+  const handleTellerSuccess = useCallback(
+    async (event: TellerConnectSuccessEvent) => {
+      setErrors((prev) => ({ ...prev, teller: "" }));
+      logEvent("Teller Connect completed", { level: "success", payload: event });
+
+      const publicToken = extractPublicToken(event);
+
+      if (!publicToken) {
+        setErrors((prev) => ({
+          ...prev,
+          teller: "Teller Connect did not return a public token.",
+        }));
+        logEvent("Teller Connect response missing public token", {
+          level: "error",
+          payload: event,
+        });
+        return;
+      }
+
+      const enrollment = maybeRecord(event["enrollment"]);
+      const institution = maybeRecord(enrollment?.["institution"]);
+
+      const exchangeBody: Record<string, unknown> = {
+        public_token: publicToken,
+      };
+
+      const institutionId = institution ? asString(institution["id"]) : undefined;
+      if (institutionId) {
+        exchangeBody.institution_id = institutionId;
+      }
+
+      const institutionName = institution ? asString(institution["name"]) : undefined;
+      if (institutionName) {
+        exchangeBody.institution_name = institutionName;
+      }
+
+      try {
+        const response = await fetch("/api/teller/exchange", createFetchOptions(csrfToken, exchangeBody));
+        const payload = (await response.json()) as Record<string, unknown>;
+
+        if (!response.ok) {
+          const message = asString(payload?.["error"]) ?? "Failed to exchange Teller token.";
+          setErrors((prev) => ({ ...prev, teller: message }));
+          logEvent("Teller exchange failed", { level: "error", payload });
+          return;
+        }
+
+        logEvent("Teller exchange succeeded", { level: "success", payload });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        setErrors((prev) => ({ ...prev, teller: message }));
+        logEvent("Teller exchange crashed", { level: "error", payload: { message } });
+      } finally {
+        if (tellerConnectRef.current?.destroy) {
+          try {
+            tellerConnectRef.current.destroy();
+          } catch {
+            // ignore destroy errors
+          }
+        }
+        tellerConnectRef.current = null;
+      }
+    },
+    [csrfToken, logEvent],
+  );
+
+  useEffect(
+    () => () => {
+      if (tellerConnectRef.current?.destroy) {
+        try {
+          tellerConnectRef.current.destroy();
+        } catch {
+          // ignore destroy errors
+        }
+      }
+      tellerConnectRef.current = null;
+    },
+    [],
+  );
+
+  const launchTellerConnect = useCallback(
+    (connectToken: string) => {
+      const api = typeof window === "undefined" ? undefined : window.TellerConnect;
+
+      if (!api?.setup) {
+        setErrors((prev) => ({
+          ...prev,
+          teller: "Teller Connect script is not available.",
+        }));
+        logEvent("Teller Connect unavailable", {
+          level: "error",
+          payload: { reason: "missing_script" },
+        });
+        return false;
+      }
+
+      if (tellerConnectRef.current?.destroy) {
+        try {
+          tellerConnectRef.current.destroy();
+        } catch {
+          // ignore stale destroy errors
+        }
+      }
+
+      const instance = api.setup({
+        applicationId: tellerApplicationId,
+        environment: tellerEnvironment,
+        connectToken,
+        onSuccess: async (event) => {
+          await handleTellerSuccess(event);
+        },
+        onExit: (event) => {
+          logEvent("Teller Connect closed", { level: "info", payload: event ?? {} });
+          tellerConnectRef.current = null;
+        },
+      });
+
+      tellerConnectRef.current = instance;
+
+      logEvent("Teller Connect opening", {
+        level: "info",
+        payload: { connectToken },
+      });
+
+      instance.open();
+
+      return true;
+    },
+    [handleTellerSuccess, logEvent, tellerApplicationId, tellerEnvironment],
+  );
 
   const requestWidget = useCallback(
     async (vendor: VendorConfig) => {
@@ -147,6 +368,24 @@ export default function LinkBankClient({ csrfToken, components }: LinkBankClient
         const data = (payload?.data as Record<string, unknown> | undefined) ?? {};
 
         logEvent(`${vendor.name} ready`, { level: "success", payload: data });
+
+        if (vendor.id === "teller") {
+          const connectToken = extractConnectToken(data);
+
+          if (!connectToken) {
+            setErrors((prev) => ({
+              ...prev,
+              teller: "Teller Connect response did not include a token.",
+            }));
+            logEvent("Teller Connect missing token", { level: "error", payload: data });
+            return;
+          }
+
+          setModalState({ open: false });
+          launchTellerConnect(connectToken);
+          return;
+        }
+
         setModalState({ open: true, vendor, payload: data });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
