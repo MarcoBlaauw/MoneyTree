@@ -37,7 +37,11 @@ config :money_tree, MoneyTree.Teller,
   connect_host: "https://connect.teller.io",
   timeout: :timer.seconds(10),
   finch: MoneyTree.Finch,
-  telemetry_metadata: %{service: "money_tree", integration: "teller"}
+  telemetry_metadata: %{service: "money_tree", integration: "teller"},
+  client_cert_pem: nil,
+  client_key_pem: nil,
+  client_cert_file: nil,
+  client_key_file: nil
 
 config :money_tree, Oban,
   repo: MoneyTree.Repo,

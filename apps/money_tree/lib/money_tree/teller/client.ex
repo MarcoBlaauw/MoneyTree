@@ -85,11 +85,22 @@ defmodule MoneyTree.Teller.Client do
           {"authorization", "Basic " <> Base.encode64("#{api_key}:")}
         ] ++ Keyword.get(opts, :headers, [])
 
+    transport_opts =
+      config
+      |> transport_opts_from_config()
+      |> Keyword.merge(Keyword.get(opts, :transport_opts, []))
+
+    connect_options =
+      opts
+      |> Keyword.get(:connect_options, [])
+      |> Keyword.merge(timeout: timeout)
+      |> maybe_put_transport_opts(transport_opts)
+
     common_opts =
       [
         finch: finch,
         receive_timeout: timeout,
-        connect_options: [timeout: timeout],
+        connect_options: connect_options,
         headers: base_headers,
         telemetry_event: @telemetry_event,
         telemetry_span_event: @telemetry_span_event,
@@ -103,6 +114,82 @@ defmodule MoneyTree.Teller.Client do
       retry: retry,
       telemetry_metadata: telemetry_metadata
     }
+  end
+
+  defp maybe_put_transport_opts(connect_options, []), do: connect_options
+
+  defp maybe_put_transport_opts(connect_options, transport_opts) do
+    merged_transport_opts =
+      transport_opts
+      |> Keyword.merge(Keyword.get(connect_options, :transport_opts, []))
+
+    Keyword.put(connect_options, :transport_opts, merged_transport_opts)
+  end
+
+  defp transport_opts_from_config(config) do
+    []
+    |> maybe_put_cert(Keyword.get(config, :client_cert_pem))
+    |> maybe_put_certfile(Keyword.get(config, :client_cert_file))
+    |> maybe_put_key(Keyword.get(config, :client_key_pem))
+    |> maybe_put_keyfile(Keyword.get(config, :client_key_file))
+  end
+
+  defp maybe_put_cert(opts, pem) when is_binary(pem) do
+    pem
+    |> String.trim()
+    |> case do
+      "" -> opts
+      trimmed -> Keyword.put_new(opts, :cert, decode_cert(trimmed))
+    end
+  end
+
+  defp maybe_put_cert(opts, _pem), do: opts
+
+  defp maybe_put_certfile(opts, path) when is_binary(path) do
+    path
+    |> String.trim()
+    |> case do
+      "" -> opts
+      trimmed -> Keyword.put_new(opts, :certfile, trimmed)
+    end
+  end
+
+  defp maybe_put_certfile(opts, _path), do: opts
+
+  defp maybe_put_key(opts, pem) when is_binary(pem) do
+    pem
+    |> String.trim()
+    |> case do
+      "" -> opts
+      trimmed -> Keyword.put_new(opts, :key, decode_private_key(trimmed))
+    end
+  end
+
+  defp maybe_put_key(opts, _pem), do: opts
+
+  defp maybe_put_keyfile(opts, path) when is_binary(path) do
+    path
+    |> String.trim()
+    |> case do
+      "" -> opts
+      trimmed -> Keyword.put_new(opts, :keyfile, trimmed)
+    end
+  end
+
+  defp maybe_put_keyfile(opts, _path), do: opts
+
+  defp decode_cert(pem) do
+    case :public_key.pem_decode(pem) do
+      [{_type, der, _meta} | _] -> der
+      _ -> raise ArgumentError, "invalid Teller client certificate PEM"
+    end
+  end
+
+  defp decode_private_key(pem) do
+    case :public_key.pem_decode(pem) do
+      [{type, der, _meta} | _] -> {type, der}
+      _ -> raise ArgumentError, "invalid Teller client private key PEM"
+    end
   end
 
   @doc """

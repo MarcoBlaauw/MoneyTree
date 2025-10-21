@@ -59,6 +59,10 @@ never commit secrets to the repository.
 | `TELLER_API_HOST` | No | Teller default | Override the Teller API base URL when instructed by Teller support. |
 | `TELLER_CONNECT_HOST` | No | Teller default | Override the Teller Connect base URL for non-standard environments. |
 | `TELLER_WEBHOOK_HOST` | No | Teller default | Override the webhook host when using alternative tunnels or sandbox endpoints. |
+| `TELLER_CERT_PEM` | No | — | Inline PEM-encoded client certificate for mutual TLS. Provide either this or `TELLER_CERT_FILE`. |
+| `TELLER_KEY_PEM` | No | — | Inline PEM-encoded private key that pairs with `TELLER_CERT_PEM`. |
+| `TELLER_CERT_FILE` | No | — | Filesystem path to the client certificate (PEM) used for mutual TLS. |
+| `TELLER_KEY_FILE` | No | — | Filesystem path to the client private key (PEM). |
 
 ## Additional tips
 

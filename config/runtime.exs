@@ -78,16 +78,31 @@ if config_env() == :prod do
   end
 end
 
+teller_env = fn key ->
+  case System.get_env(key) do
+    nil -> nil
+    "" -> nil
+    value -> value
+  end
+end
+
+cert_file = teller_env.("TELLER_CERT_FILE") || teller_env.("TELLER_CERT_PATH")
+key_file = teller_env.("TELLER_KEY_FILE") || teller_env.("TELLER_KEY_PATH")
+
 teller_runtime_config =
   [
-    api_key: System.get_env("TELLER_API_KEY"),
-    connect_application_id: System.get_env("TELLER_CONNECT_APPLICATION_ID"),
-    webhook_secret: System.get_env("TELLER_WEBHOOK_SECRET"),
-    api_host: System.get_env("TELLER_API_HOST"),
-    connect_host: System.get_env("TELLER_CONNECT_HOST"),
-    webhook_host: System.get_env("TELLER_WEBHOOK_HOST")
+    api_key: teller_env.("TELLER_API_KEY"),
+    connect_application_id: teller_env.("TELLER_CONNECT_APPLICATION_ID"),
+    webhook_secret: teller_env.("TELLER_WEBHOOK_SECRET"),
+    api_host: teller_env.("TELLER_API_HOST"),
+    connect_host: teller_env.("TELLER_CONNECT_HOST"),
+    webhook_host: teller_env.("TELLER_WEBHOOK_HOST"),
+    client_cert_pem: teller_env.("TELLER_CERT_PEM"),
+    client_key_pem: teller_env.("TELLER_KEY_PEM"),
+    client_cert_file: cert_file,
+    client_key_file: key_file
   ]
-  |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
 config :money_tree, MoneyTree.Teller, Keyword.merge(base_teller_config, teller_runtime_config)
 
