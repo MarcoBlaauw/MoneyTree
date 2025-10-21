@@ -46,7 +46,7 @@ describe("Home page", () => {
     const expectedLinks: Array<{ href: string; name: RegExp }> = [
       { href: "/app/dashboard", name: /Open dashboard/i },
       { href: "/app/transfers", name: /Manage transfers/i },
-      { href: "/app/settings", name: /Update settings/i },
+      { href: "/control-panel", name: /Update settings/i },
       { href: "/control-panel", name: /Visit control panel/i },
     ];
 

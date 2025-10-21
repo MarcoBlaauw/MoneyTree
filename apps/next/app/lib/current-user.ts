@@ -1,6 +1,4 @@
-import { headers } from "next/headers";
-
-type HeaderList = ReturnType<typeof headers>;
+import { fetchWithSession } from "./session-fetch";
 
 export type CurrentUserProfile = {
   email: string;
@@ -46,61 +44,21 @@ function resolveProfile(data: unknown): CurrentUserProfile | null {
   };
 }
 
-function buildBaseUrl(headerList: HeaderList): string | null {
-  const proto =
-    headerList.get("x-forwarded-proto") ??
-    headerList.get("x-forwarded-protocol") ??
-    "http";
-  const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
-
-  if (!host) {
-    return null;
-  }
-
-  return `${proto}://${host}`;
-}
-
 export async function getCurrentUser(): Promise<CurrentUserProfile | null> {
-  const headerList = headers();
-  const cookie = headerList.get("cookie");
+  const response = await fetchWithSession("/api/settings");
 
-  if (!cookie) {
+  if (!response) {
     return null;
   }
 
-  const baseUrl = buildBaseUrl(headerList);
-  if (!baseUrl) {
+  if (response.status === 401 || response.status === 403) {
     return null;
   }
 
-  const csrfToken = headerList.get("x-csrf-token");
-
-  const forwardedHeaders = new Headers();
-  forwardedHeaders.set("accept", "application/json");
-  forwardedHeaders.set("cookie", cookie);
-
-  if (csrfToken) {
-    forwardedHeaders.set("x-csrf-token", csrfToken);
-  }
-
-  try {
-    const response = await fetch(`${baseUrl}/api/settings`, {
-      method: "GET",
-      headers: forwardedHeaders,
-      cache: "no-store",
-    });
-
-    if (response.status === 401 || response.status === 403) {
-      return null;
-    }
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = (await response.json().catch(() => null)) as unknown;
-    return resolveProfile(payload);
-  } catch {
+  if (!response.ok) {
     return null;
   }
+
+  const payload = (await response.json().catch(() => null)) as unknown;
+  return resolveProfile(payload);
 }
