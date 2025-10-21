@@ -70,7 +70,14 @@ defmodule Mix.Tasks.MoneyTree.CreateUser do
     end
   end
 
-  defp resolve_role(role) when is_atom(role) and role in User.roles(), do: role
+  defp resolve_role(role) when is_atom(role) do
+    if Enum.member?(User.roles(), role) do
+      role
+    else
+      Mix.raise(role_error_message(role))
+    end
+  end
+
   defp resolve_role(role), do: Mix.raise(role_error_message(role))
 
   defp role_error_message(provided) do
