@@ -42,14 +42,9 @@ const quickActions = [
   },
   {
     href: "/control-panel",
-    title: "Update settings",
-    description: "Adjust roles, security policies, and workspace preferences.",
-    target: "next" as const,
-  },
-  {
-    href: "/control-panel",
     title: "Visit control panel",
-    description: "Access owner-level tooling and advanced automations.",
+    description:
+      "Manage workspace settings, adjust security policies, and launch advanced automations.",
     target: "next" as const,
   },
 ] satisfies QuickAction[];
