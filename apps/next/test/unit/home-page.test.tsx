@@ -22,7 +22,7 @@ describe("Home page", () => {
 
   it("shows a login call-to-action for guests", async () => {
     const view = render(
-      await renderHomePage(async () => null),
+      await renderHomePage({ fetchCurrentUser: async () => null }),
     );
 
     const loginLink = view.getByRole("link", { name: "Log in" });
@@ -33,10 +33,13 @@ describe("Home page", () => {
 
   it("greets authenticated users and surfaces quick actions", async () => {
     const view = render(
-      await renderHomePage(async () => ({
-        email: "sam@example.com",
-        name: null,
-      })),
+      await renderHomePage({
+        fetchCurrentUser: async () => ({
+          email: "sam@example.com",
+          name: null,
+        }),
+        forwardedPrefix: "/app/react",
+      }),
     );
 
     assert.ok(
@@ -46,8 +49,8 @@ describe("Home page", () => {
     const expectedLinks: Array<{ href: string; name: RegExp }> = [
       { href: "/app/dashboard", name: /Open dashboard/i },
       { href: "/app/transfers", name: /Manage transfers/i },
-      { href: "/control-panel", name: /Update settings/i },
-      { href: "/control-panel", name: /Visit control panel/i },
+      { href: "/app/react/control-panel", name: /Update settings/i },
+      { href: "/app/react/control-panel", name: /Visit control panel/i },
     ];
 
     for (const { href, name } of expectedLinks) {

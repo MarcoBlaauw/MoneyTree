@@ -1,5 +1,7 @@
 import React from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { headers } from "next/headers";
 
 import type { CurrentUserProfile } from "./lib/current-user";
 import { getCurrentUser } from "./lib/current-user";
@@ -30,29 +32,41 @@ const quickActions = [
     href: "/app/dashboard",
     title: "Open dashboard",
     description: "Review cash flow, runway, and portfolio trends at a glance.",
+    target: "phoenix" as const,
   },
   {
     href: "/app/transfers",
     title: "Manage transfers",
     description: "Schedule or approve movements between your connected accounts.",
+    target: "phoenix" as const,
   },
   {
     href: "/control-panel",
     title: "Update settings",
     description: "Adjust roles, security policies, and workspace preferences.",
+    target: "next" as const,
   },
   {
     href: "/control-panel",
     title: "Visit control panel",
     description: "Access owner-level tooling and advanced automations.",
+    target: "next" as const,
   },
-];
+] satisfies QuickAction[];
+
+type QuickAction = {
+  description: string;
+  href: string;
+  target: "phoenix" | "next";
+  title: string;
+};
 
 type HomeContentProps = {
   currentUser: CurrentUserProfile | null;
+  nextBasePath: string;
 };
 
-function HomeContent({ currentUser }: HomeContentProps) {
+function HomeContent({ currentUser, nextBasePath }: HomeContentProps) {
   const isGuest = !currentUser;
   const greetingName =
     currentUser && (currentUser.name?.trim() || currentUser.email);
@@ -165,23 +179,50 @@ function HomeContent({ currentUser }: HomeContentProps) {
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              {quickActions.map((action) => (
-                <a
-                  key={`${action.href}-${action.title}`}
-                  className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/40 p-5 transition hover:border-primary hover:bg-background/60"
-                  href={action.href}
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground group-hover:text-primary transition">
-                      {action.title}
-                    </p>
-                    <p className="text-sm text-slate-300">{action.description}</p>
-                  </div>
-                  <span className="mt-4 inline-flex items-center text-sm font-medium text-primary group-hover:translate-x-1 transition">
-                    Go now →
-                  </span>
-                </a>
-              ))}
+              {quickActions.map((action) => {
+                const href =
+                  action.target === "next"
+                    ? `${nextBasePath}${action.href}`
+                    : action.href;
+
+                if (action.target === "next") {
+                  return (
+                    <Link
+                      key={`${action.href}-${action.title}`}
+                      className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/40 p-5 transition hover:border-primary hover:bg-background/60"
+                      href={href}
+                    >
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-foreground group-hover:text-primary transition">
+                          {action.title}
+                        </p>
+                        <p className="text-sm text-slate-300">{action.description}</p>
+                      </div>
+                      <span className="mt-4 inline-flex items-center text-sm font-medium text-primary group-hover:translate-x-1 transition">
+                        Go now →
+                      </span>
+                    </Link>
+                  );
+                }
+
+                return (
+                  <a
+                    key={`${action.href}-${action.title}`}
+                    className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/40 p-5 transition hover:border-primary hover:bg-background/60"
+                    href={href}
+                  >
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-foreground group-hover:text-primary transition">
+                        {action.title}
+                      </p>
+                      <p className="text-sm text-slate-300">{action.description}</p>
+                    </div>
+                    <span className="mt-4 inline-flex items-center text-sm font-medium text-primary group-hover:translate-x-1 transition">
+                      Go now →
+                    </span>
+                  </a>
+                );
+              })}
             </div>
           </section>
         )}
@@ -209,13 +250,42 @@ function HomeContent({ currentUser }: HomeContentProps) {
 
 type CurrentUserFetcher = () => Promise<CurrentUserProfile | null>;
 
-export async function renderHomePage(
-  fetchCurrentUser: CurrentUserFetcher = getCurrentUser,
-) {
+type RenderHomePageOptions = {
+  fetchCurrentUser?: CurrentUserFetcher;
+  forwardedPrefix?: string | null;
+};
+
+export async function renderHomePage({
+  fetchCurrentUser = getCurrentUser,
+  forwardedPrefix,
+}: RenderHomePageOptions = {}) {
   const currentUser = await fetchCurrentUser();
-  return <HomeContent currentUser={currentUser} />;
+  const normalizedPrefix = normalizeForwardedPrefix(forwardedPrefix ?? "");
+
+  return <HomeContent currentUser={currentUser} nextBasePath={normalizedPrefix} />;
 }
 
 export default async function Home() {
-  return renderHomePage();
+  const forwardedPrefix = readForwardedPrefix();
+  return renderHomePage({ forwardedPrefix });
+}
+
+function readForwardedPrefix() {
+  try {
+    return headers().get("x-forwarded-prefix");
+  } catch {
+    return null;
+  }
+}
+
+function normalizeForwardedPrefix(prefix: string) {
+  if (!prefix) {
+    return "";
+  }
+
+  if (prefix.endsWith("/")) {
+    return prefix.slice(0, -1);
+  }
+
+  return prefix;
 }
