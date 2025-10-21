@@ -37,7 +37,7 @@ const quickActions = [
     description: "Schedule or approve movements between your connected accounts.",
   },
   {
-    href: "/app/settings",
+    href: "/control-panel",
     title: "Update settings",
     description: "Adjust roles, security policies, and workspace preferences.",
   },
@@ -167,7 +167,7 @@ function HomeContent({ currentUser }: HomeContentProps) {
             <div className="grid gap-4 md:grid-cols-2">
               {quickActions.map((action) => (
                 <a
-                  key={action.href}
+                  key={`${action.href}-${action.title}`}
                   className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/40 p-5 transition hover:border-primary hover:bg-background/60"
                   href={action.href}
                 >
