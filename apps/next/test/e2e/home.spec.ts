@@ -4,12 +4,27 @@ import { randomUUID } from "node:crypto";
 import { BASE_URL, SESSION_COOKIE, extractSessionToken } from "../helpers/session";
 
 test.describe("Next.js home experience", () => {
+  const originalPhoenixOrigin = process.env.NEXT_PUBLIC_PHOENIX_ORIGIN;
+  const phoenixOrigin = process.env.NEXT_PUBLIC_PHOENIX_ORIGIN || "http://127.0.0.1:4000";
+
+  test.beforeEach(() => {
+    process.env.NEXT_PUBLIC_PHOENIX_ORIGIN = phoenixOrigin;
+  });
+
+  test.afterAll(() => {
+    if (originalPhoenixOrigin === undefined) {
+      delete process.env.NEXT_PUBLIC_PHOENIX_ORIGIN;
+    } else {
+      process.env.NEXT_PUBLIC_PHOENIX_ORIGIN = originalPhoenixOrigin;
+    }
+  });
+
   test("shows a login button to guests", async ({ page }) => {
     await page.goto("/app/react");
 
     const loginLink = page.getByRole("link", { name: "Log in" });
     await expect(loginLink).toBeVisible();
-    await expect(loginLink).toHaveAttribute("href", "/login");
+    await expect(loginLink).toHaveAttribute("href", `${phoenixOrigin}/login`);
   });
 
   test("greets authenticated users with quick actions", async ({ context, page }) => {
@@ -46,8 +61,8 @@ test.describe("Next.js home experience", () => {
     ).toBeVisible();
 
     const expectedLinks: Array<{ name: RegExp; href: string }> = [
-      { name: /Open dashboard/i, href: "/app/dashboard" },
-      { name: /Manage transfers/i, href: "/app/transfers" },
+      { name: /Open dashboard/i, href: `${phoenixOrigin}/app/dashboard` },
+      { name: /Manage transfers/i, href: `${phoenixOrigin}/app/transfers` },
       { name: /Visit control panel/i, href: "/app/react/control-panel" },
     ];
 

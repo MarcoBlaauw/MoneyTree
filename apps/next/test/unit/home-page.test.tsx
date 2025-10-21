@@ -7,9 +7,12 @@ import { renderHomePage } from "../../app/page";
 
 describe("Home page", () => {
   let restoreDom: (() => void) | undefined;
+  const originalPhoenixOrigin = process.env.NEXT_PUBLIC_PHOENIX_ORIGIN;
+  const phoenixOrigin = "http://127.0.0.1:4000";
 
   beforeEach(() => {
     restoreDom = setupDom();
+    process.env.NEXT_PUBLIC_PHOENIX_ORIGIN = phoenixOrigin;
   });
 
   afterEach(() => {
@@ -17,6 +20,11 @@ describe("Home page", () => {
     if (restoreDom) {
       restoreDom();
       restoreDom = undefined;
+    }
+    if (originalPhoenixOrigin === undefined) {
+      delete process.env.NEXT_PUBLIC_PHOENIX_ORIGIN;
+    } else {
+      process.env.NEXT_PUBLIC_PHOENIX_ORIGIN = originalPhoenixOrigin;
     }
   });
 
@@ -26,7 +34,7 @@ describe("Home page", () => {
     );
 
     const loginLink = view.getByRole("link", { name: "Log in" });
-    assert.equal(loginLink.getAttribute("href"), "/login");
+    assert.equal(loginLink.getAttribute("href"), `${phoenixOrigin}/login`);
 
     assert.equal(view.queryByText(/Welcome back/i), null);
   });
@@ -47,8 +55,8 @@ describe("Home page", () => {
     );
 
     const expectedLinks: Array<{ href: string; name: RegExp }> = [
-      { href: "/app/dashboard", name: /Open dashboard/i },
-      { href: "/app/transfers", name: /Manage transfers/i },
+      { href: `${phoenixOrigin}/app/dashboard`, name: /Open dashboard/i },
+      { href: `${phoenixOrigin}/app/transfers`, name: /Manage transfers/i },
       { href: "/app/react/control-panel", name: /Visit control panel/i },
     ];
 

@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 
 import type { CurrentUserProfile } from "./lib/current-user";
 import { getCurrentUser } from "./lib/current-user";
+import { buildPhoenixUrl as buildPhoenixUrlHelper } from "./lib/build-phoenix-url";
 
 const featureHighlights = [
   {
@@ -59,9 +60,14 @@ type QuickAction = {
 type HomeContentProps = {
   currentUser: CurrentUserProfile | null;
   nextBasePath: string;
+  buildPhoenixUrl: (path: string) => string;
 };
 
-function HomeContent({ currentUser, nextBasePath }: HomeContentProps) {
+export function HomeContent({
+  currentUser,
+  nextBasePath,
+  buildPhoenixUrl,
+}: HomeContentProps) {
   const isGuest = !currentUser;
   const greetingName =
     currentUser && (currentUser.name?.trim() || currentUser.email);
@@ -83,7 +89,7 @@ function HomeContent({ currentUser, nextBasePath }: HomeContentProps) {
           {isGuest && (
             <a
               className="rounded-full border border-primary/30 px-5 py-2 text-primary hover:border-primary hover:text-primary transition"
-              href="/login"
+              href={buildPhoenixUrl("/login")}
             >
               Log in
             </a>
@@ -178,7 +184,7 @@ function HomeContent({ currentUser, nextBasePath }: HomeContentProps) {
                 const href =
                   action.target === "next"
                     ? `${nextBasePath}${action.href}`
-                    : action.href;
+                    : buildPhoenixUrl(action.href);
 
                 if (action.target === "next") {
                   return (
@@ -248,16 +254,24 @@ type CurrentUserFetcher = () => Promise<CurrentUserProfile | null>;
 type RenderHomePageOptions = {
   fetchCurrentUser?: CurrentUserFetcher;
   forwardedPrefix?: string | null;
+  buildPhoenixUrl?: (path: string) => string;
 };
 
 export async function renderHomePage({
   fetchCurrentUser = getCurrentUser,
   forwardedPrefix,
+  buildPhoenixUrl = buildPhoenixUrlHelper,
 }: RenderHomePageOptions = {}) {
   const currentUser = await fetchCurrentUser();
   const normalizedPrefix = normalizeForwardedPrefix(forwardedPrefix ?? "");
 
-  return <HomeContent currentUser={currentUser} nextBasePath={normalizedPrefix} />;
+  return (
+    <HomeContent
+      currentUser={currentUser}
+      nextBasePath={normalizedPrefix}
+      buildPhoenixUrl={buildPhoenixUrl}
+    />
+  );
 }
 
 export default async function Home() {

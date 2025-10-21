@@ -27,6 +27,7 @@ module.exports = defineConfig({
         NEXT_BASE_PATH: "/app/react",
         PORT: "3100",
         HOSTNAME: "127.0.0.1",
+        NEXT_PUBLIC_PHOENIX_ORIGIN: baseURL,
       },
       timeout: 120_000,
     },
