@@ -91,27 +91,47 @@ defmodule MoneyTree.Accounts do
     token_hash = hash_session_token(token)
     now = DateTime.utc_now()
 
-    params =
-      attrs
-      |> Map.new()
-      |> Map.take([
-        :context,
-        :expires_at,
-        :last_used_at,
-        :ip_address,
-        :user_agent,
-        :encrypted_metadata
-      ])
-      |> Map.put_new(:context, Map.get(attrs, :context, "api"))
-      |> Map.put(:token_hash, token_hash)
-      |> Map.put_new(:expires_at, DateTime.add(now, session_ttl_seconds(), :second))
-      |> Map.put_new(:last_used_at, now)
-      |> Map.put(:user_id, user.id)
-      |> Map.put_new(:encrypted_metadata, Map.get(attrs, :metadata, %{}))
+    attrs = Map.new(attrs)
+
+    context =
+      Map.get(attrs, :context) ||
+        Map.get(attrs, "context") ||
+        "api"
+
+    metadata =
+      Map.get(attrs, :metadata) ||
+        Map.get(attrs, "metadata") ||
+        %{}
+
+    encrypted_metadata =
+      Map.get(attrs, :encrypted_metadata) ||
+        Map.get(attrs, "encrypted_metadata") ||
+        metadata
+
+    params = %{
+      context: context,
+      token_hash: token_hash,
+      expires_at:
+        Map.get(attrs, :expires_at) ||
+          Map.get(attrs, "expires_at") ||
+          DateTime.add(now, session_ttl_seconds(), :second),
+      last_used_at:
+        Map.get(attrs, :last_used_at) ||
+          Map.get(attrs, "last_used_at") ||
+          now,
+      ip_address: Map.get(attrs, :ip_address) || Map.get(attrs, "ip_address"),
+      user_agent: Map.get(attrs, :user_agent) || Map.get(attrs, "user_agent"),
+      encrypted_metadata: encrypted_metadata,
+      user_id: user.id
+    }
 
     %Session{}
     |> Session.changeset(params)
-    |> Repo.insert()
+    |> Repo.insert(
+      on_conflict: {:replace_all_except, [:id, :inserted_at]},
+      conflict_target: :sessions_user_id_context_index,
+      returning: true
+    )
     |> case do
       {:ok, session} ->
         {:ok, session, token}

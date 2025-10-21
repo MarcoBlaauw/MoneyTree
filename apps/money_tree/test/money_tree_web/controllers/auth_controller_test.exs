@@ -3,6 +3,7 @@ defmodule MoneyTreeWeb.AuthControllerTest do
 
   import MoneyTree.AccountsFixtures
 
+  alias MoneyTree.Accounts
   alias MoneyTree.Repo
   alias MoneyTree.Sessions.Session
   alias MoneyTree.Users.User
@@ -54,6 +55,31 @@ defmodule MoneyTreeWeb.AuthControllerTest do
 
       assert %{secure: true, http_only: true, same_site: "Strict"} =
                conn.resp_cookies[@session_cookie]
+    end
+
+    test "invalidates prior session when logging in twice", %{conn: conn} do
+      user = user_fixture(%{password: "TwiceLoginPass1!"})
+
+      first_conn =
+        conn
+        |> post(~p"/api/login", %{"email" => user.email, "password" => "TwiceLoginPass1!"})
+
+      assert %{"data" => %{"email" => ^user.email}} = json_response(first_conn, 200)
+
+      first_token = first_conn.resp_cookies[@session_cookie].value
+      assert {:ok, _user} = Accounts.get_user_by_session_token(first_token)
+
+      second_conn =
+        first_conn
+        |> recycle()
+        |> post(~p"/api/login", %{"email" => user.email, "password" => "TwiceLoginPass1!"})
+
+      assert %{"data" => %{"email" => ^user.email}} = json_response(second_conn, 200)
+
+      second_token = second_conn.resp_cookies[@session_cookie].value
+      refute first_token == second_token
+      assert {:ok, _user} = Accounts.get_user_by_session_token(second_token)
+      assert {:error, :invalid_token} = Accounts.get_user_by_session_token(first_token)
     end
 
     test "returns unauthorized for bad credentials", %{conn: conn} do
