@@ -47,6 +47,38 @@ defmodule MoneyTreeWeb.SessionControllerTest do
       assert {:ok, _user} = Accounts.get_user_by_session_token(token)
     end
 
+    test "replaces existing session for the same context", %{conn: conn} do
+      user = user_fixture()
+      cookie_name = Auth.session_cookie_name()
+
+      first_conn =
+        conn
+        |> init_test_session(%{})
+        |> post(~p"/login", %{
+          "session" => %{"email" => user.email, "password" => @valid_password}
+        })
+
+      assert redirected_to(first_conn) == ~p"/app/dashboard"
+
+      first_token = first_conn.resp_cookies[cookie_name].value
+      assert {:ok, _user} = Accounts.get_user_by_session_token(first_token)
+
+      second_conn =
+        first_conn
+        |> recycle()
+        |> init_test_session(%{})
+        |> post(~p"/login", %{
+          "session" => %{"email" => user.email, "password" => @valid_password}
+        })
+
+      assert redirected_to(second_conn) == ~p"/app/dashboard"
+
+      second_token = second_conn.resp_cookies[cookie_name].value
+      refute first_token == second_token
+      assert {:ok, _user} = Accounts.get_user_by_session_token(second_token)
+      assert {:error, :invalid_token} = Accounts.get_user_by_session_token(first_token)
+    end
+
     test "renders errors for invalid credentials", %{conn: conn} do
       user = user_fixture()
 
