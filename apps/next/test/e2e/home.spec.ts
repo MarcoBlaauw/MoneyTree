@@ -48,8 +48,8 @@ test.describe("Next.js home experience", () => {
     const expectedLinks: Array<{ name: RegExp; href: string }> = [
       { name: /Open dashboard/i, href: "/app/dashboard" },
       { name: /Manage transfers/i, href: "/app/transfers" },
-      { name: /Update settings/i, href: "/control-panel" },
-      { name: /Visit control panel/i, href: "/control-panel" },
+      { name: /Update settings/i, href: "/app/react/control-panel" },
+      { name: /Visit control panel/i, href: "/app/react/control-panel" },
     ];
 
     for (const { name, href } of expectedLinks) {
