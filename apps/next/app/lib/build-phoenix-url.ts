@@ -1,5 +1,3 @@
-import { headers } from "next/headers";
-
 function normalizePath(path: string): string {
   if (!path.startsWith("/")) {
     return `/${path}`;
@@ -8,27 +6,30 @@ function normalizePath(path: string): string {
   return path;
 }
 
-function getForwardedOrigin(): string | null {
-  try {
-    const headerList = headers();
-    const proto =
-      headerList.get("x-forwarded-proto") ??
-      headerList.get("x-forwarded-protocol") ??
-      "http";
-    const host =
-      headerList.get("x-forwarded-host") ?? headerList.get("host");
+type HeaderList = {
+  get(name: string): string | null;
+};
 
-    if (!host) {
-      return null;
-    }
-
-    return `${proto}://${host}`;
-  } catch {
+function getForwardedOrigin(headerList?: HeaderList): string | null {
+  if (!headerList) {
     return null;
   }
+
+  const proto =
+    headerList.get("x-forwarded-proto") ??
+    headerList.get("x-forwarded-protocol") ??
+    "http";
+  const host =
+    headerList.get("x-forwarded-host") ?? headerList.get("host");
+
+  if (!host) {
+    return null;
+  }
+
+  return `${proto}://${host}`;
 }
 
-export function buildPhoenixUrl(path: string): string {
+export function buildPhoenixUrl(path: string, headerList?: HeaderList): string {
   const normalizedPath = normalizePath(path);
   const configuredOrigin = process.env.NEXT_PUBLIC_PHOENIX_ORIGIN?.trim();
 
@@ -40,7 +41,7 @@ export function buildPhoenixUrl(path: string): string {
     return `${normalizedOrigin}${normalizedPath}`;
   }
 
-  const forwardedOrigin = getForwardedOrigin();
+  const forwardedOrigin = getForwardedOrigin(headerList);
   if (forwardedOrigin) {
     return `${forwardedOrigin}${normalizedPath}`;
   }
@@ -48,4 +49,4 @@ export function buildPhoenixUrl(path: string): string {
   return normalizedPath;
 }
 
-export type BuildPhoenixUrl = typeof buildPhoenixUrl;
+export type BuildPhoenixUrl = (path: string) => string;

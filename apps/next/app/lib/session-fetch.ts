@@ -1,6 +1,8 @@
 import { headers } from "next/headers";
 
-function buildBaseUrl(headerList: ReturnType<typeof headers>): string | null {
+type ReadonlyHeadersList = Awaited<ReturnType<typeof headers>>;
+
+function buildBaseUrl(headerList: ReadonlyHeadersList): string | null {
   const proto =
     headerList.get("x-forwarded-proto") ??
     headerList.get("x-forwarded-protocol") ??
@@ -21,7 +23,12 @@ export async function fetchWithSession(
   path: string,
   init: RequestInit = {},
 ): Promise<Response | null> {
-  const headerList = headers();
+  let headerList: ReadonlyHeadersList;
+  try {
+    headerList = await headers();
+  } catch {
+    return null;
+  }
   const cookie = headerList.get("cookie");
 
   if (!cookie) {

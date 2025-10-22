@@ -49,24 +49,25 @@ describe("LinkBankClient", () => {
   const originalFetch = globalThis.fetch;
   const TELLER_CONFIG = { applicationId: "app-123", environment: "sandbox" } as const;
   let setupCalls: TellerConnectSetupOptions[];
+  let tellerWindow: (Window & typeof globalThis) | undefined;
 
   beforeEach(() => {
     restoreDom = setupDom();
+    tellerWindow = globalThis.window as Window & typeof globalThis;
     setupCalls = [];
-    (window as unknown as { TellerConnect?: { setup: (options: TellerConnectSetupOptions) => TellerConnectInstance } }).TellerConnect =
-      {
-        setup: (options: TellerConnectSetupOptions) => {
-          setupCalls.push(options);
-          return {
-            open() {
-              // noop for tests
-            },
-            destroy() {
-              // noop for tests
-            },
-          };
-        },
-      };
+    tellerWindow.TellerConnect = {
+      setup: (options: TellerConnectSetupOptions) => {
+        setupCalls.push(options);
+        return {
+          open() {
+            // noop for tests
+          },
+          destroy() {
+            // noop for tests
+          },
+        };
+      },
+    };
   });
 
   afterEach(() => {
@@ -74,7 +75,9 @@ describe("LinkBankClient", () => {
       restoreDom();
     }
     globalThis.fetch = originalFetch;
-    delete (window as { TellerConnect?: unknown }).TellerConnect;
+    if (tellerWindow) {
+      delete tellerWindow.TellerConnect;
+    }
   });
 
   it("requests Teller tokens with credentialed fetch", async () => {

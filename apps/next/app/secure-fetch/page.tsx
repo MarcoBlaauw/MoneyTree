@@ -3,8 +3,8 @@ import Script from "next/script";
 
 const SCRIPT_ID = "secure-fetch-handler";
 
-export default function SecureFetchPage() {
-  const headerList = headers();
+export default async function SecureFetchPage() {
+  const headerList = await headers();
   const nonce = headerList.get("x-csp-nonce") ?? undefined;
   const csrfToken = headerList.get("x-csrf-token") ?? "";
   const csrfLiteral = JSON.stringify(csrfToken);

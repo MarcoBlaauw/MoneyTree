@@ -18,12 +18,13 @@ export const metadata: Metadata = {
   description: "Next.js frontend powered by the shared MoneyTree UI kit.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const cspNonce = headers().get("x-csp-nonce") ?? undefined;
+  const headerList = await headers();
+  const cspNonce = headerList.get("x-csp-nonce") ?? undefined;
 
   return (
     <html lang="en">

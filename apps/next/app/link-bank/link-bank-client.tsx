@@ -395,7 +395,7 @@ export default function LinkBankClient({ csrfToken, tellerConfig, components }: 
         setLoadingVendor(null);
       }
     },
-    [csrfToken, logEvent],
+    [csrfToken, logEvent, launchTellerConnect],
   );
 
   return (

@@ -2,8 +2,8 @@ import { headers } from "next/headers";
 import Script from "next/script";
 import VerifyIdentityClient from "./verify-identity-client";
 
-export default function VerifyIdentityPage() {
-  const headerList = headers();
+export default async function VerifyIdentityPage() {
+  const headerList = await headers();
   const csrfToken = headerList.get("x-csrf-token") ?? "";
   const cspNonce = headerList.get("x-csp-nonce") ?? undefined;
 

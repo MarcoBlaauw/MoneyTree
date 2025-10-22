@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { cleanup, render } from "@testing-library/react";
 
 import { setupDom } from "../helpers/setup-dom";
-import { renderHomePage } from "../../app/page";
+import { renderHomePage } from "../../app/render-home-page";
 
 describe("Home page", () => {
   let restoreDom: (() => void) | undefined;

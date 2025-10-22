@@ -11,13 +11,25 @@ export function setupDom() {
   globalThis.document = jsdomWindow.document;
   globalThis.HTMLElement = jsdomWindow.HTMLElement;
   globalThis.Node = jsdomWindow.Node;
-  globalThis.navigator = jsdomWindow.navigator;
+  try {
+    globalThis.navigator = jsdomWindow.navigator;
+  } catch {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: jsdomWindow.navigator,
+    });
+  }
   globalThis.CustomEvent = jsdomWindow.CustomEvent;
   globalThis.self = jsdomWindow;
+  // Create global bindings for environments where `window` is not defined by default.
+  // eslint-disable-next-line no-new-func
+  Function("window = globalThis.window; self = globalThis.self;")();
 
   if (!jsdomWindow.requestIdleCallback) {
     jsdomWindow.requestIdleCallback = (callback) =>
-      setTimeout(() =>
+      jsdomWindow.setTimeout(() =>
         callback({
           didTimeout: false,
           timeRemaining: () => 0,
@@ -26,7 +38,7 @@ export function setupDom() {
   }
 
   if (!jsdomWindow.cancelIdleCallback) {
-    jsdomWindow.cancelIdleCallback = (handle: number) => clearTimeout(handle);
+    jsdomWindow.cancelIdleCallback = (handle: number) => jsdomWindow.clearTimeout(handle);
   }
 
   globalThis.requestIdleCallback = jsdomWindow.requestIdleCallback;

@@ -24,8 +24,8 @@ function inferTellerEnvironment(connectHost: string | undefined): string | undef
   return undefined;
 }
 
-export default function LinkBankPage() {
-  const headerList = headers();
+export default async function LinkBankPage() {
+  const headerList = await headers();
   const csrfToken = headerList.get("x-csrf-token") ?? "";
   const cspNonce = headerList.get("x-csp-nonce") ?? undefined;
   const connectHost = process.env.TELLER_CONNECT_HOST;

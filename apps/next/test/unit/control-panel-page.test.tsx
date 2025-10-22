@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { cleanup, render } from "@testing-library/react";
 
 import { setupDom } from "../helpers/setup-dom";
-import { renderControlPanelPage } from "../../app/control-panel/page";
+import { renderControlPanelPage } from "../../app/control-panel/render-control-panel-page";
 import type { ControlPanelSettings } from "../../app/lib/settings";
 
 describe("Control panel page", () => {

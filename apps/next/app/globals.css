@@ -1,8 +1,5 @@
 @import "@money-tree/ui/index.css";
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 :root {
   --font-sans: var(--font-inter);
@@ -11,5 +8,8 @@
 }
 
 body {
-  @apply bg-background text-foreground antialiased;
+  background-color: theme(colors.background, #0f172a);
+  color: theme(colors.foreground, #f8fafc);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }

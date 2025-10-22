@@ -5,7 +5,9 @@ module.exports = {
   presets: [sharedPreset],
   content: [
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
-    "../ui/**/*.{js,ts,jsx,tsx,mdx}"
+    "../ui/**/*.{js,ts,jsx,tsx,mdx}",
+    "!../ui/**/node_modules",
+    "!../ui/**/node_modules/**/*"
   ],
   theme: {
     extend: {},
