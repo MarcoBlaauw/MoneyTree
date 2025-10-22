@@ -6,8 +6,8 @@ function normalizePath(path: string): string {
   return path;
 }
 
-type HeaderList = {
-  get(name: string): string | null;
+export type HeaderList = {
+  get(name: string): string | null | undefined;
 };
 
 function getForwardedOrigin(headerList?: HeaderList): string | null {

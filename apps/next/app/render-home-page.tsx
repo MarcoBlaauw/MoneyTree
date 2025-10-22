@@ -5,7 +5,11 @@ import { headers } from "next/headers";
 
 import type { CurrentUserProfile } from "./lib/current-user";
 import { getCurrentUser } from "./lib/current-user";
-import { buildPhoenixUrl as buildPhoenixUrlHelper } from "./lib/build-phoenix-url";
+import {
+  buildPhoenixUrl as buildPhoenixUrlHelper,
+  type BuildPhoenixUrl,
+  type HeaderList,
+} from "./lib/build-phoenix-url";
 
 const featureHighlights = [
   {
@@ -57,7 +61,7 @@ type QuickAction = {
   title: string;
 };
 
-type HomeContentProps = {
+export type HomeContentProps = {
   currentUser: CurrentUserProfile | null;
   nextBasePath: string;
   buildPhoenixUrl: (path: string) => string;
@@ -254,25 +258,31 @@ type CurrentUserFetcher = () => Promise<CurrentUserProfile | null>;
 type RenderHomePageOptions = {
   fetchCurrentUser?: CurrentUserFetcher;
   forwardedPrefix?: string | null;
-  buildPhoenixUrl?: (path: string) => string;
+  buildPhoenixUrl?: BuildPhoenixUrl;
+  headerList?: HeaderList | null;
 };
 
 export async function renderHomePage({
   fetchCurrentUser = getCurrentUser,
   forwardedPrefix,
-  buildPhoenixUrl = buildPhoenixUrlHelper,
+  buildPhoenixUrl,
+  headerList = null,
 }: RenderHomePageOptions = {}) {
   const currentUser = await fetchCurrentUser();
-  let headerList: Parameters<typeof buildPhoenixUrlHelper>[1] | null = null;
-  try {
-    headerList = await headers();
-  } catch {
-    headerList = null;
+  let resolvedHeaderList: HeaderList | null = headerList;
+
+  if (!resolvedHeaderList) {
+    try {
+      resolvedHeaderList = await headers();
+    } catch {
+      resolvedHeaderList = null;
+    }
   }
   const normalizedPrefix = normalizeForwardedPrefix(forwardedPrefix ?? "");
   const resolvePhoenixUrl =
     buildPhoenixUrl ??
-    ((path: string) => buildPhoenixUrlHelper(path, headerList ?? undefined));
+    ((path: string) =>
+      buildPhoenixUrlHelper(path, resolvedHeaderList ?? undefined));
 
   return (
     <HomeContent
