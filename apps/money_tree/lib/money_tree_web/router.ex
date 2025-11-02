@@ -105,6 +105,7 @@ defmodule MoneyTreeWeb.Router do
       on_mount: [MoneyTreeWeb.Plugs.RequireAuthenticatedUser] do
       live "/app/dashboard", DashboardLive
       live "/app/transfers", TransfersLive
+      live "/app/budgets", BudgetLive.Index
       live "/app/settings", SettingsLive
     end
   end
