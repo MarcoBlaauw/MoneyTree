@@ -8,10 +8,107 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
   alias Decimal
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Assets.Asset
+  alias MoneyTree.Budgets
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
 
   setup :register_and_log_in_user
+
+  test "budget widgets reflect period rollups", %{conn: conn, user: user} do
+    account = account_fixture(user, %{name: "Spending Account"})
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Salary",
+        period: :monthly,
+        allocation_amount: "5000.00",
+        currency: "USD",
+        entry_type: :income,
+        variability: :fixed
+      })
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Freelance",
+        period: :monthly,
+        allocation_amount: "600.00",
+        currency: "USD",
+        entry_type: :income,
+        variability: :variable
+      })
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Rent",
+        period: :monthly,
+        allocation_amount: "2400.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :fixed
+      })
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Dining",
+        period: :monthly,
+        allocation_amount: "600.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :variable
+      })
+
+    today = Date.utc_today()
+    timestamp = DateTime.new!(today, ~T[10:00:00], "Etc/UTC")
+
+    insert_transaction(account, %{
+      amount: Decimal.new("5000.00"),
+      category: "Salary",
+      posted_at: timestamp
+    })
+
+    insert_transaction(account, %{
+      amount: Decimal.new("650.00"),
+      category: "Freelance",
+      posted_at: timestamp
+    })
+
+    insert_transaction(account, %{
+      amount: Decimal.new("-2400.00"),
+      category: "Rent",
+      posted_at: timestamp
+    })
+
+    insert_transaction(account, %{
+      amount: Decimal.new("-420.00"),
+      category: "Dining",
+      posted_at: timestamp
+    })
+
+    {:ok, view, _html} = live(conn, ~p"/app/dashboard")
+
+    view |> element("#toggle-balances") |> render_click()
+
+    monthly = render(view)
+    assert monthly =~ "Monthly insights"
+    assert monthly =~ "Income vs. expenses"
+    assert monthly =~ "Freelance"
+    assert monthly =~ "Dining"
+    assert monthly =~ "USD 5650.00"
+    assert monthly =~ "USD 2820.00"
+    assert monthly =~ "USD -180.00"
+    assert monthly =~ "Fixed vs. variable"
+
+    view
+    |> element("button[phx-click="change-budget-period"][phx-value-period="weekly"]")
+    |> render_click()
+
+    weekly = render(view)
+    assert weekly =~ "Weekly insights"
+    assert weekly =~ "USD 138.46"
+    assert weekly =~ "USD 5138.46"
+    assert weekly =~ "USD 511.54"
+    assert weekly =~ "USD 281.54"
+  end
 
   test "renders dashboard metrics and masks balances by default", %{conn: conn, user: user} do
     checking =

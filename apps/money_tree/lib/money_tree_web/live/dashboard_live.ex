@@ -10,11 +10,14 @@ defmodule MoneyTreeWeb.DashboardLive do
   alias MoneyTree.Assets
   alias MoneyTree.Assets.Asset
   alias MoneyTree.Budgets
+  alias MoneyTree.Budgets.Budget
   alias MoneyTree.Loans
   alias MoneyTree.Notifications
   alias MoneyTree.Subscriptions
   alias MoneyTree.Transactions
   alias MoneyTreeWeb.CoreComponents
+
+  @budget_periods [:weekly, :monthly, :yearly]
 
   @impl true
   def mount(_params, _session, %{assigns: %{current_user: current_user}} = socket) do
@@ -28,7 +31,8 @@ defmodule MoneyTreeWeb.DashboardLive do
       asset_form_mode: :new,
       asset_editing_asset: nil,
       asset_changeset: Assets.change_asset(%Asset{}),
-      asset_accounts: []
+      asset_accounts: [],
+      budget_period: :monthly
      )
      |> load_dashboard(current_user)}
   end
@@ -64,9 +68,24 @@ defmodule MoneyTreeWeb.DashboardLive do
   def handle_event(
         "refresh-transactions",
         _params,
+        %{assigns: %{current_user: current_user, budget_period: period}} = socket
+      ) do
+    {:noreply, assign_metrics(socket, current_user, period: period)}
+  end
+
+  def handle_event(
+        "change-budget-period",
+        %{"period" => period_param},
         %{assigns: %{current_user: current_user}} = socket
       ) do
-    {:noreply, assign_metrics(socket, current_user)}
+    with {:ok, period} <- parse_budget_period(period_param) do
+      {:noreply,
+       socket
+       |> assign(:budget_period, period)
+       |> assign_metrics(current_user, period: period)}
+    else
+      :error -> {:noreply, socket}
+    end
   end
 
   def handle_event("new-asset", _params, socket) do
@@ -703,10 +722,21 @@ defmodule MoneyTreeWeb.DashboardLive do
             </ul>
           </div>
 
-          <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-            <div class="flex items-center justify-between">
-              <h3 class="text-lg font-semibold text-zinc-900">Budget pulse</h3>
-              <span class="text-xs text-zinc-500">Current period</span>
+          <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 class="text-lg font-semibold text-zinc-900">Budget pulse</h3>
+                <p class="text-xs text-zinc-500"><%= budget_period_label(@budget_period) %> insights</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button :for={period <- budget_periods()}
+                        type="button"
+                        class={budget_period_button_class(period, @budget_period)}
+                        phx-click="change-budget-period"
+                        phx-value-period={budget_period_value(period)}>
+                  <%= budget_period_label(period) %>
+                </button>
+              </div>
             </div>
 
             <ul class="space-y-2 text-sm">
@@ -738,7 +768,105 @@ defmodule MoneyTreeWeb.DashboardLive do
                   </span>
                 </div>
               </li>
+
+              <li :if={Enum.empty?(@metrics.budgets)} class="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-xs text-zinc-500">Not enough activity yet.</li>
             </ul>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="space-y-3 rounded-lg border border-zinc-100 bg-zinc-50 p-4">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-sm font-semibold text-zinc-800">Income vs. expenses</h4>
+                  <span class="text-xs text-zinc-500"><%= budget_period_label(@budget_period) %> totals</span>
+                </div>
+
+                <ul class="space-y-2 text-sm">
+                  <li :for={rollup <- rollup_entries(@metrics.budget_rollups.entry_type, [:income, :expense])}
+                      class="rounded-lg border border-zinc-200 bg-white p-3">
+                    <div class="flex items-center justify-between">
+                      <span class="font-medium text-zinc-900"><%= rollup.label %></span>
+                      <span class="text-xs text-zinc-500"><%= format_percent(rollup.utilization_percent) %> utilised</span>
+                    </div>
+
+                    <dl class="mt-2 space-y-1 text-xs">
+                      <div class="flex items-center justify-between">
+                        <dt class="text-zinc-500">Allocated</dt>
+                        <dd class="text-zinc-700">
+                          <%= visible_value(@show_balances?, rollup.allocated, rollup.allocated_masked) %>
+                        </dd>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <dt class="text-zinc-500">Actual</dt>
+                        <dd class="text-zinc-700">
+                          <%= visible_value(@show_balances?, rollup.actual, rollup.actual_masked) %>
+                        </dd>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <dt class="text-zinc-500">Projection</dt>
+                        <dd class="text-zinc-700">
+                          <%= visible_value(@show_balances?, rollup.projection, rollup.projection_masked) %>
+                        </dd>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <dt class="text-zinc-500">Variance</dt>
+                        <dd class={variance_class(rollup.variance_decimal)}>
+                          <%= visible_value(@show_balances?, rollup.variance, rollup.variance_masked) %>
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+
+                  <li :if={Enum.empty?(rollup_entries(@metrics.budget_rollups.entry_type, [:income, :expense]))}
+                      class="text-xs text-zinc-500">Not enough activity yet.</li>
+                </ul>
+              </div>
+
+              <div class="space-y-3 rounded-lg border border-zinc-100 bg-zinc-50 p-4">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-sm font-semibold text-zinc-800">Fixed vs. variable</h4>
+                  <span class="text-xs text-zinc-500"><%= budget_period_label(@budget_period) %> mix</span>
+                </div>
+
+                <ul class="space-y-2 text-sm">
+                  <li :for={rollup <- rollup_entries(@metrics.budget_rollups.variability, [:fixed, :variable])}
+                      class="rounded-lg border border-zinc-200 bg-white p-3">
+                    <div class="flex items-center justify-between">
+                      <span class="font-medium text-zinc-900"><%= rollup.label %></span>
+                      <span class="text-xs text-zinc-500"><%= format_percent(rollup.utilization_percent) %> utilised</span>
+                    </div>
+
+                    <dl class="mt-2 space-y-1 text-xs">
+                      <div class="flex items-center justify-between">
+                        <dt class="text-zinc-500">Allocated</dt>
+                        <dd class="text-zinc-700">
+                          <%= visible_value(@show_balances?, rollup.allocated, rollup.allocated_masked) %>
+                        </dd>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <dt class="text-zinc-500">Actual</dt>
+                        <dd class="text-zinc-700">
+                          <%= visible_value(@show_balances?, rollup.actual, rollup.actual_masked) %>
+                        </dd>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <dt class="text-zinc-500">Projection</dt>
+                        <dd class="text-zinc-700">
+                          <%= visible_value(@show_balances?, rollup.projection, rollup.projection_masked) %>
+                        </dd>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <dt class="text-zinc-500">Variance</dt>
+                        <dd class={variance_class(rollup.variance_decimal)}>
+                          <%= visible_value(@show_balances?, rollup.variance, rollup.variance_masked) %>
+                        </dd>
+                      </div>
+                    </dl>
+                  </li>
+
+                  <li :if={Enum.empty?(rollup_entries(@metrics.budget_rollups.variability, [:fixed, :variable]))}
+                      class="text-xs text-zinc-500">No variability insights yet.</li>
+                </ul>
+              </div>
+            </div>
           </div>
 
           <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
@@ -836,9 +964,11 @@ defmodule MoneyTreeWeb.DashboardLive do
   end
 
   defp load_dashboard(socket, current_user) do
+    period = socket.assigns[:budget_period] || :monthly
+
     socket
     |> assign(:summary, Accounts.dashboard_summary(current_user))
-    |> assign_metrics(current_user)
+    |> assign_metrics(current_user, period: period)
     |> assign_asset_data(current_user)
   end
 
@@ -849,21 +979,31 @@ defmodule MoneyTreeWeb.DashboardLive do
     assign(socket, asset_summary: summary, asset_accounts: accounts)
   end
 
-  defp assign_metrics(socket, current_user) do
-    assign(socket, :metrics, build_metrics(current_user))
+  defp assign_metrics(socket, current_user, opts \ []) do
+    period = Keyword.get(opts, :period, socket.assigns[:budget_period] || :monthly)
+    metrics = build_metrics(current_user, Keyword.put(opts, :period, period))
+
+    assign(socket, :metrics, metrics)
   end
 
-  defp build_metrics(current_user) do
+  defp build_metrics(current_user, opts \ []) do
+    period = Keyword.get(opts, :period, :monthly)
+    budget_opts = Keyword.put(opts, :period, period)
+    budgets = Budgets.aggregate_totals(current_user, budget_opts)
+    entry_rollups = Budgets.rollup_by_entry_type(current_user, budget_opts)
+    variability_rollups = Budgets.rollup_by_variability(current_user, budget_opts)
+
     %{
       net_worth: Accounts.net_worth_snapshot(current_user),
       savings: Accounts.savings_and_investments_summary(current_user),
       card_balances: Accounts.running_card_balances(current_user),
       loans: Loans.overview(current_user),
-      budgets: Budgets.aggregate_totals(current_user),
+      budgets: budgets,
+      budget_rollups: %{entry_type: entry_rollups, variability: variability_rollups},
       subscription: Subscriptions.spend_summary(current_user),
       category_rollups: Transactions.category_rollups(current_user),
       recent_transactions: Transactions.recent_with_color(current_user),
-      notifications: Notifications.pending(current_user)
+      notifications: Notifications.pending(current_user, budget_opts)
     }
   end
 
@@ -946,6 +1086,73 @@ defmodule MoneyTreeWeb.DashboardLive do
   end
 
   defp trend_color(:increasing), do: "text-rose-600"
+  defp budget_periods, do: @budget_periods
+
+  defp budget_period_label(period) do
+    case period do
+      :weekly -> "Weekly"
+      :monthly -> "Monthly"
+      :yearly -> "Yearly"
+      other when is_binary(other) -> other |> String.replace("_", " ") |> String.capitalize()
+      _ -> "Custom"
+    end
+  end
+
+  defp budget_period_button_class(period, current) do
+    base = "inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold transition-colors"
+
+    if period == current do
+      base <> " border-emerald-500 bg-emerald-500 text-white"
+    else
+      base <> " border-zinc-200 text-zinc-600 hover:border-emerald-400 hover:text-emerald-600"
+    end
+  end
+
+  defp budget_period_value(period) when is_atom(period), do: Atom.to_string(period)
+  defp budget_period_value(period), do: period
+
+  defp rollup_entries(nil, _order), do: []
+
+  defp rollup_entries(rollups, order) do
+    order
+    |> Enum.map(&Map.get(rollups, &1))
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp variance_class(%Decimal{} = value) do
+    case Decimal.compare(value, Decimal.new("0")) do
+      :lt -> "text-rose-600"
+      :gt -> "text-emerald-600"
+      _ -> "text-zinc-600"
+    end
+  end
+
+  defp variance_class(_), do: "text-zinc-600"
+
+  defp parse_budget_period(value) when is_atom(value) do
+    if value in @budget_periods do
+      {:ok, value}
+    else
+      :error
+    end
+  end
+
+  defp parse_budget_period(value) when is_binary(value) do
+    normalized = value |> String.trim() |> String.downcase()
+
+    if normalized == "" do
+      :error
+    else
+      try do
+        normalized |> String.to_existing_atom() |> parse_budget_period()
+      rescue
+        ArgumentError -> :error
+      end
+    end
+  end
+
+  defp parse_budget_period(_), do: :error
+
   defp trend_color(:decreasing), do: "text-emerald-600"
   defp trend_color(_), do: "text-zinc-500"
 
