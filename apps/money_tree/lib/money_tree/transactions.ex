@@ -63,16 +63,16 @@ defmodule MoneyTree.Transactions do
   def recent_with_color(user, opts \\ []) do
     limit = Keyword.get(opts, :limit, 10)
 
-    Accounts.accessible_accounts_query(user)
-    |> join(:inner, [account], transaction in Transaction,
+    from(transaction in Transaction,
+      join: account in subquery(Accounts.accessible_accounts_query(user)),
       on: transaction.account_id == account.id
     )
-    |> order_by([_account, transaction],
+    |> order_by([transaction, _account],
       desc: transaction.posted_at,
       desc: transaction.inserted_at
     )
     |> limit(^limit)
-    |> preload([_account, transaction], account: ^preload_account_fields())
+    |> preload([transaction, _account], account: ^preload_account_fields())
     |> Repo.all()
     |> Enum.map(&build_recent_entry(&1, opts))
   end
