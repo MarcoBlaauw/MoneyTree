@@ -279,7 +279,6 @@ defmodule MoneyTree.Budgets do
     activity_signed = sum_decimals(entries, & &1.activity_signed)
     activity_total = sum_decimals(entries, & &1.activity_decimal)
     projection = sum_decimals(entries, &projection_for_entry/1)
-    variance = Decimal.sub(projection, allocated)
     utilization = compute_utilization(allocated, activity_total)
 
     activity_value =
@@ -287,6 +286,8 @@ defmodule MoneyTree.Budgets do
         :income -> activity_signed
         _ -> activity_total
       end
+
+    variance = Decimal.sub(activity_value, allocated)
 
     %{
       key: key,
