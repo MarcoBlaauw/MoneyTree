@@ -190,6 +190,29 @@ defmodule MoneyTree.BudgetsTest do
     assert expense.utilization_percent == Decimal.new("85.00")
   end
 
+  test "rollup_by_entry_type variance reflects fixed budget activity" do
+    user = user_fixture()
+    account = account_fixture(user)
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Rent",
+        period: :monthly,
+        allocation_amount: "2400.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :fixed
+      })
+
+    insert_transaction(account, %{amount: Decimal.new("-2600.00"), category: "Rent"})
+
+    rollup = Budgets.rollup_by_entry_type(user)
+
+    assert %{expense: expense} = rollup
+    assert expense.actual == "USD 2600.00"
+    assert expense.variance == "USD 200.00"
+  end
+
   test "rollup_by_variability groups fixed versus variable" do
     user = user_fixture()
     account = account_fixture(user)
