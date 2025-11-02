@@ -52,6 +52,192 @@ defmodule MoneyTree.BudgetsTest do
     assert %{status: :under} = Enum.find(budgets, &(&1.name == "Groceries"))
   end
 
+  test "aggregate_totals supports weekly scaling and windowing" do
+    user = user_fixture()
+    account = account_fixture(user)
+
+    {:ok, rent} =
+      Budgets.create_budget(user, %{
+        name: "Rent",
+        period: :monthly,
+        allocation_amount: "2400.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :fixed
+      })
+
+    {:ok, groceries} =
+      Budgets.create_budget(user, %{
+        name: "Groceries",
+        period: :monthly,
+        allocation_amount: "600.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :variable
+      })
+
+    anchor_date = ~D[2024-08-14]
+    week_start = Date.beginning_of_week(anchor_date)
+
+    insert_transaction(account, %{
+      amount: Decimal.new("-120.00"),
+      category: "Groceries",
+      posted_at: DateTime.new!(week_start, ~T[12:00:00], "Etc/UTC")
+    })
+
+    insert_transaction(account, %{
+      amount: Decimal.new("-2400.00"),
+      category: "Rent",
+      posted_at: DateTime.new!(Date.add(week_start, 2), ~T[08:30:00], "Etc/UTC")
+    })
+
+    insert_transaction(account, %{
+      amount: Decimal.new("-75.00"),
+      category: "Groceries",
+      posted_at: DateTime.new!(Date.add(week_start, -5), ~T[09:00:00], "Etc/UTC")
+    })
+
+    budgets = Budgets.aggregate_totals(user, period: :weekly, anchor_date: anchor_date)
+
+    rent_entry = Enum.find(budgets, &(&1.name == rent.name))
+    groceries_entry = Enum.find(budgets, &(&1.name == groceries.name))
+
+    assert rent_entry.allocated == "USD 2400.00"
+    assert groceries_entry.allocated == "USD 138.46"
+    assert groceries_entry.spent == "USD 120.00"
+  end
+
+  test "aggregate_totals yearly window respects full calendar year" do
+    user = user_fixture()
+    account = account_fixture(user)
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Insurance",
+        period: :yearly,
+        allocation_amount: "1200.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :fixed
+      })
+
+    anchor_date = ~D[2024-11-20]
+    year_start = Date.beginning_of_year(anchor_date)
+
+    insert_transaction(account, %{
+      amount: Decimal.new("-1200.00"),
+      category: "Insurance",
+      posted_at: DateTime.new!(Date.add(year_start, 30), ~T[10:00:00], "Etc/UTC")
+    })
+
+    insert_transaction(account, %{
+      amount: Decimal.new("-1200.00"),
+      category: "Insurance",
+      posted_at: DateTime.new!(Date.add(year_start, -10), ~T[10:00:00], "Etc/UTC")
+    })
+
+    [entry] = Budgets.aggregate_totals(user, period: :yearly, anchor_date: anchor_date)
+
+    assert entry.spent == "USD 1200.00"
+    assert entry.remaining == "USD 0.00"
+  end
+
+  test "rollup_by_entry_type separates income and expenses" do
+    user = user_fixture()
+    account = account_fixture(user)
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Salary",
+        period: :monthly,
+        allocation_amount: "5000.00",
+        currency: "USD",
+        entry_type: :income,
+        variability: :fixed
+      })
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Rent",
+        period: :monthly,
+        allocation_amount: "2400.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :fixed
+      })
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Groceries",
+        period: :monthly,
+        allocation_amount: "600.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :variable
+      })
+
+    insert_transaction(account, %{amount: Decimal.new("5000.00"), category: "Salary"})
+    insert_transaction(account, %{amount: Decimal.new("-2400.00"), category: "Rent"})
+    insert_transaction(account, %{amount: Decimal.new("-150.00"), category: "Groceries"})
+
+    rollup = Budgets.rollup_by_entry_type(user)
+
+    assert %{income: income, expense: expense} = rollup
+    assert income.actual == "USD 5000.00"
+    assert income.variance == "USD 0.00"
+    assert expense.actual == "USD 2550.00"
+    assert expense.variance == "USD -450.00"
+    assert expense.utilization_percent == Decimal.new("85.00")
+  end
+
+  test "rollup_by_variability groups fixed versus variable" do
+    user = user_fixture()
+    account = account_fixture(user)
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Salary",
+        period: :monthly,
+        allocation_amount: "5000.00",
+        currency: "USD",
+        entry_type: :income,
+        variability: :fixed
+      })
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Rent",
+        period: :monthly,
+        allocation_amount: "2400.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :fixed
+      })
+
+    {:ok, _} =
+      Budgets.create_budget(user, %{
+        name: "Dining",
+        period: :monthly,
+        allocation_amount: "400.00",
+        currency: "USD",
+        entry_type: :expense,
+        variability: :variable
+      })
+
+    insert_transaction(account, %{amount: Decimal.new("5000.00"), category: "Salary"})
+    insert_transaction(account, %{amount: Decimal.new("-2400.00"), category: "Rent"})
+    insert_transaction(account, %{amount: Decimal.new("-200.00"), category: "Dining"})
+
+    rollup = Budgets.rollup_by_variability(user)
+
+    assert %{fixed: fixed, variable: variable} = rollup
+
+    assert fixed.projection == "USD 7400.00"
+    assert fixed.variance == "USD 0.00"
+    assert variable.actual == "USD 200.00"
+    assert variable.projection == "USD 200.00"
+  end
+
   describe "budget persistence" do
     setup do
       user = user_fixture()
@@ -144,7 +330,7 @@ defmodule MoneyTree.BudgetsTest do
       amount: Map.fetch!(attrs, :amount),
       currency: account.currency,
       type: "card",
-      posted_at: DateTime.utc_now(),
+      posted_at: Map.get(attrs, :posted_at, DateTime.utc_now()),
       description: Map.get(attrs, :description, "Budget Test"),
       category: Map.get(attrs, :category),
       status: "posted",
