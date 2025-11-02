@@ -24,7 +24,6 @@ export function setupDom() {
   globalThis.CustomEvent = jsdomWindow.CustomEvent;
   globalThis.self = jsdomWindow;
   // Create global bindings for environments where `window` is not defined by default.
-  // eslint-disable-next-line no-new-func
   Function("window = globalThis.window; self = globalThis.self;")();
 
   if (!jsdomWindow.requestIdleCallback) {

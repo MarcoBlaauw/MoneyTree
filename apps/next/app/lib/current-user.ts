@@ -3,11 +3,13 @@ import { fetchWithSession } from "./session-fetch";
 export type CurrentUserProfile = {
   email: string;
   name: string | null;
+  role: string | null;
 };
 
 type SettingsProfile = {
   full_name?: string | null;
   email?: string | null;
+  role?: string | null;
 };
 
 type SettingsResponse = {
@@ -38,9 +40,12 @@ function resolveProfile(data: unknown): CurrentUserProfile | null {
   const name =
     profile?.full_name ?? response.user?.name ?? response.name ?? null;
 
+  const role = profile?.role ?? response.user?.role ?? response.role ?? null;
+
   return {
     email,
     name: name ?? null,
+    role: typeof role === "string" ? role : null,
   };
 }
 

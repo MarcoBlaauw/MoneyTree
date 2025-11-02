@@ -133,7 +133,3 @@ type TellerConnectSetupOptions = {
   onExit?: (event?: Record<string, unknown>) => void;
 };
 
-type TellerConnectInstance = {
-  open(): void;
-  destroy(): void;
-};

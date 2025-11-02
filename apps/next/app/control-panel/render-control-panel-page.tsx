@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 
 import { NotificationToggle } from "./notification-toggle";
 import type { ControlPanelSettings } from "../lib/settings";
@@ -92,6 +93,16 @@ function ControlPanelContent({ settings }: ControlPanelContentProps) {
               Manage profile information, fine-tune notification preferences, and monitor signed-in devices.
             </p>
           </div>
+          {role === "owner" ? (
+            <div>
+              <Link
+                href="/owner/users"
+                className="inline-flex items-center rounded-full border border-primary/30 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-primary transition hover:border-primary hover:text-primary"
+              >
+                Manage workspace users
+              </Link>
+            </div>
+          ) : null}
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
             <p className="font-medium">Signed in as {displayName ?? fullName ?? email ?? "Unknown user"}.</p>
             <p className="text-primary/80">Last login: {lastLogin}</p>

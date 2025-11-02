@@ -52,6 +52,14 @@ const quickActions = [
       "Manage workspace settings, adjust security policies, and launch advanced automations.",
     target: "next" as const,
   },
+  {
+    href: "/owner/users",
+    title: "Manage users",
+    description:
+      "Review workspace roles, activate or suspend accounts, and audit access levels in one place.",
+    target: "next" as const,
+    requiresRole: "owner" as const,
+  },
 ] satisfies QuickAction[];
 
 type QuickAction = {
@@ -59,6 +67,7 @@ type QuickAction = {
   href: string;
   target: "phoenix" | "next";
   title: string;
+  requiresRole?: "owner";
 };
 
 export type HomeContentProps = {
@@ -75,6 +84,13 @@ export function HomeContent({
   const isGuest = !currentUser;
   const greetingName =
     currentUser && (currentUser.name?.trim() || currentUser.email);
+  const availableActions = quickActions.filter((action) => {
+    if (!action.requiresRole) {
+      return true;
+    }
+
+    return currentUser?.role === action.requiresRole;
+  });
 
   return (
     <div className="bg-background text-foreground min-h-screen">
@@ -170,7 +186,7 @@ export function HomeContent({
             </div>
           </div>
         </section>
-        {currentUser && (
+        {currentUser && availableActions.length > 0 && (
           <section className="grid gap-8 rounded-3xl border border-primary/30 bg-neutral/40 p-8 shadow" aria-labelledby="quick-actions">
             <div className="space-y-2">
               <span className="inline-flex w-fit items-center rounded-full bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
@@ -184,7 +200,7 @@ export function HomeContent({
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              {quickActions.map((action) => {
+              {availableActions.map((action) => {
                 const href =
                   action.target === "next"
                     ? `${nextBasePath}${action.href}`
