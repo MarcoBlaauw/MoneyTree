@@ -8,6 +8,7 @@ defmodule MoneyTree.Accounts do
 
   alias Ecto.Changeset
   alias Ecto.Multi
+  alias Ecto.UUID
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Accounts.AccountInvitation
   alias MoneyTree.Accounts.AccountMembership
@@ -99,13 +100,19 @@ defmodule MoneyTree.Accounts do
   def fetch_user(user_id, opts \\ []) when is_binary(user_id) do
     opts = normalize_user_pagination_opts(opts)
 
-    query =
-      from(user in User, where: user.id == ^user_id)
-      |> maybe_preload_user(Keyword.get(opts, :preload))
+    case UUID.cast(user_id) do
+      {:ok, uuid} ->
+        query =
+          from(user in User, where: user.id == ^uuid)
+          |> maybe_preload_user(Keyword.get(opts, :preload))
 
-    case Repo.one(query) do
-      nil -> {:error, :not_found}
-      %User{} = user -> {:ok, user}
+        case Repo.one(query) do
+          nil -> {:error, :not_found}
+          %User{} = user -> {:ok, user}
+        end
+
+      :error ->
+        {:error, :not_found}
     end
   end
 
