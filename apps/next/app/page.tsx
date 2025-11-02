@@ -1,5 +1,6 @@
 import React from "react";
 import Image from "next/image";
+import Link from "next/link";
 
 import type { CurrentUserProfile } from "./lib/current-user";
 import { getCurrentUser } from "./lib/current-user";
@@ -166,7 +167,7 @@ function HomeContent({ currentUser }: HomeContentProps) {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {quickActions.map((action) => (
-                <a
+                <Link
                   key={`${action.href}-${action.title}`}
                   className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/40 p-5 transition hover:border-primary hover:bg-background/60"
                   href={action.href}
@@ -180,7 +181,7 @@ function HomeContent({ currentUser }: HomeContentProps) {
                   <span className="mt-4 inline-flex items-center text-sm font-medium text-primary group-hover:translate-x-1 transition">
                     Go now →
                   </span>
-                </a>
+                </Link>
               ))}
             </div>
           </section>
