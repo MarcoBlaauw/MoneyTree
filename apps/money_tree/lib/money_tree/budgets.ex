@@ -29,10 +29,38 @@ defmodule MoneyTree.Budgets do
         }
 
   @default_budgets [
-    %{name: "Housing", allocation: Decimal.new("2500.00"), period: "Monthly"},
-    %{name: "Groceries", allocation: Decimal.new("600.00"), period: "Monthly"},
-    %{name: "Transportation", allocation: Decimal.new("300.00"), period: "Monthly"},
-    %{name: "Lifestyle", allocation: Decimal.new("400.00"), period: "Monthly"}
+    %{
+      name: "Housing",
+      allocation: Decimal.new("2500.00"),
+      period: :monthly,
+      entry_type: :expense,
+      variability: :fixed,
+      currency: "USD"
+    },
+    %{
+      name: "Groceries",
+      allocation: Decimal.new("600.00"),
+      period: :monthly,
+      entry_type: :expense,
+      variability: :variable,
+      currency: "USD"
+    },
+    %{
+      name: "Transportation",
+      allocation: Decimal.new("300.00"),
+      period: :monthly,
+      entry_type: :expense,
+      variability: :variable,
+      currency: "USD"
+    },
+    %{
+      name: "Lifestyle",
+      allocation: Decimal.new("400.00"),
+      period: :monthly,
+      entry_type: :expense,
+      variability: :variable,
+      currency: "USD"
+    }
   ]
 
   @doc """
@@ -144,77 +172,322 @@ defmodule MoneyTree.Budgets do
   """
   @spec aggregate_totals(User.t() | binary(), keyword()) :: [budget_entry()]
   def aggregate_totals(user, opts \\ []) do
-    budgets =
-      opts
-      |> Keyword.get_lazy(:budgets, fn -> persisted_budgets_or_defaults(user, opts) end)
-    since = Keyword.get(opts, :since, default_since())
-    default_currency = Keyword.get(opts, :currency) || derive_currency(user, budgets)
+    {entries, %{currency: currency}} = aggregate_budget_entries(user, opts)
 
-    totals = spending_by_category(user, since)
+    Enum.map(entries, &format_budget_entry(&1, currency, opts))
+  end
 
-    Enum.map(budgets, fn budget ->
-      build_budget_entry(budget, totals, default_currency, opts)
+  @doc """
+  Builds rollup insights grouped by budget entry type.
+  """
+  @spec rollup_by_entry_type(User.t() | binary(), keyword()) :: %{optional(atom()) => map()}
+  def rollup_by_entry_type(user, opts \\ []) do
+    {entries, %{currency: currency}} = aggregate_budget_entries(user, opts)
+
+    entries
+    |> Enum.group_by(& &1.entry_type)
+    |> Enum.into(%{}, fn {key, group} ->
+      {key, build_rollup_summary(key, group, currency, opts)}
     end)
   end
 
-  defp build_budget_entry(%Budget{} = budget, totals, default_currency, opts) do
-    info =
-      budget.name
-      |> String.downcase()
-      |> then(&Map.get(totals, &1, %{currency: default_currency, total: Decimal.new("0")}))
+  @doc """
+  Builds rollup insights grouped by commitment variability.
+  """
+  @spec rollup_by_variability(User.t() | binary(), keyword()) :: %{optional(atom()) => map()}
+  def rollup_by_variability(user, opts \\ []) do
+    {entries, %{currency: currency}} = aggregate_budget_entries(user, opts)
 
-    allocation = cast_decimal(budget.allocation_amount)
-    spend = info.total
-    currency = budget.currency || info.currency || default_currency
-    remaining = Decimal.sub(allocation, spend)
-
-    %{
-      name: budget.name,
-      period: humanize_period(budget.period),
-      currency: currency,
-      allocated: Accounts.format_money(allocation, currency, opts),
-      allocated_masked: Accounts.mask_money(allocation, currency, opts),
-      spent: Accounts.format_money(spend, currency, opts),
-      spent_masked: Accounts.mask_money(spend, currency, opts),
-      remaining: Accounts.format_money(remaining, currency, opts),
-      remaining_masked: Accounts.mask_money(remaining, currency, opts),
-      status: budget_status(allocation, spend)
-    }
+    entries
+    |> Enum.group_by(& &1.variability)
+    |> Enum.into(%{}, fn {key, group} ->
+      {key, build_rollup_summary(key, group, currency, opts)}
+    end)
   end
 
-  defp build_budget_entry(%{name: name} = budget, totals, default_currency, opts) do
-    key = String.downcase(name)
+  defp aggregate_budget_entries(user, opts) do
+    budgets =
+      opts
+      |> Keyword.get_lazy(:budgets, fn -> persisted_budgets_or_defaults(user, opts) end)
+
+    selector = normalize_period_selector(Keyword.get(opts, :period))
+    window = resolve_period_window(selector, opts)
+    default_currency = Keyword.get(opts, :currency) || derive_currency(user, budgets)
+
+    totals = spending_by_category(user, window)
+
+    entries =
+      Enum.map(budgets, fn budget ->
+        build_budget_entry(budget, totals, default_currency, selector, window)
+      end)
+
+    {entries, %{currency: default_currency, window: window, period: selector}}
+  end
+
+  defp build_budget_entry(budget, totals, default_currency, selector, window) do
+    metadata = budget_metadata(budget)
+    key = metadata.name |> String.downcase()
+
     info = Map.get(totals, key, %{currency: default_currency, total: Decimal.new("0")})
 
-    allocation = cast_decimal(Map.get(budget, :allocation, Decimal.new("0")))
-    spend = info.total
-    currency = Map.get(budget, :currency) || info.currency || default_currency
-    remaining = Decimal.sub(allocation, spend)
+    currency = metadata.currency || info.currency || default_currency
+    allocation = allocation_for_period(metadata, selector)
+    total_signed = cast_decimal(info.total)
+    total_abs = Decimal.abs(total_signed)
+    remaining = Decimal.sub(allocation, total_abs)
 
     %{
-      name: name,
-      period: humanize_period(Map.get(budget, :period, "Monthly")),
+      name: metadata.name,
+      period: metadata.period,
+      entry_type: metadata.entry_type,
+      variability: metadata.variability,
       currency: currency,
-      allocated: Accounts.format_money(allocation, currency, opts),
-      allocated_masked: Accounts.mask_money(allocation, currency, opts),
-      spent: Accounts.format_money(spend, currency, opts),
-      spent_masked: Accounts.mask_money(spend, currency, opts),
-      remaining: Accounts.format_money(remaining, currency, opts),
-      remaining_masked: Accounts.mask_money(remaining, currency, opts),
-      status: budget_status(allocation, spend)
+      allocation_decimal: allocation,
+      activity_decimal: total_abs,
+      activity_signed: total_signed,
+      remaining_decimal: remaining,
+      window: window
     }
   end
 
-  defp spending_by_category(user, since) do
+  defp format_budget_entry(entry, currency, opts) do
+    %{
+      name: entry.name,
+      period: humanize_period(entry.period),
+      period_atom: entry.period,
+      entry_type: humanize_entry_type(entry.entry_type),
+      entry_type_atom: entry.entry_type,
+      variability: humanize_variability(entry.variability),
+      variability_atom: entry.variability,
+      currency: entry.currency,
+      allocated: Accounts.format_money(entry.allocation_decimal, entry.currency, opts),
+      allocated_masked: Accounts.mask_money(entry.allocation_decimal, entry.currency, opts),
+      allocated_decimal: entry.allocation_decimal,
+      spent: Accounts.format_money(entry.activity_decimal, entry.currency, opts),
+      spent_masked: Accounts.mask_money(entry.activity_decimal, entry.currency, opts),
+      spent_decimal: entry.activity_decimal,
+      spent_signed_decimal: entry.activity_signed,
+      remaining: Accounts.format_money(entry.remaining_decimal, entry.currency, opts),
+      remaining_masked: Accounts.mask_money(entry.remaining_decimal, entry.currency, opts),
+      remaining_decimal: entry.remaining_decimal,
+      status: budget_status(entry.allocation_decimal, entry.activity_decimal)
+    }
+  end
+
+  defp build_rollup_summary(key, entries, currency, opts) do
+    allocated = sum_decimals(entries, & &1.allocation_decimal)
+    activity_signed = sum_decimals(entries, & &1.activity_signed)
+    activity_total = sum_decimals(entries, & &1.activity_decimal)
+    projection = sum_decimals(entries, &projection_for_entry/1)
+    variance = Decimal.sub(projection, allocated)
+    utilization = compute_utilization(allocated, activity_total)
+
+    activity_value =
+      case key do
+        :income -> activity_signed
+        _ -> activity_total
+      end
+
+    %{
+      key: key,
+      label: humanize_value(key),
+      currency: currency,
+      allocated: Accounts.format_money(allocated, currency, opts),
+      allocated_masked: Accounts.mask_money(allocated, currency, opts),
+      allocated_decimal: allocated,
+      actual: Accounts.format_money(activity_value, currency, opts),
+      actual_masked: Accounts.mask_money(activity_value, currency, opts),
+      actual_decimal: activity_value,
+      projection: Accounts.format_money(projection, currency, opts),
+      projection_masked: Accounts.mask_money(projection, currency, opts),
+      projection_decimal: projection,
+      variance: Accounts.format_money(variance, currency, opts),
+      variance_masked: Accounts.mask_money(variance, currency, opts),
+      variance_decimal: variance,
+      utilization: utilization,
+      utilization_percent:
+        case utilization do
+          nil -> nil
+          %Decimal{} = value -> Decimal.mult(value, Decimal.new("100")) |> Decimal.round(2)
+        end
+    }
+  end
+
+  defp compute_utilization(_allocated, activity) when activity == Decimal.new("0"), do: Decimal.new("0")
+
+  defp compute_utilization(allocated, activity) do
+    cond do
+      is_nil(allocated) -> nil
+      Decimal.compare(allocated, Decimal.new("0")) == :eq -> nil
+      true -> Decimal.div(activity, allocated) |> Decimal.round(4)
+    end
+  end
+
+  defp projection_for_entry(entry) do
+    case entry.variability do
+      :fixed -> entry.allocation_decimal
+      _ -> entry.activity_decimal
+    end
+  end
+
+  defp sum_decimals(collection, fun) do
+    Enum.reduce(collection, Decimal.new("0"), fn item, acc ->
+      Decimal.add(acc, fun.(item))
+    end)
+  end
+
+  defp budget_metadata(%Budget{} = budget) do
+    %{
+      name: budget.name,
+      period: budget.period || :monthly,
+      entry_type: budget.entry_type || :expense,
+      variability: budget.variability || :variable,
+      allocation_amount: cast_decimal(budget.allocation_amount),
+      currency: budget.currency
+    }
+  end
+
+  defp budget_metadata(%{name: name} = budget) do
+    %{
+      name: name,
+      period: normalize_period_selector(Map.get(budget, :period)),
+      entry_type: normalize_rollup_enum(:entry_type, Map.get(budget, :entry_type, :expense)),
+      variability: normalize_rollup_enum(:variability, Map.get(budget, :variability, :variable)),
+      allocation_amount:
+        budget
+        |> Map.get(:allocation_amount) || Map.get(budget, :allocation) || Decimal.new("0"),
+      currency: Map.get(budget, :currency)
+    }
+    |> Map.update!(:allocation_amount, &cast_decimal/1)
+  end
+
+  defp normalize_rollup_enum(:entry_type, value) do
+    normalize_rollup_enum(value, Budget.entry_types(), :expense)
+  end
+
+  defp normalize_rollup_enum(:variability, value) do
+    normalize_rollup_enum(value, Budget.variabilities(), :variable)
+  end
+
+  defp normalize_rollup_enum(value, allowed, default) when is_atom(value) do
+    if value in allowed, do: value, else: default
+  end
+
+  defp normalize_rollup_enum(value, allowed, default) when is_binary(value) do
+    value
+    |> String.downcase()
+    |> String.to_existing_atom()
+    |> normalize_rollup_enum(allowed, default)
+  rescue
+    ArgumentError -> default
+  end
+
+  defp normalize_rollup_enum(_value, _allowed, default), do: default
+
+  defp allocation_for_period(metadata, selector) do
+    allocation = metadata.allocation_amount
+
+    case metadata.variability do
+      :fixed -> allocation
+      _ -> convert_allocation_between_periods(allocation, metadata.period, selector)
+    end
+  end
+
+  defp convert_allocation_between_periods(amount, source, target) do
+    source_period = normalize_period_selector(source)
+    target_period = normalize_period_selector(target)
+
+    if source_period == target_period do
+      amount
+    else
+      to_year = periods_per_year()
+      yearly = Decimal.mult(amount, Map.fetch!(to_year, source_period))
+      Decimal.div(yearly, Map.fetch!(to_year, target_period))
+    end
+  end
+
+  defp periods_per_year do
+    %{
+      weekly: Decimal.new("52"),
+      monthly: Decimal.new("12"),
+      yearly: Decimal.new("1")
+    }
+  end
+
+  defp normalize_period_selector(nil), do: :monthly
+
+  defp normalize_period_selector(value) when is_atom(value) do
+    if value in Budget.periods(), do: value, else: :monthly
+  end
+
+  defp normalize_period_selector(value) when is_binary(value) do
+    value
+    |> String.downcase()
+    |> String.to_existing_atom()
+    |> normalize_period_selector()
+  rescue
+    ArgumentError -> :monthly
+  end
+
+  defp resolve_period_window(selector, opts) do
+    default_window = period_window(selector, Keyword.get(opts, :anchor_date))
+
+    since = Keyword.get(opts, :since, default_window.since)
+    until = Keyword.get(opts, :until, default_window.until)
+
+    %{since: since, until: until}
+  end
+
+  defp period_window(:weekly, anchor_date), do: weekly_window(anchor_date)
+  defp period_window(:yearly, anchor_date), do: yearly_window(anchor_date)
+  defp period_window(:monthly, anchor_date), do: monthly_window(anchor_date)
+
+  defp weekly_window(anchor_date) do
+    date = anchor_date || Date.utc_today()
+    beginning = Date.beginning_of_week(date)
+    ending = Date.end_of_week(date)
+
+    %{
+      since: DateTime.new!(beginning, ~T[00:00:00], "Etc/UTC"),
+      until: DateTime.new!(ending, ~T[23:59:59], "Etc/UTC")
+    }
+  end
+
+  defp monthly_window(anchor_date) do
+    date = anchor_date || Date.utc_today()
+    beginning = Date.beginning_of_month(date)
+    ending = Date.end_of_month(date)
+
+    %{
+      since: DateTime.new!(beginning, ~T[00:00:00], "Etc/UTC"),
+      until: DateTime.new!(ending, ~T[23:59:59], "Etc/UTC")
+    }
+  end
+
+  defp yearly_window(anchor_date) do
+    date = anchor_date || Date.utc_today()
+    beginning = Date.beginning_of_year(date)
+    ending = Date.end_of_year(date)
+
+    %{
+      since: DateTime.new!(beginning, ~T[00:00:00], "Etc/UTC"),
+      until: DateTime.new!(ending, ~T[23:59:59], "Etc/UTC")
+    }
+  end
+
+  defp spending_by_category(user, %{since: since, until: until}) do
     from(transaction in Transaction,
       join: account in subquery(Accounts.accessible_accounts_query(user)),
-      on: transaction.account_id == account.id,
-      where: is_nil(^since) or is_nil(transaction.posted_at) or transaction.posted_at >= ^since,
-      group_by: [transaction.category, transaction.currency],
-      select:
-        {coalesce(transaction.category, "Uncategorized"), transaction.currency,
-         sum(fragment("ABS(?)", transaction.amount))}
+      on: transaction.account_id == account.id
     )
+    |> maybe_filter_since(since)
+    |> maybe_filter_until(until)
+    |> group_by([transaction], [transaction.category, transaction.currency])
+    |> select([transaction], {
+      coalesce(transaction.category, "Uncategorized"),
+      transaction.currency,
+      sum(transaction.amount)
+    })
     |> Repo.all()
     |> Enum.reduce(%{}, fn {category, currency, total}, acc ->
       key = category |> to_string() |> String.downcase()
@@ -229,6 +502,18 @@ defmodule MoneyTree.Budgets do
         }
       end)
     end)
+  end
+
+  defp maybe_filter_since(query, nil), do: query
+
+  defp maybe_filter_since(query, since) do
+    where(query, [transaction], is_nil(transaction.posted_at) or transaction.posted_at >= ^since)
+  end
+
+  defp maybe_filter_until(query, nil), do: query
+
+  defp maybe_filter_until(query, until) do
+    where(query, [transaction], is_nil(transaction.posted_at) or transaction.posted_at <= ^until)
   end
 
   defp budget_status(allocation, spend) do
@@ -269,12 +554,6 @@ defmodule MoneyTree.Budgets do
       currency ->
         currency
     end
-  end
-
-  defp default_since do
-    Date.utc_today()
-    |> Date.beginning_of_month()
-    |> DateTime.new!(~T[00:00:00], "Etc/UTC")
   end
 
   defp persisted_budgets_or_defaults(user, opts) do
