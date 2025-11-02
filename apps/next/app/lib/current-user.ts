@@ -12,14 +12,21 @@ type SettingsProfile = {
   email?: string | null;
 };
 
-type SettingsResponse = {
-  profile?: SettingsProfile | null;
-  user?: {
-    email?: string | null;
-    name?: string | null;
-  } | null;
+type ApiUser = {
   email?: string | null;
   name?: string | null;
+  full_name?: string | null;
+};
+
+type SettingsResponse = {
+  profile?: SettingsProfile | null;
+  user?: ApiUser | null;
+  email?: string | null;
+  name?: string | null;
+};
+
+type MeResponse = {
+  data?: ApiUser | null;
 };
 
 function resolveProfile(data: unknown): CurrentUserProfile | null {
@@ -27,18 +34,30 @@ function resolveProfile(data: unknown): CurrentUserProfile | null {
     return null;
   }
 
-  const response = data as SettingsResponse;
+  const response = data as SettingsResponse & MeResponse;
   const profile = response.profile ?? undefined;
+  const dataUser = response.data && typeof response.data === "object"
+    ? (response.data as ApiUser)
+    : undefined;
 
   const email =
-    profile?.email ?? response.user?.email ?? response.email ?? undefined;
+    profile?.email ??
+    response.user?.email ??
+    response.email ??
+    dataUser?.email ??
+    undefined;
 
   if (!email) {
     return null;
   }
 
   const name =
-    profile?.full_name ?? response.user?.name ?? response.name ?? null;
+    profile?.full_name ??
+    response.user?.name ??
+    response.name ??
+    dataUser?.name ??
+    dataUser?.full_name ??
+    null;
 
   return {
     email,
@@ -84,7 +103,7 @@ export async function getCurrentUser(): Promise<CurrentUserProfile | null> {
   }
 
   try {
-    const response = await fetch(`${baseUrl}/api/settings`, {
+    const response = await fetch(`${baseUrl}/api/me`, {
       method: "GET",
       headers: forwardedHeaders,
       cache: "no-store",
