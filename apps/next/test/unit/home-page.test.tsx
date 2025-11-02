@@ -45,6 +45,7 @@ describe("Home page", () => {
         fetchCurrentUser: async () => ({
           email: "sam@example.com",
           name: null,
+          role: null,
         }),
         forwardedPrefix: "/app/react",
       }),
@@ -64,5 +65,21 @@ describe("Home page", () => {
       const link = view.getByRole("link", { name });
       assert.equal(link.getAttribute("href"), href);
     }
+  });
+
+  it("surfaces owner-only navigation when the role is present", async () => {
+    const view = render(
+      await renderHomePage({
+        fetchCurrentUser: async () => ({
+          email: "owner@example.com",
+          name: "Owner",
+          role: "owner",
+        }),
+        forwardedPrefix: "/app/react",
+      }),
+    );
+
+    const manageUsersLink = view.getByRole("link", { name: /Manage users/i });
+    assert.equal(manageUsersLink.getAttribute("href"), "/app/react/owner/users");
   });
 });

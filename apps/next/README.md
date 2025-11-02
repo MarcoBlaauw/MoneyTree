@@ -20,17 +20,22 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Learn More
+## Owner user management flow
 
-To learn more about Next.js, take a look at the following resources:
+Workspace owners can manage account access directly from the Next.js app.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Open `/owner/users` (there are quick links in the authenticated home page
+   and the control panel header for owners).
+2. The route bootstraps the current session with `fetchWithSession` and
+   verifies that the signed-in user has the owner role. Guests and members see
+   descriptive guidance on how to proceed.
+3. Owners can search by email, sort the directory, update roles via the inline
+   select, and suspend/reactivate users. Updates are optimistic and roll back
+   with an inline error message if the Phoenix API rejects the change.
+4. The table surfaces role, suspension state, and important timestamps so that
+   owners can quickly audit their workspace.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The owner management UI exercises the `/api/owner/users` Phoenix endpoints and
+reuses the same session bootstrap logic as the control panel. All requests are
+made with the current CSRF token so that they behave the same way as the
+Phoenix UI.
