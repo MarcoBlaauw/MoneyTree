@@ -25,6 +25,7 @@ defmodule MoneyTree.Users.User do
     field(:encrypted_full_name, Binary)
     field(:password, :string, virtual: true)
     field(:role, Ecto.Enum, values: @roles, default: :member)
+    field(:suspended_at, :utc_datetime_usec)
 
     has_many(:accounts, Account)
     has_many(:memberships, AccountMembership)
