@@ -77,6 +77,7 @@ defmodule MoneyTreeWeb.Router do
       pipe_through :api_owner
 
       get "/dashboard", AuthController, :owner_dashboard
+      resources "/users", Owner.UserController, only: [:index, :show, :update, :delete]
     end
   end
 

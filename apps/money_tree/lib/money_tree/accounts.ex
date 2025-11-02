@@ -23,6 +23,10 @@ defmodule MoneyTree.Accounts do
   @default_session_ttl 60 * 60 * 24 * 30
   @default_invitation_ttl 60 * 60 * 24 * 7
 
+  @default_user_page 1
+  @default_user_per_page 25
+  @max_user_per_page 100
+
   @doc """
   Registers a new user, hashing the provided password with Argon2.
   """
@@ -38,18 +42,156 @@ defmodule MoneyTree.Accounts do
   Updates the role for the user identified by email.
   """
   @spec set_user_role(String.t(), atom() | String.t()) ::
-          {:ok, User.t()} | {:error, :invalid_role | :not_found | Changeset.t()}
+          {:ok, User.t()} | {:error, :invalid_email | :invalid_role | :not_found | Changeset.t()}
   def set_user_role(email, role) when is_binary(email) do
-    with {:ok, role_atom} <- normalize_role(role),
-         %User{} = user <- get_user_by_email(email) do
-      user
-      |> User.changeset(%{role: role_atom})
-      |> Repo.update()
-    else
-      {:error, reason} -> {:error, reason}
+    case get_user_by_email(email) do
       nil -> {:error, :not_found}
+      %User{} = user -> update_user_role(user, role)
     end
   end
+
+  def set_user_role(_email, _role), do: {:error, :invalid_email}
+
+  @doc """
+  Returns an Ecto query for listing users with optional search filters.
+
+  The query orders users by insertion date in descending order so that the newest
+  accounts appear first.
+  """
+  @spec user_directory_query(map() | keyword()) :: Ecto.Query.t()
+  def user_directory_query(opts \\ []) do
+    opts = normalize_user_pagination_opts(opts)
+    search = Keyword.get(opts, :search)
+
+    from(user in User, order_by: [desc: user.inserted_at])
+    |> maybe_search_users(search)
+  end
+
+  @doc """
+  Returns paginated users matching the supplied filters.
+  """
+  @spec paginate_users(map() | keyword()) :: %{entries: [User.t()], metadata: map()}
+  def paginate_users(opts \\ []) do
+    opts = normalize_user_pagination_opts(opts)
+
+    page = sanitize_page_param(Keyword.get(opts, :page, @default_user_page))
+    per_page = sanitize_per_page_param(Keyword.get(opts, :per_page, @default_user_per_page))
+    preload = Keyword.get(opts, :preload)
+
+    query = user_directory_query(opts)
+
+    total_entries = Repo.aggregate(query, :count, :id)
+
+    entries =
+      query
+      |> offset(^((page - 1) * per_page))
+      |> limit(^per_page)
+      |> Repo.all()
+      |> maybe_preload_users(preload)
+
+    %{entries: entries, metadata: build_pagination_metadata(page, per_page, total_entries)}
+  end
+
+  @doc """
+  Fetches a user by ID, returning an error tuple when the record is missing.
+  """
+  @spec fetch_user(binary(), keyword()) :: {:ok, User.t()} | {:error, :not_found}
+  def fetch_user(user_id, opts \\ []) when is_binary(user_id) do
+    opts = normalize_user_pagination_opts(opts)
+
+    query =
+      from(user in User, where: user.id == ^user_id)
+      |> maybe_preload_user(Keyword.get(opts, :preload))
+
+    case Repo.one(query) do
+      nil -> {:error, :not_found}
+      %User{} = user -> {:ok, user}
+    end
+  end
+
+  def fetch_user(_user_id, _opts), do: {:error, :not_found}
+
+  @doc """
+  Updates a user's role, validating allowed values and recording an audit event.
+  """
+  @spec update_user_role(User.t() | binary(), atom() | String.t(), keyword()) ::
+          {:ok, User.t()} | {:error, :invalid_role | :not_found | Changeset.t()}
+  def update_user_role(%User{} = user, role, opts \\ []) do
+    with {:ok, role_atom} <- normalize_role(role),
+         {:ok, %User{} = updated} <-
+           user
+           |> User.changeset(%{role: role_atom})
+           |> Repo.update() do
+      Audit.log(:user_role_updated, audit_metadata(opts, %{user_id: updated.id, role: role_atom}))
+      {:ok, updated}
+    end
+  end
+
+  def update_user_role(user_id, role, opts \\ []) when is_binary(user_id) do
+    with {:ok, %User{} = user} <- fetch_user(user_id) do
+      update_user_role(user, role, opts)
+    end
+  end
+
+  def update_user_role(_user_id, _role, _opts), do: {:error, :not_found}
+
+  @doc """
+  Suspends a user account, setting the suspension timestamp and emitting an audit event.
+  """
+  @spec suspend_user(User.t() | binary(), keyword()) ::
+          {:ok, User.t()} | {:error, :already_suspended | :not_found | Changeset.t()}
+  def suspend_user(%User{} = user, opts \\ []) do
+    if user.suspended_at do
+      {:error, :already_suspended}
+    else
+      now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+      case user |> Changeset.change(%{suspended_at: now}) |> Repo.update() do
+        {:ok, %User{} = updated} ->
+          Audit.log(:user_suspended, audit_metadata(opts, %{user_id: updated.id}))
+          {:ok, updated}
+
+        {:error, %Changeset{} = changeset} ->
+          {:error, changeset}
+      end
+    end
+  end
+
+  def suspend_user(user_id, opts \\ []) when is_binary(user_id) do
+    with {:ok, %User{} = user} <- fetch_user(user_id) do
+      suspend_user(user, opts)
+    end
+  end
+
+  def suspend_user(_user_id, _opts), do: {:error, :not_found}
+
+  @doc """
+  Reactivates a previously suspended user, clearing the suspension timestamp and logging the event.
+  """
+  @spec reactivate_user(User.t() | binary(), keyword()) ::
+          {:ok, User.t()} | {:error, :not_suspended | :not_found | Changeset.t()}
+  def reactivate_user(%User{} = user, opts \\ []) do
+    if is_nil(user.suspended_at) do
+      {:error, :not_suspended}
+    else
+      case user |> Changeset.change(%{suspended_at: nil}) |> Repo.update() do
+        {:ok, %User{} = updated} ->
+          Audit.log(:user_reactivated, audit_metadata(opts, %{user_id: updated.id}))
+          {:ok, updated}
+
+        {:error, %Changeset{} = changeset} ->
+          {:error, changeset}
+      end
+    end
+  end
+
+  def reactivate_user(user_id, opts \\ []) when is_binary(user_id) do
+    with {:ok, %User{} = user} <- fetch_user(user_id) do
+      reactivate_user(user, opts)
+    end
+  end
+
+  def reactivate_user(_user_id, _opts), do: {:error, :not_found}
 
   @doc """
   Authenticates a user and transparently rehashes outdated Argon2 hashes.
@@ -1109,6 +1251,104 @@ defmodule MoneyTree.Accounts do
 
     from(u in User, where: fragment("LOWER(?)", u.email) == ^normalized_email)
     |> Repo.one()
+  end
+
+  defp normalize_user_pagination_opts(opts) when is_list(opts), do: opts
+
+  defp normalize_user_pagination_opts(opts) when is_map(opts) do
+    Enum.reduce(opts, [], fn {key, value}, acc ->
+      case normalize_pagination_key(key) do
+        nil -> acc
+        normalized_key -> [{normalized_key, value} | acc]
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp normalize_user_pagination_opts(_opts), do: []
+
+  defp normalize_pagination_key(key) when key in [:page, :per_page, :preload, :search],
+    do: key
+
+  defp normalize_pagination_key("page"), do: :page
+  defp normalize_pagination_key("per_page"), do: :per_page
+  defp normalize_pagination_key("preload"), do: :preload
+  defp normalize_pagination_key("search"), do: :search
+  defp normalize_pagination_key("q"), do: :search
+  defp normalize_pagination_key("query"), do: :search
+  defp normalize_pagination_key(_key), do: nil
+
+  defp sanitize_page_param(value) when is_integer(value) and value > 0, do: value
+
+  defp sanitize_page_param(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {parsed, _rest} when parsed > 0 -> parsed
+      _ -> @default_user_page
+    end
+  end
+
+  defp sanitize_page_param(_value), do: @default_user_page
+
+  defp sanitize_per_page_param(value) when is_integer(value) and value > 0 do
+    min(value, @max_user_per_page)
+  end
+
+  defp sanitize_per_page_param(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {parsed, _rest} when parsed > 0 -> min(parsed, @max_user_per_page)
+      _ -> @default_user_per_page
+    end
+  end
+
+  defp sanitize_per_page_param(_value), do: @default_user_per_page
+
+  defp build_pagination_metadata(page, per_page, total_entries) do
+    total_pages =
+      total_entries
+      |> Kernel./(per_page)
+      |> Float.ceil()
+      |> trunc()
+
+    %{
+      page: page,
+      per_page: per_page,
+      total_entries: total_entries,
+      total_pages: total_pages
+    }
+  end
+
+  defp maybe_search_users(query, nil), do: query
+
+  defp maybe_search_users(query, search) when is_binary(search) do
+    search = String.trim(search)
+
+    if search == "" do
+      query
+    else
+      pattern = "%#{search}%"
+
+      from(user in query, where: ilike(user.email, ^pattern))
+    end
+  end
+
+  defp maybe_search_users(query, _search), do: query
+
+  defp maybe_preload_users(users, preload) when preload in [nil, []], do: users
+
+  defp maybe_preload_users(users, preload), do: Repo.preload(users, preload)
+
+  defp maybe_preload_user(query, preload) when preload in [nil, []], do: query
+
+  defp maybe_preload_user(query, preload), do: preload(query, ^preload)
+
+  defp audit_metadata(opts, extra) when is_map(extra) do
+    opts
+    |> Keyword.get(:actor)
+    |> case do
+      %User{id: actor_id} -> Map.put(extra, :actor_id, actor_id)
+      actor_id when is_binary(actor_id) -> Map.put(extra, :actor_id, actor_id)
+      _ -> extra
+    end
   end
 
   defp normalize_role(role) when is_atom(role) do
