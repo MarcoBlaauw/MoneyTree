@@ -7,6 +7,8 @@ defmodule MoneyTree.Institutions.Connection do
 
   import Ecto.Changeset
 
+  alias Ecto.Changeset
+
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Encrypted.Binary
   alias MoneyTree.Encrypted.Map
@@ -20,6 +22,7 @@ defmodule MoneyTree.Institutions.Connection do
   schema "institution_connections" do
     field :encrypted_credentials, Binary
     field :webhook_secret, Binary
+    field :webhook_secret_hash, :binary
     field :metadata, Map, default: %{}
 
     field :teller_enrollment_id, :string
@@ -57,6 +60,7 @@ defmodule MoneyTree.Institutions.Connection do
     |> validate_length(:sync_cursor, max: 1024)
     |> validate_metadata_is_map()
     |> validate_webhook_secret()
+    |> maybe_put_webhook_secret_hash()
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:institution_id)
     |> unique_constraint([:user_id, :institution_id],
@@ -95,5 +99,16 @@ defmodule MoneyTree.Institutions.Connection do
         true -> [{:webhook_secret, "must be a non-empty binary"}]
       end
     end)
+  end
+
+  defp maybe_put_webhook_secret_hash(%Changeset{changes: %{webhook_secret: secret}} = changeset)
+       when is_binary(secret) do
+    put_change(changeset, :webhook_secret_hash, hash_webhook_secret(secret))
+  end
+
+  defp maybe_put_webhook_secret_hash(changeset), do: changeset
+
+  defp hash_webhook_secret(secret) when is_binary(secret) do
+    :crypto.hash(:sha256, secret)
   end
 end

@@ -189,7 +189,7 @@ defmodule MoneyTree.Institutions do
   def get_active_connection_by_webhook(webhook_secret, opts \\ []) when is_binary(webhook_secret) do
     query =
       from c in Connection,
-        where: c.webhook_secret == ^webhook_secret
+        where: c.webhook_secret_hash == ^hash_webhook_secret(webhook_secret)
 
     query
     |> apply_preloads(opts)
@@ -325,5 +325,9 @@ defmodule MoneyTree.Institutions do
 
   defp maybe_put_optional(metadata, key, value) do
     Map.put(metadata, key, value)
+  end
+
+  defp hash_webhook_secret(secret) when is_binary(secret) do
+    :crypto.hash(:sha256, secret)
   end
 end
