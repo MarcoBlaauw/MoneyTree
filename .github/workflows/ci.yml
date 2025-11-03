@@ -93,6 +93,9 @@ jobs:
       - name: Build shared UI styles
         run: pnpm --filter ui build
 
+      - name: Workspace lint
+        run: pnpm lint
+
       - name: Cache Next.js build artifacts
         uses: actions/cache@v3
         with:
