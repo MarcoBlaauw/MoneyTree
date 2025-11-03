@@ -44,23 +44,30 @@ defmodule MoneyTreeWeb.Plugs.NextProxy do
     def request(method, url, headers, body, opts) do
       finch_opts = Keyword.take(opts, [:pool_timeout, :receive_timeout])
 
-      method
-      |> normalize_method()
-      |> Finch.build(url, headers, body)
-      |> Finch.request(MoneyTree.Finch, finch_opts)
+      with {:ok, normalized_method} <- normalize_method(method) do
+        normalized_method
+        |> Finch.build(url, headers, body)
+        |> Finch.request(MoneyTree.Finch, finch_opts)
+      end
     end
 
     @allowed_methods ~w(get post put patch delete head options trace connect)a
     @allowed_method_lookup Map.new(@allowed_methods, &{Atom.to_string(&1), &1})
 
-    defp normalize_method(method) when is_atom(method), do: method
+    defp normalize_method(method) when is_atom(method) do
+      if method in @allowed_methods do
+        {:ok, method}
+      else
+        {:error, {:unsupported_method, method}}
+      end
+    end
 
     defp normalize_method(method) when is_binary(method) do
       lowercase = String.downcase(method)
 
       case Map.fetch(@allowed_method_lookup, lowercase) do
-        {:ok, allowed} -> allowed
-        :error -> String.to_atom(lowercase)
+        {:ok, allowed} -> {:ok, allowed}
+        :error -> {:error, {:unsupported_method, method}}
       end
     end
   end
