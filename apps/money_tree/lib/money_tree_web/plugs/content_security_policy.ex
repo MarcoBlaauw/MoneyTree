@@ -20,7 +20,7 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
     conn
     |> assign(assign_key, nonce)
     |> put_private(assign_key, nonce)
-    |> put_resp_header("content-security-policy", build_csp_header(nonce))
+    |> put_resp_header("content-security-policy", build_csp_header(conn, nonce))
   end
 
   defp generate_nonce do
@@ -29,7 +29,7 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
     |> Base.encode64()
   end
 
-  defp build_csp_header(nonce) do
+  defp build_csp_header(conn, nonce) do
     [
       "default-src 'self'",
       "frame-ancestors 'none'",
@@ -40,8 +40,20 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
       "font-src 'self'",
       "style-src 'self' 'nonce-#{nonce}'",
       "script-src 'self' 'nonce-#{nonce}'",
-      "connect-src 'self'"
+      "connect-src #{connect_src_values(conn)}"
     ]
     |> Enum.join("; ")
   end
+
+  defp connect_src_values(%Plug.Conn{scheme: scheme}) do
+    scheme
+    |> websocket_sources()
+    |> Enum.join(" ")
+  end
+
+  defp connect_src_values(_conn), do: websocket_sources(:https) |> Enum.join(" ")
+
+  defp websocket_sources(:http), do: Enum.uniq(["'self'", "ws:", "wss:"])
+  defp websocket_sources(:https), do: ["'self'", "wss:"]
+  defp websocket_sources(_scheme), do: ["'self'", "wss:"]
 end

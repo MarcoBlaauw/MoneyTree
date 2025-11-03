@@ -38,6 +38,7 @@ defmodule MoneyTreeWeb.EndpointTest do
       assert header =~ "default-src 'self'"
       assert header =~ "script-src 'self' 'nonce-#{nonce}'"
       assert header =~ "style-src 'self' 'nonce-#{nonce}'"
+      assert header =~ "connect-src 'self' ws: wss:"
       assert is_binary(conn.private[:csp_nonce])
     end
   end
