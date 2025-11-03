@@ -4,7 +4,7 @@ MoneyTree is a Phoenix-powered financial management API designed to support secu
 
 ## Development Environment
 
-MoneyTree targets Elixir **1.19.0-rc.2** and Erlang/OTP **28.1**. Install them with [mise](https://mise.jdx.dev/) or [asdf](https://asdf-vm.com/) before running any mix tasks.
+MoneyTree targets Elixir **1.19.2** and Erlang/OTP **28.1.1**. Install them with [mise](https://mise.jdx.dev/) or [asdf](https://asdf-vm.com/) before running any mix tasks.
 
 ```bash
 # Preferred: installs the exact versions declared in `.tool-versions`
