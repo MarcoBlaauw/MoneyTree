@@ -67,6 +67,7 @@ defmodule MoneyTree.Transactions do
     |> join(:inner, [account], transaction in Transaction,
       on: transaction.account_id == account.id
     )
+    |> select([_account, transaction], transaction)
     |> order_by([_account, transaction],
       desc: transaction.posted_at,
       desc: transaction.inserted_at
