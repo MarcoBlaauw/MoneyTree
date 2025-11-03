@@ -12,7 +12,6 @@ defmodule MoneyTree.Repo.Migrations.CreateInstitutionConnections do
 
       add :encrypted_credentials, :binary
       add :webhook_secret, :binary
-      add :webhook_secret_hash, :binary
       add :metadata, :binary
 
       add :sync_cursor, :string
@@ -31,6 +30,5 @@ defmodule MoneyTree.Repo.Migrations.CreateInstitutionConnections do
            )
 
     create index(:institution_connections, [:teller_user_id])
-    create index(:institution_connections, [:webhook_secret_hash])
   end
 end
