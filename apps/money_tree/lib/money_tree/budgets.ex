@@ -250,7 +250,7 @@ defmodule MoneyTree.Budgets do
     }
   end
 
-  defp format_budget_entry(entry, currency, opts) do
+  defp format_budget_entry(entry, _currency, opts) do
     %{
       name: entry.name,
       period: humanize_period(entry.period),
@@ -313,10 +313,9 @@ defmodule MoneyTree.Budgets do
     }
   end
 
-  defp compute_utilization(_allocated, activity) when activity == Decimal.new("0"), do: Decimal.new("0")
-
   defp compute_utilization(allocated, activity) do
     cond do
+      Decimal.compare(activity, Decimal.new("0")) == :eq -> Decimal.new("0")
       is_nil(allocated) -> nil
       Decimal.compare(allocated, Decimal.new("0")) == :eq -> nil
       true -> Decimal.div(activity, allocated) |> Decimal.round(4)
@@ -466,8 +465,9 @@ defmodule MoneyTree.Budgets do
 
   defp yearly_window(anchor_date) do
     date = anchor_date || Date.utc_today()
-    beginning = Date.beginning_of_year(date)
-    ending = Date.end_of_year(date)
+    year = date.year
+    beginning = Date.new!(year, 1, 1)
+    ending = Date.new!(year, 12, 31)
 
     %{
       since: DateTime.new!(beginning, ~T[00:00:00], "Etc/UTC"),
@@ -583,10 +583,17 @@ defmodule MoneyTree.Budgets do
     ArgumentError -> nil
   end
 
-  defp ensure_enum_value(value, :period) when value in Budget.periods(), do: value
-  defp ensure_enum_value(value, :entry_type) when value in Budget.entry_types(), do: value
-  defp ensure_enum_value(value, :variability) when value in Budget.variabilities(), do: value
-  defp ensure_enum_value(_value, _field), do: nil
+  defp ensure_enum_value(value, field) do
+    allowed =
+      case field do
+        :period -> Budget.periods()
+        :entry_type -> Budget.entry_types()
+        :variability -> Budget.variabilities()
+        _ -> []
+      end
+
+    if value in allowed, do: value, else: nil
+  end
 
   defp normalize_user_id(%User{id: id}), do: id
   defp normalize_user_id(id) when is_binary(id), do: id

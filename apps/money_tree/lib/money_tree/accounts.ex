@@ -96,7 +96,9 @@ defmodule MoneyTree.Accounts do
   Fetches a user by ID, returning an error tuple when the record is missing.
   """
   @spec fetch_user(binary(), keyword()) :: {:ok, User.t()} | {:error, :not_found}
-  def fetch_user(user_id, opts \\ []) when is_binary(user_id) do
+  def fetch_user(user_id, opts \\ [])
+
+  def fetch_user(user_id, opts) when is_binary(user_id) do
     opts = normalize_user_pagination_opts(opts)
 
     query =
@@ -116,7 +118,9 @@ defmodule MoneyTree.Accounts do
   """
   @spec update_user_role(User.t() | binary(), atom() | String.t(), keyword()) ::
           {:ok, User.t()} | {:error, :invalid_role | :not_found | Changeset.t()}
-  def update_user_role(%User{} = user, role, opts \\ []) do
+  def update_user_role(user_or_id, role, opts \\ [])
+
+  def update_user_role(%User{} = user, role, opts) do
     with {:ok, role_atom} <- normalize_role(role),
          {:ok, %User{} = updated} <-
            user
@@ -127,7 +131,7 @@ defmodule MoneyTree.Accounts do
     end
   end
 
-  def update_user_role(user_id, role, opts \\ []) when is_binary(user_id) do
+  def update_user_role(user_id, role, opts) when is_binary(user_id) do
     with {:ok, %User{} = user} <- fetch_user(user_id) do
       update_user_role(user, role, opts)
     end
@@ -140,7 +144,9 @@ defmodule MoneyTree.Accounts do
   """
   @spec suspend_user(User.t() | binary(), keyword()) ::
           {:ok, User.t()} | {:error, :already_suspended | :not_found | Changeset.t()}
-  def suspend_user(%User{} = user, opts \\ []) do
+  def suspend_user(user_or_id, opts \\ [])
+
+  def suspend_user(%User{} = user, opts) do
     if user.suspended_at do
       {:error, :already_suspended}
     else
@@ -157,7 +163,7 @@ defmodule MoneyTree.Accounts do
     end
   end
 
-  def suspend_user(user_id, opts \\ []) when is_binary(user_id) do
+  def suspend_user(user_id, opts) when is_binary(user_id) do
     with {:ok, %User{} = user} <- fetch_user(user_id) do
       suspend_user(user, opts)
     end
@@ -170,7 +176,9 @@ defmodule MoneyTree.Accounts do
   """
   @spec reactivate_user(User.t() | binary(), keyword()) ::
           {:ok, User.t()} | {:error, :not_suspended | :not_found | Changeset.t()}
-  def reactivate_user(%User{} = user, opts \\ []) do
+  def reactivate_user(user_or_id, opts \\ [])
+
+  def reactivate_user(%User{} = user, opts) do
     if is_nil(user.suspended_at) do
       {:error, :not_suspended}
     else
@@ -185,7 +193,7 @@ defmodule MoneyTree.Accounts do
     end
   end
 
-  def reactivate_user(user_id, opts \\ []) when is_binary(user_id) do
+  def reactivate_user(user_id, opts) when is_binary(user_id) do
     with {:ok, %User{} = user} <- fetch_user(user_id) do
       reactivate_user(user, opts)
     end

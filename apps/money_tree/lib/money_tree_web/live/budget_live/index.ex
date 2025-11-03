@@ -9,8 +9,6 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
   alias MoneyTree.Budgets.Budget
   alias MoneyTreeWeb.CoreComponents
 
-  import Phoenix.HTML.Form
-
   @impl true
   def mount(_params, _session, %{assigns: %{current_user: current_user}} = socket) do
     {:ok,

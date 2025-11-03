@@ -10,7 +10,6 @@ defmodule MoneyTreeWeb.DashboardLive do
   alias MoneyTree.Assets
   alias MoneyTree.Assets.Asset
   alias MoneyTree.Budgets
-  alias MoneyTree.Budgets.Budget
   alias MoneyTree.Loans
   alias MoneyTree.Notifications
   alias MoneyTree.Subscriptions
@@ -979,14 +978,14 @@ defmodule MoneyTreeWeb.DashboardLive do
     assign(socket, asset_summary: summary, asset_accounts: accounts)
   end
 
-  defp assign_metrics(socket, current_user, opts \ []) do
+  defp assign_metrics(socket, current_user, opts) do
     period = Keyword.get(opts, :period, socket.assigns[:budget_period] || :monthly)
     metrics = build_metrics(current_user, Keyword.put(opts, :period, period))
 
     assign(socket, :metrics, metrics)
   end
 
-  defp build_metrics(current_user, opts \ []) do
+  defp build_metrics(current_user, opts) do
     period = Keyword.get(opts, :period, :monthly)
     budget_opts = Keyword.put(opts, :period, period)
     budgets = Budgets.aggregate_totals(current_user, budget_opts)
@@ -1085,7 +1084,6 @@ defmodule MoneyTreeWeb.DashboardLive do
     |> Kernel.<>("%")
   end
 
-  defp trend_color(:increasing), do: "text-rose-600"
   defp budget_periods, do: @budget_periods
 
   defp budget_period_label(period) do
@@ -1153,6 +1151,7 @@ defmodule MoneyTreeWeb.DashboardLive do
 
   defp parse_budget_period(_), do: :error
 
+  defp trend_color(:increasing), do: "text-rose-600"
   defp trend_color(:decreasing), do: "text-emerald-600"
   defp trend_color(_), do: "text-zinc-500"
 
