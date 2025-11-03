@@ -4,6 +4,7 @@ defmodule MoneyTree.Repo.Migrations.AddWebhookSecretHashToInstitutionConnections
   alias Ecto.Changeset
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Repo
+  alias MoneyTree.Vault
 
   import Ecto.Query
 
@@ -15,6 +16,8 @@ defmodule MoneyTree.Repo.Migrations.AddWebhookSecretHashToInstitutionConnections
     create index(:institution_connections, [:webhook_secret_hash])
 
     flush()
+
+    ensure_vault_started()
 
     Repo.all(from c in Connection, where: not is_nil(c.webhook_secret))
     |> Enum.each(&backfill_webhook_secret_hash/1)
@@ -38,4 +41,16 @@ defmodule MoneyTree.Repo.Migrations.AddWebhookSecretHashToInstitutionConnections
   end
 
   defp backfill_webhook_secret_hash(_connection), do: :ok
+
+  defp ensure_vault_started do
+    case Process.whereis(Vault) do
+      nil ->
+        config = Application.fetch_env!(:money_tree, Vault)
+        {:ok, _pid} = Vault.start_link(config)
+        :ok
+
+      _pid ->
+        :ok
+    end
+  end
 end
