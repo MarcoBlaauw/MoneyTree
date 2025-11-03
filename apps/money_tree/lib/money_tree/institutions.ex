@@ -221,8 +221,10 @@ defmodule MoneyTree.Institutions do
       |> authorized_connections_query()
       |> where([c], c.id == ^connection_id)
 
+    opts_with_membership = Keyword.put(opts, :membership_user_id, user_id)
+
     query
-    |> apply_preloads(opts)
+    |> apply_preloads(opts_with_membership)
     |> Repo.one()
     |> case do
       nil -> {:error, :not_found}
@@ -244,8 +246,10 @@ defmodule MoneyTree.Institutions do
       |> authorized_connections_query()
       |> where([c], c.institution_id == ^institution_id)
 
+    opts_with_membership = Keyword.put(opts, :membership_user_id, user_id)
+
     query
-    |> apply_preloads(opts)
+    |> apply_preloads(opts_with_membership)
     |> Repo.one()
     |> case do
       nil -> {:error, :not_found}
@@ -267,8 +271,10 @@ defmodule MoneyTree.Institutions do
       |> authorized_connections_query()
       |> where([c], c.institution_id == ^institution_id)
 
+    opts_with_membership = Keyword.put(opts, :membership_user_id, user_id)
+
     query
-    |> apply_preloads(opts)
+    |> apply_preloads(opts_with_membership)
     |> Repo.one()
     |> case do
       nil -> {:error, :not_found}
@@ -348,8 +354,10 @@ defmodule MoneyTree.Institutions do
           |> where([c], c.institution_id == ^institution_id)
       end
 
+    opts_with_membership = Keyword.put(opts, :membership_user_id, user_id)
+
     query
-    |> apply_preloads(opts)
+    |> apply_preloads(opts_with_membership)
     |> Repo.all()
     |> Enum.reject(&revoked?/1)
   end
@@ -504,11 +512,93 @@ defmodule MoneyTree.Institutions do
 
   defp apply_preloads(query, opts) do
     preloads = Keyword.get(opts, :preload, [])
+    membership_user_id = Keyword.get(opts, :membership_user_id)
+
+    preloads = restrict_account_preloads(preloads, membership_user_id)
 
     case preloads do
       [] -> query
       _ -> from(c in query, preload: ^preloads)
     end
+  end
+
+  defp restrict_account_preloads(preloads, nil), do: preloads
+
+  defp restrict_account_preloads(preloads, user_id) when is_list(preloads) do
+    Enum.map(preloads, &restrict_account_preload(&1, user_id))
+  end
+
+  defp restrict_account_preloads(%{} = preloads, user_id) do
+    preloads
+    |> Enum.map(&restrict_account_preload(&1, user_id))
+    |> Map.new()
+  end
+
+  defp restrict_account_preloads(%Ecto.Query{} = query, user_id) do
+    merge_account_preload_query(query, user_id)
+  end
+
+  defp restrict_account_preloads(preload, _user_id), do: preload
+
+  defp restrict_account_preload(:accounts, user_id) do
+    {:accounts, membership_accounts_query(user_id)}
+  end
+
+  defp restrict_account_preload({:accounts, nested}, user_id) do
+    query = membership_accounts_query(user_id)
+
+    cond do
+      match?({%Ecto.Query{}, _}, nested) ->
+        {existing_query, sub_preloads} = nested
+
+        {:accounts,
+         {merge_account_preload_query(existing_query, user_id),
+          restrict_account_preloads(sub_preloads, user_id)}}
+
+      match?(%Ecto.Query{}, nested) ->
+        {:accounts, merge_account_preload_query(nested, user_id)}
+
+      true ->
+        nested_preloads =
+          cond do
+            is_list(nested) -> restrict_account_preloads(nested, user_id)
+            is_map(nested) -> restrict_account_preloads(Map.to_list(nested), user_id)
+            true -> restrict_account_preloads([nested], user_id)
+          end
+
+        case nested_preloads do
+          [] -> {:accounts, query}
+          %{} = map -> {:accounts, {query, map}}
+          list when is_list(list) -> {:accounts, {query, list}}
+          other -> {:accounts, {query, other}}
+        end
+    end
+  end
+
+  defp restrict_account_preload({assoc, nested}, user_id) do
+    {assoc, restrict_account_preloads(nested, user_id)}
+  end
+
+  defp restrict_account_preload(preload, _user_id), do: preload
+
+  defp membership_accounts_query(user_id) do
+    from(a in Account,
+      join: m in AccountMembership,
+      on: m.account_id == a.id,
+      where: m.user_id == ^user_id,
+      distinct: true,
+      order_by: a.name
+    )
+  end
+
+  defp merge_account_preload_query(%Ecto.Query{} = query, user_id) do
+    from(a in query,
+      join: m in AccountMembership,
+      on: m.account_id == a.id,
+      where: m.user_id == ^user_id,
+      distinct: true,
+      order_by: a.name
+    )
   end
 
   defp normalize_user_id(%User{id: id}) when is_binary(id), do: id
