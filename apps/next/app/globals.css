@@ -12,4 +12,14 @@ body {
   color: theme(colors.foreground, #f8fafc);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-image:
+    radial-gradient(circle at 20% 15%, rgba(16, 185, 129, 0.16), transparent 55%),
+    radial-gradient(circle at 75% 10%, rgba(163, 230, 53, 0.12), transparent 60%),
+    radial-gradient(circle at 12% 78%, rgba(52, 211, 153, 0.1), transparent 55%),
+    radial-gradient(circle at 82% 85%, rgba(56, 189, 248, 0.08), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(3, 22, 16, 0.5) 0, rgba(3, 22, 16, 0.5) 1px, transparent 1px, transparent 22px);
+  background-blend-mode: screen, screen, screen, screen, soft-light;
+  background-size: 1200px 1200px, 900px 900px, 1000px 1000px, 1100px 1100px, 280px 280px;
+  background-position: top left, top right, bottom left, bottom right, center;
+  background-attachment: fixed;
 }

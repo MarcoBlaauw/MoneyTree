@@ -132,28 +132,33 @@ export function HomeContent({
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-16 px-6 pb-24">
         <section className="grid gap-16 lg:grid-cols-2 lg:items-center">
           <div className="flex flex-col gap-6">
-            <span className="inline-flex w-fit items-center rounded-full bg-primary/10 px-4 py-2 text-sm font-medium text-primary">
-              Smart finance orchestration
+            <span className="inline-flex w-fit items-center rounded-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-lime-400 px-[2px] py-[2px] text-sm font-medium">
+              <span className="rounded-full bg-background/90 px-4 py-2 text-primary">Smart finance orchestration</span>
             </span>
-            <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+            <h1 className="bg-gradient-to-r from-emerald-200 via-emerald-100 to-lime-200 bg-clip-text text-4xl font-semibold tracking-tight text-transparent sm:text-5xl">
               Grow healthy finances with confidence.
             </h1>
             <p className="text-lg text-slate-300">
               MoneyTree unifies budgets, investments, and recurring cash flow into a personalized growth plan. Visual coaching and actionable automation make it effortless to cultivate long-term wealth.
             </p>
-            <div className="flex flex-col gap-4 sm:flex-row" id="get-started">
-              <a
-                className="inline-flex items-center justify-center rounded-full bg-accent px-6 py-3 text-base font-semibold text-accent-foreground shadow hover:bg-primary transition"
-                href="/signup"
-              >
-                Create my plan
-              </a>
-              <a
-                className="inline-flex items-center justify-center rounded-full border border-accent/40 px-6 py-3 text-base font-semibold text-accent hover:border-accent hover:text-accent transition"
-                href="#learn-more"
-              >
-                See how it works
-              </a>
+            <div
+              className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-lime-400 p-[2px]"
+              id="get-started"
+            >
+              <div className="relative flex flex-col gap-4 rounded-[22px] bg-[#061a12]/90 px-6 py-6 sm:flex-row sm:items-center before:pointer-events-none before:absolute before:-left-10 before:top-4 before:h-40 before:w-40 before:bg-[url('/moneytree-coin-spray.svg')] before:bg-contain before:bg-no-repeat before:opacity-80 before:content-[''] after:pointer-events-none after:absolute after:-bottom-10 after:-right-6 after:h-36 after:w-36 after:bg-[url('/moneytree-leaf-badge.svg')] after:bg-contain after:bg-no-repeat after:opacity-80 after:content-['']">
+                <a
+                  className="inline-flex items-center justify-center rounded-full bg-accent px-6 py-3 text-base font-semibold text-accent-foreground shadow transition hover:bg-primary"
+                  href="/signup"
+                >
+                  Create my plan
+                </a>
+                <a
+                  className="inline-flex items-center justify-center rounded-full border border-accent/40 px-6 py-3 text-base font-semibold text-accent transition hover:border-accent hover:text-accent"
+                  href="#learn-more"
+                >
+                  See how it works
+                </a>
+              </div>
             </div>
             <div className="grid gap-6 rounded-2xl bg-neutral/20 p-6 shadow" id="learn-more">
               {featureHighlights.map((feature) => (
@@ -174,7 +179,7 @@ export function HomeContent({
             <div className="relative w-full max-w-xl overflow-hidden rounded-[40px] border border-primary/30 bg-neutral/40 p-4 shadow-lg">
               <div className="overflow-hidden rounded-[32px] bg-black/40">
                 <Image
-                  src="/moneytree-hero.svg"
+                  src="/moneytree-hero-canopy.svg"
                   alt="MoneyTree dashboard illustration"
                   width={720}
                   height={540}
