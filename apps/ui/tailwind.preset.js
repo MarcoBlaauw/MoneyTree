@@ -2,16 +2,16 @@ const defaultTheme = require('tailwindcss/defaultTheme');
 
 const brandColors = {
   primary: {
-    DEFAULT: '#2563eb',
-    foreground: '#ffffff'
+    DEFAULT: '#0b3d2e',
+    foreground: '#f5f9f4'
   },
   secondary: {
-    DEFAULT: '#1d4ed8',
-    foreground: '#ffffff'
+    DEFAULT: '#4f9c6b',
+    foreground: '#052216'
   },
   accent: {
-    DEFAULT: '#0ea5e9',
-    foreground: '#0f172a'
+    DEFAULT: '#b68f2d',
+    foreground: '#1f1400'
   },
   success: {
     DEFAULT: '#10b981',
@@ -63,9 +63,9 @@ module.exports = {
     extend: {
       colors: {
         ...brandColors,
-        background: '#0f172a',
-        foreground: '#f8fafc',
-        muted: '#64748b'
+        background: '#0d1f16',
+        foreground: '#f2f8f4',
+        muted: '#6b8c79'
       },
       borderRadius: radii,
       boxShadow: {
