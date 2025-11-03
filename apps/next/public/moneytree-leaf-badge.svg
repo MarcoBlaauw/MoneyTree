@@ -1,0 +1,22 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="leafGradient" x1="16" y1="16" x2="184" y2="184" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#059669"/>
+      <stop offset="0.5" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#A3E635"/>
+    </linearGradient>
+    <linearGradient id="stemGradient" x1="120" y1="60" x2="60" y2="160" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#065F46"/>
+      <stop offset="1" stop-color="#15803D"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="200" height="200" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feOffset dx="0" dy="6" in="blur" result="offset"/>
+      <feColorMatrix in="offset" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.18 0" result="shadow"/>
+      <feBlend in="SourceGraphic" in2="shadow" mode="normal"/>
+    </filter>
+  </defs>
+  <rect x="16" y="16" width="168" height="168" rx="48" fill="url(#leafGradient)" filter="url(#shadow)"/>
+  <path d="M120.802 64.1749C98.6298 66.5181 71.4203 91.2629 64.8503 129.675C64.5719 131.312 66.1894 132.561 67.7633 131.925C79.3379 127.271 101.559 113.044 114.553 87.8194C113.767 104.081 108.413 120.707 98.2935 137.07C96.9055 139.27 99.1573 141.925 101.625 141.055C118.239 135.274 138.127 119.131 145.867 94.2186C148.809 84.663 148.232 74.0173 145.713 64.9633C144.963 62.2485 142.13 63.8251 120.802 64.1749Z" fill="#ECFEFF" fill-opacity="0.6"/>
+  <path d="M88 72C102.344 102.994 103.419 130.562 90.8941 154.849" stroke="url(#stemGradient)" stroke-width="8" stroke-linecap="round"/>
+</svg>
