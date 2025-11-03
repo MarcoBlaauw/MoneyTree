@@ -45,15 +45,44 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
     |> Enum.join("; ")
   end
 
-  defp connect_src_values(%Plug.Conn{scheme: scheme}) do
-    scheme
+  defp connect_src_values(%Plug.Conn{} = conn) do
+    conn
     |> websocket_sources()
+    |> Enum.reject(&is_nil/1)
     |> Enum.join(" ")
   end
 
-  defp connect_src_values(_conn), do: websocket_sources(:https) |> Enum.join(" ")
+  defp connect_src_values(_conn), do: "'self'"
 
-  defp websocket_sources(:http), do: Enum.uniq(["'self'", "ws:", "wss:"])
-  defp websocket_sources(:https), do: ["'self'", "wss:"]
-  defp websocket_sources(_scheme), do: ["'self'", "wss:"]
+  defp websocket_sources(%Plug.Conn{} = conn) do
+    ["'self'", websocket_origin(conn)]
+  end
+
+  defp websocket_origin(%Plug.Conn{} = conn) do
+    scheme = websocket_scheme(conn)
+    host = conn.host
+
+    cond do
+      is_nil(host) or host == "" -> nil
+      true ->
+        port = websocket_port(conn)
+
+        if is_nil(port) do
+          "#{scheme}://#{host}"
+        else
+          "#{scheme}://#{host}:#{port}"
+        end
+    end
+  end
+
+  defp websocket_origin(_conn), do: nil
+
+  defp websocket_scheme(%Plug.Conn{scheme: :http}), do: "ws"
+  defp websocket_scheme(%Plug.Conn{scheme: :https}), do: "wss"
+  defp websocket_scheme(_conn), do: "wss"
+
+  defp websocket_port(%Plug.Conn{scheme: :http, port: 80}), do: nil
+  defp websocket_port(%Plug.Conn{scheme: :https, port: 443}), do: nil
+  defp websocket_port(%Plug.Conn{port: nil}), do: nil
+  defp websocket_port(%Plug.Conn{port: port}), do: port
 end
