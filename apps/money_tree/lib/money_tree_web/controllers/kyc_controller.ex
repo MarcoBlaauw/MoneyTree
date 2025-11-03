@@ -39,23 +39,32 @@ defmodule MoneyTreeWeb.KycController do
     prefix <> "-" <> Base.url_encode64(raw, padding: false)
   end
 
-  defp redact_applicant(applicant) when is_map(applicant) do
-    applicant
-    |> Enum.map(fn {key, value} ->
-      sanitized_value =
-        case String.downcase(to_string(key)) do
-          "ssn" -> mask(value)
-          "email" -> mask_email(value)
-          "document_number" -> mask(value)
-          _ -> value
-        end
+  defp redact_applicant(applicant) when is_map(applicant), do: redact_map(applicant)
 
-      {key, sanitized_value}
-    end)
+  defp redact_applicant(_), do: %{}
+
+  defp redact_map(map) do
+    map
+    |> Enum.map(&redact_entry/1)
     |> Enum.into(%{})
   end
 
-  defp redact_applicant(_), do: %{}
+  defp redact_entry({key, value}) do
+    {key, redact_value(key, value)}
+  end
+
+  defp redact_value(key, value) do
+    case String.downcase(to_string(key)) do
+      "ssn" -> mask(value)
+      "email" -> mask_email(value)
+      "document_number" -> mask(value)
+      _ -> redact_nested(value)
+    end
+  end
+
+  defp redact_nested(value) when is_map(value), do: redact_map(value)
+  defp redact_nested(value) when is_list(value), do: Enum.map(value, &redact_nested/1)
+  defp redact_nested(value), do: value
 
   defp mask(value) when is_binary(value) do
     suffix = String.slice(value, -4, 4)
