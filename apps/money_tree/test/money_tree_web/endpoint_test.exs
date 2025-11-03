@@ -58,6 +58,11 @@ defmodule MoneyTreeWeb.EndpointTest do
         end
 
       assert header =~ expected_origin
+
+      alternate_scheme = if expected_scheme == "ws", do: "wss", else: "ws"
+      alternate_origin = "#{alternate_scheme}://#{conn.host}"
+
+      assert header =~ alternate_origin
       assert is_binary(conn.private[:csp_nonce])
     end
   end
