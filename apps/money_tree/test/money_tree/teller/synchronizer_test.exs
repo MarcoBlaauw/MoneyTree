@@ -71,6 +71,68 @@ defmodule MoneyTree.Teller.SynchronizerTest do
     end
   end
 
+  defmodule MultiAccountCursorClient do
+    def list_accounts(_params) do
+      {:ok,
+       %{
+         "data" => [
+           %{
+             "id" => "acct-alpha",
+             "name" => "Alpha",
+             "type" => "depository",
+             "currency" => "USD",
+             "balances" => %{"current" => "10.00", "available" => "9.00"}
+           },
+           %{
+             "id" => "acct-beta",
+             "name" => "Beta",
+             "type" => "credit",
+             "currency" => "USD",
+             "balances" => %{"current" => "5.00", "available" => "4.00"}
+           }
+         ],
+         "next_cursor" => nil
+       }}
+    end
+
+    def list_transactions(account_id, params) do
+      cursor = Map.get(params, :cursor)
+      record_call(account_id, cursor)
+
+      case {account_id, cursor} do
+        {"acct-alpha", nil} ->
+          {:ok, %{"data" => [], "next_cursor" => "cursor-alpha-1"}}
+
+        {"acct-alpha", "cursor-alpha-1"} ->
+          {:ok, %{"data" => [], "next_cursor" => nil}}
+
+        {"acct-beta", nil} ->
+          {:ok, %{"data" => [], "next_cursor" => "cursor-beta-1"}}
+
+        {"acct-beta", "cursor-beta-1"} ->
+          {:ok, %{"data" => [], "next_cursor" => nil}}
+
+        _ ->
+          {:ok, %{"data" => [], "next_cursor" => nil}}
+      end
+    end
+
+    def reset_calls do
+      Process.delete({__MODULE__, :calls})
+      :ok
+    end
+
+    def calls do
+      Process.get({__MODULE__, :calls}, []) |> Enum.reverse()
+    end
+
+    defp record_call(account_id, cursor) do
+      key = {__MODULE__, :calls}
+      calls = Process.get(key, [])
+      Process.put(key, [{account_id, cursor} | calls])
+    end
+  end
+
   describe "sync/2" do
     test "persists accounts, transactions, and updates connection state" do
       user = AccountsFixtures.user_fixture()
@@ -114,6 +176,37 @@ defmodule MoneyTree.Teller.SynchronizerTest do
       refreshed = Repo.get!(Connection, connection.id)
       assert Map.get(refreshed.last_sync_error, "type") == "rate_limited"
       assert refreshed.last_sync_error_at
+    end
+
+    test "maintains per-account transaction cursors across runs" do
+      user = AccountsFixtures.user_fixture()
+
+      connection = InstitutionsFixtures.connection_fixture(user)
+
+      MultiAccountCursorClient.reset_calls()
+
+      assert {:ok, result} =
+               Synchronizer.sync(connection, client: MultiAccountCursorClient)
+
+      decoded = Jason.decode!(result.transactions_cursor)
+
+      assert decoded == %{
+               "acct-alpha" => "cursor-alpha-1",
+               "acct-beta" => "cursor-beta-1"
+             }
+
+      refreshed = Repo.get!(Connection, connection.id)
+      assert Jason.decode!(refreshed.transactions_cursor) == decoded
+
+      MultiAccountCursorClient.reset_calls()
+
+      assert {:ok, _result_again} =
+               Synchronizer.sync(refreshed, client: MultiAccountCursorClient)
+
+      assert MultiAccountCursorClient.calls() == [
+               {"acct-alpha", "cursor-alpha-1"},
+               {"acct-beta", "cursor-beta-1"}
+             ]
     end
   end
 end
