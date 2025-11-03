@@ -8,6 +8,7 @@ defmodule MoneyTree.Teller.Synchronizer do
 
   alias Decimal, as: D
   alias Ecto.Changeset
+  alias Jason
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Audit
   alias MoneyTree.Currency
@@ -271,17 +272,32 @@ defmodule MoneyTree.Teller.Synchronizer do
     end
   end
 
+  @legacy_cursor_key "__legacy__"
+
   defp sync_transactions(client, connection, account_records) do
-    Enum.reduce_while(account_records, {:ok, connection.transactions_cursor, 0}, fn
-      {_teller_id, %Account{} = account}, {:ok, cursor, count} ->
+    initial_cursors = decode_transaction_cursors(connection.transactions_cursor)
+
+    account_records
+    |> Enum.reduce_while({:ok, initial_cursors, 0}, fn
+      {_teller_id, %Account{} = account}, {:ok, cursor_map, count} ->
+        cursor = account_cursor(cursor_map, account.external_id)
+
         case process_account_transactions(client, account, cursor) do
           {:ok, latest_cursor, processed_count} ->
-            {:cont, {:ok, latest_cursor, count + processed_count}}
+            updated_map = put_account_cursor(cursor_map, account.external_id, latest_cursor)
+            {:cont, {:ok, updated_map, count + processed_count}}
 
           {:error, reason} ->
             {:halt, {:error, reason}}
         end
     end)
+    |> case do
+      {:ok, cursor_map, count} ->
+        {:ok, encode_transaction_cursors(cursor_map), count}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp process_account_transactions(client, %Account{} = account, cursor) do
@@ -318,6 +334,66 @@ defmodule MoneyTree.Teller.Synchronizer do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp decode_transaction_cursors(nil), do: %{}
+
+  defp decode_transaction_cursors(binary) when is_binary(binary) do
+    with {:ok, decoded} <- Jason.decode(binary),
+         true <- is_map(decoded) do
+      Enum.reduce(decoded, %{}, fn {key, value}, acc ->
+        put_account_cursor(acc, key, value)
+      end)
+    else
+      _ ->
+        %{@legacy_cursor_key => binary}
+    end
+  rescue
+    Jason.DecodeError -> %{@legacy_cursor_key => binary}
+  end
+
+  defp account_cursor(cursor_map, account_key) do
+    case normalize_cursor_key(account_key) do
+      nil -> Map.get(cursor_map, @legacy_cursor_key)
+      normalized -> Map.get(cursor_map, normalized) || Map.get(cursor_map, @legacy_cursor_key)
+    end
+  end
+
+  defp put_account_cursor(cursor_map, account_key, cursor) do
+    case normalize_cursor_key(account_key) do
+      nil -> cursor_map
+      normalized -> Map.put(cursor_map, normalized, cursor)
+    end
+  end
+
+  defp encode_transaction_cursors(cursor_map) when is_map(cursor_map) do
+    sanitized =
+      cursor_map
+      |> Map.delete(@legacy_cursor_key)
+      |> Enum.reduce(%{}, fn
+        {_key, nil}, acc -> acc
+        {key, value}, acc when is_binary(key) -> Map.put(acc, key, value)
+        {key, value}, acc ->
+          case normalize_cursor_key(key) do
+            nil -> acc
+            normalized -> Map.put(acc, normalized, value)
+          end
+      end)
+
+    if map_size(sanitized) == 0 do
+      nil
+    else
+      Jason.encode!(sanitized)
+    end
+  end
+
+  defp encode_transaction_cursors(_other), do: nil
+
+  defp normalize_cursor_key(key) when is_binary(key), do: key
+  defp normalize_cursor_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp normalize_cursor_key(key) when is_integer(key), do: Integer.to_string(key)
+  defp normalize_cursor_key(key) when is_float(key), do: Float.to_string(key)
+  defp normalize_cursor_key(key) when is_nil(key), do: nil
+  defp normalize_cursor_key(key), do: to_string(key)
 
   defp persist_transactions(_account, []), do: {:ok, 0}
 

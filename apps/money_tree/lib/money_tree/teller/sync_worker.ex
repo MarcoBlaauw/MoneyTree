@@ -19,8 +19,11 @@ defmodule MoneyTree.Teller.SyncWorker do
   @impl Oban.Worker
   def perform(%Job{args: %{"mode" => "dispatch"} = args}) do
     schedule_opts = [schedule_in: Map.get(args, "schedule_in", 0)]
-    Synchronization.dispatch_incremental_syncs(schedule_opts)
-    :ok
+    case Synchronization.dispatch_incremental_syncs(schedule_opts) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+      other -> other
+    end
   end
 
   def perform(%Job{args: %{"connection_id" => connection_id} = args, attempt: attempt}) do
