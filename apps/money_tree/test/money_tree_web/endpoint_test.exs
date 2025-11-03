@@ -38,7 +38,26 @@ defmodule MoneyTreeWeb.EndpointTest do
       assert header =~ "default-src 'self'"
       assert header =~ "script-src 'self' 'nonce-#{nonce}'"
       assert header =~ "style-src 'self' 'nonce-#{nonce}'"
-      assert header =~ "connect-src 'self' ws: wss:"
+      assert header =~ "connect-src 'self'"
+
+      expected_scheme = if conn.scheme == :https, do: "wss", else: "ws"
+
+      expected_port =
+        case {conn.scheme, conn.port} do
+          {:http, 80} -> nil
+          {:https, 443} -> nil
+          {_, nil} -> nil
+          {_, port} -> port
+        end
+
+      expected_origin =
+        if is_nil(expected_port) do
+          "#{expected_scheme}://#{conn.host}"
+        else
+          "#{expected_scheme}://#{conn.host}:#{expected_port}"
+        end
+
+      assert header =~ expected_origin
       assert is_binary(conn.private[:csp_nonce])
     end
   end
