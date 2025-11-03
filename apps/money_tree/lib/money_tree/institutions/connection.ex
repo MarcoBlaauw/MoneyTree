@@ -66,7 +66,6 @@ defmodule MoneyTree.Institutions.Connection do
     |> validate_length(:teller_user_id, max: 120)
     |> validate_length(:sync_cursor, max: 1024)
     |> validate_length(:accounts_cursor, max: 1024)
-    |> validate_length(:transactions_cursor, max: 1024)
     |> validate_metadata_is_map()
     |> validate_sync_error_is_map()
     |> validate_webhook_secret()
