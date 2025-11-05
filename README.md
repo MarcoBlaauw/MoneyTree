@@ -11,10 +11,10 @@ MoneyTree targets Elixir **1.19.2** and Erlang/OTP **28.1.1**. Install them with
 ./scripts/install_toolchain.sh
 
 # Alternatively, run the commands manually
-mise install erlang@28.1 elixir@1.19.0-rc.2-otp-28
+mise install erlang@28.1.1 elixir@1.19.2
 # or
-asdf install erlang 28.1
-asdf install elixir 1.19.0-rc.2-otp-28
+asdf install erlang 28.1.1
+asdf install elixir 1.19.2
 ```
 
 After installation, make sure `mix` is available on your `PATH` (`mix --version`). For `mise`, run `eval "$(mise activate bash)"` in your shell session. For `asdf`, source `${HOME}/.asdf/asdf.sh` (and `${HOME}/.asdf/completions/asdf.bash` for completions).
@@ -24,10 +24,10 @@ After installation, make sure `mix` is available on your `PATH` (`mix --version`
 The repository also contains shared UI packages and a Next.js frontend managed with **pnpm 10**. Install the Node.js and pnpm toolchain before running any JavaScript tasks:
 
 ```bash
-# Install the active LTS release of Node.js (v20.x or newer). Examples:
-mise install node@20
+# Install Node.js v24.11.0 (latest LTS). Examples:
+mise install node@24.11.0
 # or
-asdf install nodejs latest
+asdf install nodejs 24.11.0
 
 # Enable pnpm via Corepack once Node.js is installed
 corepack enable

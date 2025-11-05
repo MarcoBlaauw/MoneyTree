@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly ERLANG_VERSION="28.1"
-readonly ELIXIR_VERSION="1.19.0-rc.2-otp-28"
+readonly ERLANG_VERSION="28.1.1"
+readonly ELIXIR_VERSION="1.19.2"
 
 if command -v mise >/dev/null 2>&1; then
   echo "Installing Erlang ${ERLANG_VERSION} and Elixir ${ELIXIR_VERSION} with mise..."
