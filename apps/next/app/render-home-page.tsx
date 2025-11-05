@@ -142,10 +142,10 @@ export function HomeContent({
               MoneyTree unifies budgets, investments, and recurring cash flow into a personalized growth plan. Visual coaching and actionable automation make it effortless to cultivate long-term wealth.
             </p>
             <div
-              className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-lime-400 p-[2px]"
+              className="relative overflow-hidden rounded-3xl border border-primary/20 bg-background/70 px-6 py-6 backdrop-blur"
               id="get-started"
             >
-              <div className="relative flex flex-col gap-4 rounded-[22px] bg-[#061a12]/90 px-6 py-6 sm:flex-row sm:items-center before:pointer-events-none before:absolute before:-left-10 before:top-4 before:h-40 before:w-40 before:bg-[url('/moneytree-coin-spray.svg')] before:bg-contain before:bg-no-repeat before:opacity-80 before:content-[''] after:pointer-events-none after:absolute after:-bottom-10 after:-right-6 after:h-36 after:w-36 after:bg-[url('/moneytree-leaf-badge.svg')] after:bg-contain after:bg-no-repeat after:opacity-80 after:content-['']">
+              <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center before:pointer-events-none before:absolute before:-left-10 before:top-4 before:h-40 before:w-40 before:bg-[url('/moneytree-coin-spray.svg')] before:bg-contain before:bg-no-repeat before:opacity-80 before:content-[''] after:pointer-events-none after:absolute after:-bottom-10 after:-right-6 after:h-36 after:w-36 after:bg-[url('/moneytree-leaf-badge.svg')] after:bg-contain after:bg-no-repeat after:opacity-80 after:content-['']">
                 <a
                   className="inline-flex items-center justify-center rounded-full bg-accent px-6 py-3 text-base font-semibold text-accent-foreground shadow transition hover:bg-primary"
                   href="/signup"
@@ -160,7 +160,10 @@ export function HomeContent({
                 </a>
               </div>
             </div>
-            <div className="grid gap-6 rounded-2xl bg-neutral/20 p-6 shadow" id="learn-more">
+            <div
+              className="grid gap-6 rounded-2xl border border-primary/20 bg-background/70 p-6 shadow backdrop-blur"
+              id="learn-more"
+            >
               {featureHighlights.map((feature) => (
                 <div key={feature.title} className="flex items-start gap-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-background/70 shadow-inner">
@@ -176,7 +179,7 @@ export function HomeContent({
           </div>
           <div className="relative flex items-center justify-center">
             <div className="absolute inset-10 rounded-[48px] bg-primary/20 blur-3xl" aria-hidden />
-            <div className="relative w-full max-w-xl overflow-hidden rounded-[40px] border border-primary/30 bg-neutral/40 p-4 shadow-lg">
+            <div className="relative w-full max-w-xl overflow-hidden rounded-[40px] border border-primary/20 bg-background/70 p-4 shadow-lg backdrop-blur">
               <div className="overflow-hidden rounded-[32px] bg-black/40">
                 <Image
                   src="/moneytree-hero-canopy.svg"
@@ -192,7 +195,10 @@ export function HomeContent({
           </div>
         </section>
         {currentUser && availableActions.length > 0 && (
-          <section className="grid gap-8 rounded-3xl border border-primary/30 bg-neutral/40 p-8 shadow" aria-labelledby="quick-actions">
+          <section
+            className="grid gap-8 rounded-3xl border border-primary/20 bg-background/70 p-8 shadow backdrop-blur"
+            aria-labelledby="quick-actions"
+          >
             <div className="space-y-2">
               <span className="inline-flex w-fit items-center rounded-full bg-primary/10 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-primary">
                 Personalized overview
@@ -215,7 +221,7 @@ export function HomeContent({
                   return (
                     <Link
                       key={`${action.href}-${action.title}`}
-                      className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/40 p-5 transition hover:border-primary hover:bg-background/60"
+                      className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/70 p-5 transition backdrop-blur hover:border-primary hover:bg-background/80"
                       href={href}
                     >
                       <div className="space-y-1">
@@ -234,7 +240,7 @@ export function HomeContent({
                 return (
                   <a
                     key={`${action.href}-${action.title}`}
-                    className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/40 p-5 transition hover:border-primary hover:bg-background/60"
+                    className="group flex flex-col justify-between rounded-2xl border border-primary/20 bg-background/70 p-5 transition backdrop-blur hover:border-primary hover:bg-background/80"
                     href={href}
                   >
                     <div className="space-y-1">
@@ -254,7 +260,7 @@ export function HomeContent({
         )}
       </main>
 
-      <footer className="border-t border-primary/20 bg-neutral/40">
+      <footer className="border-t border-primary/20 bg-background/70 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-2 px-6 py-8 text-center text-sm text-slate-400 sm:flex-row sm:justify-between">
           <p>&copy; {new Date().getFullYear()} MoneyTree. Helping teams cultivate lasting financial clarity.</p>
           <div className="flex gap-4">
