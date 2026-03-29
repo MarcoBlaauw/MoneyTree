@@ -14,6 +14,7 @@ defmodule MoneyTree.Teller.Synchronizer do
   alias MoneyTree.Currency
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
+  alias MoneyTree.Recurring
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
 
@@ -95,6 +96,8 @@ defmodule MoneyTree.Teller.Synchronizer do
 
         Audit.log(:teller_sync_succeeded, success_metadata)
         :telemetry.execute(@telemetry_stop, %{duration: duration}, success_metadata)
+
+        _ = Recurring.schedule_detection(updated_connection)
 
         {:ok,
          %{
