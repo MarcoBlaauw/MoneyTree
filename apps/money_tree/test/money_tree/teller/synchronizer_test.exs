@@ -193,6 +193,8 @@ defmodule MoneyTree.Teller.SynchronizerTest do
       assert Decimal.eq?(transaction.amount, Decimal.new("-25.50"))
       assert transaction.status == "posted"
       assert transaction.description == "Coffee Shop"
+      assert transaction.category == "Uncategorized"
+      assert transaction.categorization_source == "provider"
     end
 
     test "records rate limit errors and returns retry information" do

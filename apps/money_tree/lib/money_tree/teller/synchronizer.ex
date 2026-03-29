@@ -10,6 +10,7 @@ defmodule MoneyTree.Teller.Synchronizer do
   alias Ecto.Changeset
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Audit
+  alias MoneyTree.Categorization
   alias MoneyTree.Currency
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
@@ -326,10 +327,10 @@ defmodule MoneyTree.Teller.Synchronizer do
 
     transactions
     |> Enum.reduce_while({:ok, 0}, fn transaction_payload, {:ok, acc} ->
-      case upsert_transaction(account, transaction_payload, timestamp) do
-        {:ok, _transaction} ->
-          {:cont, {:ok, acc + 1}}
-
+      with {:ok, transaction} <- upsert_transaction(account, transaction_payload, timestamp),
+           {:ok, _categorized} <- Categorization.apply_to_transaction(transaction) do
+        {:cont, {:ok, acc + 1}}
+      else
         {:error, reason} ->
           {:halt, {:error, reason}}
       end
