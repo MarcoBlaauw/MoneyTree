@@ -17,6 +17,7 @@ defmodule MoneyTree.Transactions.Transaction do
   @timestamps_opts [type: :utc_datetime_usec]
 
   @supported_statuses ~w(pending posted voided reversed)
+  @supported_categorization_sources ~w(provider rule manual model)
 
   schema "transactions" do
     field :external_id, :string
@@ -27,6 +28,8 @@ defmodule MoneyTree.Transactions.Transaction do
     field :settled_at, :utc_datetime_usec
     field :description, :string
     field :category, :string
+    field :categorization_confidence, :decimal
+    field :categorization_source, :string
     field :merchant_name, :string
     field :status, :string, default: "posted"
     field :encrypted_metadata, EncryptedMap
@@ -48,6 +51,8 @@ defmodule MoneyTree.Transactions.Transaction do
       :settled_at,
       :description,
       :category,
+      :categorization_confidence,
+      :categorization_source,
       :merchant_name,
       :status,
       :encrypted_metadata,
@@ -68,6 +73,7 @@ defmodule MoneyTree.Transactions.Transaction do
     |> validate_length(:description, min: 1, max: 255)
     |> validate_length(:category, max: 120)
     |> validate_length(:merchant_name, max: 160)
+    |> validate_change(:categorization_source, &validate_categorization_source/2)
     |> validate_change(:status, &validate_status/2)
     |> validate_decimal(:amount)
     |> foreign_key_constraint(:account_id)
@@ -86,6 +92,15 @@ defmodule MoneyTree.Transactions.Transaction do
 
   defp validate_status(:status, _status),
     do: [status: "must be one of #{Enum.join(@supported_statuses, ", ")}"]
+
+  defp validate_categorization_source(:categorization_source, nil), do: []
+
+  defp validate_categorization_source(:categorization_source, source)
+       when source in @supported_categorization_sources,
+       do: []
+
+  defp validate_categorization_source(:categorization_source, _source),
+    do: [categorization_source: "must be one of #{Enum.join(@supported_categorization_sources, ", ")}"]
 
   defp validate_decimal(changeset, field) do
     validate_change(changeset, field, fn ^field, value ->

@@ -59,6 +59,10 @@ defmodule MoneyTreeWeb.Router do
       get "/settings", SettingsController, :show
       post "/accounts/:account_id/invitations", InvitationController, :create
       delete "/accounts/:account_id/invitations/:id", InvitationController, :revoke
+      get "/categorization/rules", CategorizationController, :list_rules
+      post "/categorization/rules", CategorizationController, :create_rule
+      delete "/categorization/rules/:id", CategorizationController, :delete_rule
+      post "/categorization/recategorize", CategorizationController, :recategorize
     end
 
     scope "/plaid" do
@@ -112,6 +116,7 @@ defmodule MoneyTreeWeb.Router do
       live "/app/transfers", TransfersLive
       live "/app/budgets", BudgetLive.Index
       live "/app/settings", SettingsLive
+      live "/app/categorization", CategorizationLive.Index
     end
   end
 
