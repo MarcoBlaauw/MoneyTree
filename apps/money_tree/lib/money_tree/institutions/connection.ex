@@ -21,6 +21,8 @@ defmodule MoneyTree.Institutions.Connection do
     field :encrypted_credentials, Binary
     field :webhook_secret, Binary
     field :metadata, Map
+    field :provider, :string, default: "teller"
+    field :provider_metadata, :map
 
     field :teller_enrollment_id, :string
     field :teller_user_id, :string
@@ -50,6 +52,8 @@ defmodule MoneyTree.Institutions.Connection do
       :encrypted_credentials,
       :webhook_secret,
       :metadata,
+      :provider,
+      :provider_metadata,
       :teller_enrollment_id,
       :teller_user_id,
       :sync_cursor,
@@ -60,20 +64,23 @@ defmodule MoneyTree.Institutions.Connection do
       :last_sync_error,
       :last_sync_error_at
     ])
-    |> validate_required([:user_id, :institution_id])
+    |> validate_required([:user_id, :institution_id, :provider])
     |> normalize_cursor()
+    |> update_change(:provider, &normalize_provider/1)
+    |> validate_inclusion(:provider, ["teller", "plaid"])
     |> validate_length(:teller_enrollment_id, max: 120)
     |> validate_length(:teller_user_id, max: 120)
     |> validate_length(:sync_cursor, max: 1024)
     |> validate_length(:accounts_cursor, max: 1024)
     |> validate_length(:transactions_cursor, max: 1024)
     |> validate_metadata_is_map()
+    |> validate_provider_metadata_is_map()
     |> validate_sync_error_is_map()
     |> validate_webhook_secret()
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:institution_id)
-    |> unique_constraint([:user_id, :institution_id],
-      name: :institution_connections_user_id_institution_id_index
+    |> unique_constraint([:user_id, :institution_id, :provider],
+      name: :institution_connections_user_id_institution_id_provider_index
     )
     |> unique_constraint(:teller_enrollment_id,
       name: :institution_connections_teller_enrollment_id_index
@@ -109,6 +116,21 @@ defmodule MoneyTree.Institutions.Connection do
       end
     end)
   end
+
+
+  defp validate_provider_metadata_is_map(changeset) do
+    validate_change(changeset, :provider_metadata, fn :provider_metadata, value ->
+      cond do
+        is_nil(value) -> []
+        is_map(value) -> []
+        true -> [{:provider_metadata, "must be a map"}]
+      end
+    end)
+  end
+
+  defp normalize_provider(provider) when is_binary(provider), do: provider |> String.trim() |> String.downcase()
+  defp normalize_provider(provider) when is_atom(provider), do: provider |> Atom.to_string() |> normalize_provider()
+  defp normalize_provider(provider), do: provider
 
   defp validate_webhook_secret(changeset) do
     validate_change(changeset, :webhook_secret, fn :webhook_secret, value ->

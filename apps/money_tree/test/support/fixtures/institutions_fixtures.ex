@@ -31,7 +31,9 @@ defmodule MoneyTree.InstitutionsFixtures do
 
     default = %{
       encrypted_credentials: "{}",
-      metadata: %{"status" => "active"},
+      metadata: %{"status" => "active", "provider" => "teller"},
+      provider: "teller",
+      provider_metadata: %{},
       teller_enrollment_id: unique_identifier("enroll"),
       teller_user_id: unique_identifier("teller-user")
     }

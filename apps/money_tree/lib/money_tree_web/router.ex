@@ -62,9 +62,14 @@ defmodule MoneyTreeWeb.Router do
     end
 
     scope "/plaid" do
-      pipe_through :api_auth
+      post "/webhook", PlaidWebhookController, :webhook
 
-      post "/link_token", PlaidController, :link_token
+      scope "/" do
+        pipe_through :api_auth
+
+        post "/link_token", PlaidController, :link_token
+        post "/exchange", PlaidController, :exchange
+      end
     end
 
     scope "/kyc" do
