@@ -103,7 +103,7 @@ defmodule MoneyTreeWeb.TellerController do
       build_connection_attrs(exchange_payload)
       |> Map.put(:metadata, metadata)
 
-    case Institutions.get_connection_for_institution(user, institution_id) do
+    case Institutions.get_connection_for_institution(user, institution_id, provider: "teller") do
       {:ok, %Connection{} = connection} ->
         merged_metadata = merge_metadata(connection.metadata, metadata)
 
@@ -121,6 +121,8 @@ defmodule MoneyTreeWeb.TellerController do
 
     %{
       encrypted_credentials: Jason.encode!(payload),
+      provider: "teller",
+      provider_metadata: payload,
       teller_enrollment_id: Map.get(payload, "enrollment_id"),
       teller_user_id: Map.get(payload, "user_id")
     }

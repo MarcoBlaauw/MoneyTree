@@ -40,6 +40,7 @@ defmodule MoneyTree.Institutions do
         |> Map.new()
         |> Map.put(:user_id, user_id)
         |> Map.put(:institution_id, institution_id)
+        |> Map.put_new(:provider, "teller")
         |> maybe_put_default_webhook_secret()
 
       %Connection{}
@@ -57,7 +58,7 @@ defmodule MoneyTree.Institutions do
     with {:ok, connection} <-
            fetch_owned_connection(user, fetch_identifier!(attrs, :connection_id)) do
       updates =
-        [:teller_enrollment_id, :teller_user_id]
+        [:teller_enrollment_id, :teller_user_id, :provider_metadata, :encrypted_credentials]
         |> Enum.reduce(%{}, fn key, acc ->
           value = Map.get(attrs, key) || Map.get(attrs, to_string(key))
 
@@ -169,9 +170,12 @@ defmodule MoneyTree.Institutions do
 
   Revoked connections are excluded so background jobs avoid unnecessary work.
   """
-  @spec list_connections_for_sync() :: [Connection.t()]
-  def list_connections_for_sync do
+  @spec list_connections_for_sync(keyword()) :: [Connection.t()]
+  def list_connections_for_sync(opts \\ []) do
+    provider = Keyword.get(opts, :provider)
+
     Connection
+    |> maybe_filter_provider(provider)
     |> Repo.all()
     |> Enum.reject(&revoked?/1)
   end
@@ -261,11 +265,13 @@ defmodule MoneyTree.Institutions do
   def get_connection_for_institution(user, institution_id, opts \\ [])
       when is_binary(institution_id) do
     user_id = normalize_user_id(user)
+    provider = Keyword.get(opts, :provider)
 
     query =
       user_id
       |> authorized_connections_query()
       |> where([c], c.institution_id == ^institution_id)
+      |> maybe_filter_provider(provider)
 
     query
     |> apply_preloads(opts)
@@ -500,6 +506,18 @@ defmodule MoneyTree.Institutions do
     else
       updates
     end
+  end
+
+
+  defp maybe_filter_provider(query, nil), do: query
+
+  defp maybe_filter_provider(query, provider) when is_atom(provider) do
+    maybe_filter_provider(query, Atom.to_string(provider))
+  end
+
+  defp maybe_filter_provider(query, provider) when is_binary(provider) do
+    normalized = provider |> String.trim() |> String.downcase()
+    where(query, [c], c.provider == ^normalized)
   end
 
   defp apply_preloads(query, opts) do

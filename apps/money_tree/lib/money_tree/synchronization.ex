@@ -1,16 +1,10 @@
 defmodule MoneyTree.Synchronization do
   @moduledoc """
-  Coordinates synchronization workflows triggered by Teller integrations.
-
-  This module acts as an integration point so controllers and other contexts can
-  schedule synchronization jobs without needing to know the specific worker
-  implementation. Subsequent tasks can expand the underlying behaviour without
-  changing the calling code.
+  Coordinates provider-agnostic synchronization workflows.
   """
 
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
-  alias MoneyTree.Teller.SyncWorker
   alias Oban
 
   @default_unique_period 60
@@ -29,8 +23,9 @@ defmodule MoneyTree.Synchronization do
   def dispatch_incremental_syncs(opts \\ []) do
     schedule_in = Keyword.get(opts, :schedule_in, 0)
     unique_period = Keyword.get(opts, :unique_period, @default_unique_period)
+    provider = Keyword.get(opts, :provider)
 
-    Institutions.list_connections_for_sync()
+    Institutions.list_connections_for_sync(provider: provider)
     |> Enum.reduce_while(:ok, fn connection, acc ->
       case schedule_incremental_sync(connection,
              schedule_in: schedule_in,
@@ -43,10 +38,13 @@ defmodule MoneyTree.Synchronization do
   end
 
   defp enqueue_connection_sync(%Connection{} = connection, mode, opts) do
+    provider = provider_name(connection)
+
     args =
       %{
         "connection_id" => connection.id,
         "mode" => mode,
+        "provider" => provider,
         "telemetry_metadata" => telemetry_metadata(connection, mode, opts)
       }
 
@@ -54,18 +52,24 @@ defmodule MoneyTree.Synchronization do
       []
       |> maybe_put(:schedule_in, Keyword.get(opts, :schedule_in))
       |> Keyword.put(:unique,
-        keys: [:connection_id, :mode],
+        keys: [:connection_id, :mode, :provider],
         period: Keyword.get(opts, :unique_period, @default_unique_period)
       )
 
     args
-    |> SyncWorker.new(job_opts)
+    |> sync_worker_module(provider).new(job_opts)
     |> Oban.insert()
     |> case do
       {:ok, _job} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
+
+  def sync_worker_module("plaid"), do: MoneyTree.Plaid.SyncWorker
+  def sync_worker_module(_), do: MoneyTree.Teller.SyncWorker
+
+  defp provider_name(%Connection{provider: provider}) when is_binary(provider), do: provider
+  defp provider_name(_), do: "teller"
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
@@ -80,6 +84,7 @@ defmodule MoneyTree.Synchronization do
 
     base_metadata = %{
       "mode" => mode,
+      "provider" => provider_name(connection),
       "user_id" => connection.user_id,
       "institution_id" => connection.institution_id
     }
