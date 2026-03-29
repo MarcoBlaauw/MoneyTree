@@ -5,9 +5,9 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
 
   use MoneyTreeWeb, :live_view
 
+  alias Decimal
   alias MoneyTree.Budgets
   alias MoneyTree.Budgets.Budget
-  alias MoneyTreeWeb.CoreComponents
 
   @impl true
   def mount(_params, _session, %{assigns: %{current_user: current_user}} = socket) do
@@ -20,7 +20,9 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
        budget_editing: nil,
        period_options: period_options(),
        entry_type_options: entry_type_options(),
-       variability_options: variability_options()
+       variability_options: variability_options(),
+       target_mode_options: target_mode_options(),
+       rollover_policy_options: rollover_policy_options()
      )
      |> assign_budget_rows(current_user)}
   end
@@ -69,6 +71,52 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
     else
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Budget not found or already removed.")}
+    end
+  end
+
+  def handle_event(
+        "accept-suggestion",
+        %{"id" => budget_id},
+        %{assigns: %{current_user: current_user, planner_recommendations: recommendations}} = socket
+      ) do
+    with recommendation when not is_nil(recommendation) <-
+           Enum.find(recommendations, &(&1.budget_id == budget_id)),
+         {:ok, _budget} <-
+           Budgets.accept_recommendation(
+             current_user,
+             budget_id,
+             recommendation.suggested_allocation,
+             recommendation.explanation
+           ) do
+      {:noreply,
+       socket
+       |> assign_budget_rows(current_user)
+       |> put_flash(:info, "Suggestion accepted.")}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Unable to accept suggestion.")}
+    end
+  end
+
+  def handle_event(
+        "reject-suggestion",
+        %{"id" => budget_id},
+        %{assigns: %{current_user: current_user, planner_recommendations: recommendations}} = socket
+      ) do
+    with recommendation when not is_nil(recommendation) <-
+           Enum.find(recommendations, &(&1.budget_id == budget_id)),
+         {:ok, _revision} <-
+           Budgets.reject_recommendation(
+             current_user,
+             budget_id,
+             recommendation.suggested_allocation,
+             recommendation.explanation
+           ) do
+      {:noreply,
+       socket
+       |> assign_budget_rows(current_user)
+       |> put_flash(:info, "Suggestion rejected.")}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Unable to reject suggestion.")}
     end
   end
 
@@ -140,10 +188,27 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
 
       <div class="grid gap-6 lg:grid-cols-3">
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm lg:col-span-2">
+          <h2 class="text-lg font-semibold text-zinc-900">Planner suggestions</h2>
+          <ul class="space-y-3 text-sm">
+            <li :for={suggestion <- @planner_recommendations}
+                class="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+              <p class="font-semibold text-emerald-900"><%= suggestion.budget_name %></p>
+              <p class="text-xs text-emerald-800"><%= suggestion.explanation %></p>
+              <p class="text-xs text-emerald-700 mt-1">
+                Suggested <%= suggestion.currency %> <%= Decimal.to_string(suggestion.suggested_allocation, :normal) %>
+                (Δ <%= Decimal.to_string(suggestion.delta, :normal) %>)
+              </p>
+              <div class="mt-2 flex gap-2">
+                <button class="btn btn-xs" type="button" phx-click="accept-suggestion" phx-value-id={suggestion.budget_id}>Accept</button>
+                <button class="btn btn-outline btn-xs" type="button" phx-click="reject-suggestion" phx-value-id={suggestion.budget_id}>Reject</button>
+              </div>
+            </li>
+            <li :if={Enum.empty?(@planner_recommendations)} class="rounded-lg border border-dashed border-zinc-200 p-4 text-zinc-500">
+              No recommendations yet.
+            </li>
+          </ul>
+
           <h2 class="text-lg font-semibold text-zinc-900">Your budgets</h2>
-          <p class="text-sm text-zinc-500">
-            Monitor allocations by period, entry type, and variability to understand where cash is headed.
-          </p>
 
           <ul class="space-y-3 text-sm">
             <li :for={budget <- @budget_rows}
@@ -154,6 +219,9 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
                   <p class="text-base font-semibold text-zinc-900"><%= budget.name %></p>
                   <p class="text-xs text-zinc-500">
                     <%= budget.period %> • <%= budget.entry_type %> • <%= budget.variability %>
+                  </p>
+                  <p class="text-xs text-zinc-500">
+                    <%= budget.target_mode %> • <%= budget.rollover_policy %> • Priority <%= budget.priority %>
                   </p>
                 </div>
 
@@ -180,8 +248,8 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
                   <dd class="font-medium text-zinc-800"><%= budget.allocation_formatted %></dd>
                 </div>
                 <div>
-                  <dt class="text-xs uppercase tracking-wide text-zinc-500">Masked</dt>
-                  <dd class="font-medium text-zinc-800"><%= budget.allocation_masked %></dd>
+                  <dt class="text-xs uppercase tracking-wide text-zinc-500">Minimum / Maximum</dt>
+                  <dd class="font-medium text-zinc-800"><%= budget.minimum_formatted || "--" %> / <%= budget.maximum_formatted || "--" %></dd>
                 </div>
                 <div>
                   <dt class="text-xs uppercase tracking-wide text-zinc-500">Currency</dt>
@@ -204,9 +272,6 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
               New budget
             <% end %>
           </h2>
-          <p class="text-sm text-zinc-500">
-            Define allocations for recurring spend or income streams. All amounts must use ISO currency codes.
-          </p>
 
           <.simple_form for={@budget_changeset}
                         id="budget-form"
@@ -219,34 +284,25 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
                   <label class="text-sm font-medium text-zinc-700" for="budget_period">Period</label>
-                  <select id="budget_period"
-                          name="budget[period]"
-                          class="input">
+                  <select id="budget_period" name="budget[period]" class="input">
                     <%= Phoenix.HTML.Form.options_for_select(@period_options, select_value(f[:period].value)) %>
                   </select>
-                  <p :for={error <- errors_on(@budget_changeset, :period)} class="text-sm text-red-600"><%= error %></p>
                 </div>
 
                 <div>
                   <label class="text-sm font-medium text-zinc-700" for="budget_entry_type">Type</label>
-                  <select id="budget_entry_type"
-                          name="budget[entry_type]"
-                          class="input">
+                  <select id="budget_entry_type" name="budget[entry_type]" class="input">
                     <%= Phoenix.HTML.Form.options_for_select(@entry_type_options, select_value(f[:entry_type].value)) %>
                   </select>
-                  <p :for={error <- errors_on(@budget_changeset, :entry_type)} class="text-sm text-red-600"><%= error %></p>
                 </div>
               </div>
 
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
                   <label class="text-sm font-medium text-zinc-700" for="budget_variability">Variability</label>
-                  <select id="budget_variability"
-                          name="budget[variability]"
-                          class="input">
+                  <select id="budget_variability" name="budget[variability]" class="input">
                     <%= Phoenix.HTML.Form.options_for_select(@variability_options, select_value(f[:variability].value)) %>
                   </select>
-                  <p :for={error <- errors_on(@budget_changeset, :variability)} class="text-sm text-red-600"><%= error %></p>
                 </div>
 
                 <.input field={f[:allocation_amount]}
@@ -254,6 +310,27 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
                         type={:number}
                         step="0.01"
                         min="0" />
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label class="text-sm font-medium text-zinc-700" for="budget_target_mode">Target mode</label>
+                  <select id="budget_target_mode" name="budget[target_mode]" class="input">
+                    <%= Phoenix.HTML.Form.options_for_select(@target_mode_options, select_value(f[:target_mode].value)) %>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-sm font-medium text-zinc-700" for="budget_rollover_policy">Rollover policy</label>
+                  <select id="budget_rollover_policy" name="budget[rollover_policy]" class="input">
+                    <%= Phoenix.HTML.Form.options_for_select(@rollover_policy_options, select_value(f[:rollover_policy].value)) %>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-3">
+                <.input field={f[:minimum_amount]} label="Minimum" type={:number} step="0.01" />
+                <.input field={f[:maximum_amount]} label="Maximum" type={:number} step="0.01" />
+                <.input field={f[:priority]} label="Priority" type={:number} min="0" max="100" />
               </div>
 
               <.input field={f[:currency]} label="Currency" placeholder="USD" />
@@ -275,8 +352,9 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
   defp assign_budget_rows(socket, current_user) do
     budgets = Budgets.list_budgets(current_user)
     rows = Enum.map(budgets, &Budgets.format_budget/1)
+    recommendations = Budgets.planner_recommendations(current_user, budgets: budgets)
 
-    assign(socket, budget_rows: rows)
+    assign(socket, budget_rows: rows, planner_recommendations: recommendations)
   end
 
   defp maybe_reset_deleted_budget(socket, deleted_id) do
@@ -323,13 +401,21 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
     end)
   end
 
+  defp target_mode_options do
+    Budget.target_modes()
+    |> Enum.map(fn mode ->
+      {mode |> Atom.to_string() |> String.capitalize(), Atom.to_string(mode)}
+    end)
+  end
+
+  defp rollover_policy_options do
+    Budget.rollover_policies()
+    |> Enum.map(fn policy ->
+      {policy |> Atom.to_string() |> String.capitalize(), Atom.to_string(policy)}
+    end)
+  end
+
   defp select_value(value) when is_atom(value), do: Atom.to_string(value)
   defp select_value(value), do: value
 
-  defp errors_on(%Ecto.Changeset{} = changeset, field) do
-    changeset
-    |> Map.get(:errors)
-    |> Keyword.get_values(field)
-    |> Enum.map(&CoreComponents.translate_error/1)
-  end
 end

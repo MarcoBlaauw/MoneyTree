@@ -739,6 +739,15 @@ defmodule MoneyTreeWeb.DashboardLive do
             </div>
 
             <ul class="space-y-2 text-sm">
+              <li :for={suggestion <- @metrics.planner_recommendations}
+                  class="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+                <div class="flex items-center justify-between">
+                  <span class="font-medium text-emerald-900"><%= suggestion.budget_name %></span>
+                  <span class={trend_color(suggestion.direction)}><%= Decimal.to_string(suggestion.delta, :normal) %></span>
+                </div>
+                <p class="mt-1 text-xs text-emerald-800"><%= suggestion.explanation %></p>
+              </li>
+
               <li :for={budget <- @metrics.budgets}
                   class="rounded-lg border border-zinc-100 bg-zinc-50 p-3">
                 <div class="flex items-center justify-between">
@@ -998,6 +1007,7 @@ defmodule MoneyTreeWeb.DashboardLive do
       card_balances: Accounts.running_card_balances(current_user),
       loans: Loans.overview(current_user),
       budgets: budgets,
+      planner_recommendations: Budgets.planner_recommendations(current_user),
       budget_rollups: %{entry_type: entry_rollups, variability: variability_rollups},
       subscription: Subscriptions.spend_summary(current_user),
       category_rollups: Transactions.category_rollups(current_user),

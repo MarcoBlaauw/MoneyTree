@@ -10,6 +10,8 @@ defmodule MoneyTree.Budgets do
 
   alias Decimal
   alias MoneyTree.Budgets.Budget
+  alias MoneyTree.Budgets.BudgetRevision
+  alias MoneyTree.Budgets.Planner
   alias MoneyTree.Accounts
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
@@ -144,11 +146,71 @@ defmodule MoneyTree.Budgets do
       period: humanize_period(budget.period),
       entry_type: humanize_entry_type(budget.entry_type),
       variability: humanize_variability(budget.variability),
+      target_mode: humanize_value(budget.target_mode || :strict),
+      rollover_policy: humanize_value(budget.rollover_policy || :none),
+      priority: budget.priority || 0,
+      minimum_amount: budget.minimum_amount,
+      maximum_amount: budget.maximum_amount,
+      minimum_formatted: Accounts.format_money(budget.minimum_amount, currency, opts),
+      maximum_formatted: Accounts.format_money(budget.maximum_amount, currency, opts),
       currency: currency,
       allocation_amount: amount,
       allocation_formatted: Accounts.format_money(amount, currency, opts),
       allocation_masked: Accounts.mask_money(amount, currency, opts)
     }
+  end
+
+  @doc """
+  Returns planner recommendations for budgets owned by the user.
+  """
+  @spec planner_recommendations(User.t() | binary(), keyword()) :: [Planner.recommendation()]
+  def planner_recommendations(user, opts \\ []) do
+    budgets = list_budgets(user)
+    Planner.recommend(user, Keyword.put(opts, :budgets, budgets))
+  end
+
+  @doc """
+  Accepts a planner recommendation by updating the budget and creating a revision record.
+  """
+  @spec accept_recommendation(User.t() | binary(), binary(), Decimal.t(), String.t()) ::
+          {:ok, Budget.t()} | {:error, term()}
+  def accept_recommendation(user, budget_id, suggested_allocation, explanation) do
+    user_id = normalize_user_id(user)
+
+    Repo.transaction(fn ->
+      budget = get_budget!(user_id, budget_id)
+      previous_allocation = budget.allocation_amount
+
+      with {:ok, updated_budget} <- update_budget(budget, %{allocation_amount: suggested_allocation}),
+           {:ok, _revision} <-
+             create_revision(user_id, budget, %{
+               status: :accepted,
+               previous_allocation_amount: previous_allocation,
+               suggested_allocation_amount: suggested_allocation,
+               explanation: explanation
+             }) do
+        updated_budget
+      else
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  @doc """
+  Rejects a planner recommendation while persisting the decision as a revision.
+  """
+  @spec reject_recommendation(User.t() | binary(), binary(), Decimal.t(), String.t()) ::
+          {:ok, BudgetRevision.t()} | {:error, term()}
+  def reject_recommendation(user, budget_id, suggested_allocation, explanation) do
+    user_id = normalize_user_id(user)
+    budget = get_budget!(user_id, budget_id)
+
+    create_revision(user_id, budget, %{
+      status: :rejected,
+      previous_allocation_amount: budget.allocation_amount,
+      suggested_allocation_amount: suggested_allocation,
+      explanation: explanation
+    })
   end
 
   @doc """
@@ -597,6 +659,16 @@ defmodule MoneyTree.Budgets do
 
   defp normalize_user_id(%User{id: id}), do: id
   defp normalize_user_id(id) when is_binary(id), do: id
+
+  defp create_revision(user_id, %Budget{} = budget, attrs) do
+    %BudgetRevision{}
+    |> BudgetRevision.changeset(
+      attrs
+      |> Map.put(:user_id, user_id)
+      |> Map.put(:budget_id, budget.id)
+    )
+    |> Repo.insert()
+  end
 
   defp humanize_period(nil), do: nil
   defp humanize_period(period), do: humanize_value(period)
