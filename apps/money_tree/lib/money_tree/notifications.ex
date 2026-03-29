@@ -7,6 +7,7 @@ defmodule MoneyTree.Notifications do
   alias MoneyTree.Accounts
   alias MoneyTree.Budgets
   alias MoneyTree.Loans
+  alias MoneyTree.Recurring
   alias MoneyTree.Subscriptions
   alias MoneyTree.Users.User
 
@@ -26,12 +27,14 @@ defmodule MoneyTree.Notifications do
     budgets = Budgets.aggregate_totals(user, opts)
     loans = Loans.overview(user, opts)
     subscription = Subscriptions.spend_summary(user, opts)
+    recurring_anomalies = Recurring.list_open_anomalies(resolve_user_id(user))
 
     []
     |> add_utilization_alerts(card_balances)
     |> add_budget_alerts(budgets)
     |> add_autopay_alerts(loans)
     |> add_subscription_digest(subscription)
+    |> add_recurring_anomalies(recurring_anomalies)
     |> ensure_fallback()
   end
 
@@ -148,6 +151,45 @@ defmodule MoneyTree.Notifications do
   end
 
   defp add_subscription_digest(notifications, _summary), do: notifications
+
+
+  defp add_recurring_anomalies(notifications, anomalies) do
+    Enum.reduce(anomalies, notifications, fn anomaly, acc ->
+      severity =
+        case anomaly.severity do
+          "critical" -> :critical
+          "warning" -> :warning
+          _ -> :info
+        end
+
+      [
+        %{
+          id: "recurring-#{anomaly.id}",
+          severity: severity,
+          message: recurring_message(anomaly),
+          action: "Review recurring spend"
+        }
+        | acc
+      ]
+    end)
+  end
+
+  defp recurring_message(%{anomaly_type: "missing_cycle", series: series}) do
+    "Expected recurring transaction is missing for #{series.fingerprint}."
+  end
+
+  defp recurring_message(%{anomaly_type: "late_cycle", series: series}) do
+    "Recurring transaction appears late for #{series.fingerprint}."
+  end
+
+  defp recurring_message(%{anomaly_type: "unusual_amount", series: series}) do
+    "Recurring transaction amount is unusual for #{series.fingerprint}."
+  end
+
+  defp recurring_message(_), do: "Recurring transaction anomaly detected."
+
+  defp resolve_user_id(%{id: id}) when is_binary(id), do: id
+  defp resolve_user_id(user_id) when is_binary(user_id), do: user_id
 
   defp ensure_fallback([]),
     do: [%{id: "all-clear", severity: :info, message: "You're all caught up!", action: nil}]
