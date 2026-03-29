@@ -1,12 +1,14 @@
 defmodule MoneyTree.BudgetsTest do
   use MoneyTree.DataCase, async: true
 
+  import Ecto.Query
   import MoneyTree.AccountsFixtures
 
   alias Decimal
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Budgets
   alias MoneyTree.Budgets.Budget
+  alias MoneyTree.Budgets.BudgetRevision
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
 
@@ -321,6 +323,54 @@ defmodule MoneyTree.BudgetsTest do
         |> Enum.sort()
 
       assert Enum.sort([yearly_income.id, weekly_variable.id]) == variability_ids
+    end
+
+    test "planner recommendations can be accepted and rejected", %{user: user} do
+      account = account_fixture(user)
+
+      {:ok, budget} =
+        Budgets.create_budget(user, %{
+          name: "Dining",
+          period: :monthly,
+          allocation_amount: "400.00",
+          currency: "USD",
+          entry_type: :expense,
+          variability: :variable
+        })
+
+      insert_transaction(account, %{amount: Decimal.new("-600.00"), category: "Dining"})
+      insert_transaction(account, %{amount: Decimal.new("-550.00"), category: "Dining"})
+      insert_transaction(account, %{amount: Decimal.new("-500.00"), category: "Dining"})
+
+      [suggestion] = Budgets.planner_recommendations(user)
+      assert suggestion.budget_id == budget.id
+
+      assert {:ok, %Budget{} = updated} =
+               Budgets.accept_recommendation(
+                 user,
+                 budget.id,
+                 suggestion.suggested_allocation,
+                 suggestion.explanation
+               )
+
+      assert Decimal.compare(updated.allocation_amount, Decimal.new("400.00")) == :gt
+
+      revisions =
+        Repo.all(
+          from revision in BudgetRevision,
+            where: revision.budget_id == ^budget.id,
+            order_by: [asc: revision.inserted_at]
+        )
+
+      assert Enum.any?(revisions, &(&1.status == :accepted))
+
+      assert {:ok, %BudgetRevision{status: :rejected}} =
+               Budgets.reject_recommendation(
+                 user,
+                 budget.id,
+                 suggestion.suggested_allocation,
+                 "Not now"
+               )
     end
   end
 
