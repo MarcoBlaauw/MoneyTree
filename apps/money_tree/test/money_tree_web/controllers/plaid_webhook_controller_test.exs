@@ -1,21 +1,48 @@
 defmodule MoneyTreeWeb.PlaidWebhookControllerTest do
   use MoneyTreeWeb.ConnCase, async: true
 
-  import Ecto.Query
-
   alias MoneyTree.AccountsFixtures
   alias MoneyTree.InstitutionsFixtures
   alias MoneyTree.Repo
-  alias Oban.Job
+
+  defmodule PlaidWebhookClientStub do
+    def list_accounts(_params) do
+      {:ok,
+       %{
+         "data" => [
+           %{
+             "id" => "plaid-acct-1",
+             "name" => "Plaid Checking",
+             "type" => "depository",
+             "subtype" => "checking",
+             "currency" => "USD",
+             "balances" => %{"current" => "125.00", "available" => "100.00"}
+           }
+         ],
+         "next_cursor" => nil
+       }}
+    end
+
+    def list_transactions("plaid-acct-1", _params) do
+      {:ok, %{"data" => [], "next_cursor" => nil}}
+    end
+  end
 
   setup do
     original_config = Application.get_env(:money_tree, MoneyTree.Plaid)
+    original_client = Application.get_env(:money_tree, :plaid_client)
     Application.put_env(:money_tree, MoneyTree.Plaid, webhook_secret: "plaid-secret")
+    Application.put_env(:money_tree, :plaid_client, PlaidWebhookClientStub)
 
     on_exit(fn ->
       case original_config do
         nil -> Application.delete_env(:money_tree, MoneyTree.Plaid)
         config -> Application.put_env(:money_tree, MoneyTree.Plaid, config)
+      end
+
+      case original_client do
+        nil -> Application.delete_env(:money_tree, :plaid_client)
+        client -> Application.put_env(:money_tree, :plaid_client, client)
       end
     end)
 
@@ -41,10 +68,8 @@ defmodule MoneyTreeWeb.PlaidWebhookControllerTest do
       |> post(~p"/api/plaid/webhook", body)
 
     assert json_response(response, 200) == %{"status" => "ok"}
-
-    job = Repo.one!(from j in Job, order_by: [desc: j.inserted_at], limit: 1)
-    assert job.worker == "Elixir.MoneyTree.Plaid.SyncWorker"
-    assert job.args["provider"] == "plaid"
+    refreshed = Repo.get!(MoneyTree.Institutions.Connection, connection.id)
+    assert get_in(refreshed.metadata, ["teller_webhook", "last_event"]) == "SYNC_UPDATES_AVAILABLE"
   end
 
   defp sign(timestamp, body) do

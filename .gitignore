@@ -22,3 +22,4 @@ apps/money_tree/priv/static/*-*.ico
 apps/money_tree/priv/static/*-*.txt
 teller/*.pem
 teller/*.key
+*.pem

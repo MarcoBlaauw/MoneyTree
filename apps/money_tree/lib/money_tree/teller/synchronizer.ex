@@ -32,7 +32,7 @@ defmodule MoneyTree.Teller.Synchronizer do
 
   @spec sync(Connection.t(), keyword()) :: {:ok, sync_result()} | {:error, term()}
   def sync(%Connection{} = connection, opts \\ []) do
-    client =
+    client_module =
       Keyword.get(
         opts,
         :client,
@@ -52,9 +52,15 @@ defmodule MoneyTree.Teller.Synchronizer do
     Audit.log(:teller_sync_started, metadata)
     :telemetry.execute(@telemetry_start, %{system_time: System.system_time()}, metadata)
 
-    case do_sync(connection, client) do
-      {:ok, payload} ->
-        finalize_success(connection, payload, metadata, start_time)
+    case build_client(client_module, connection) do
+      {:ok, client} ->
+        case do_sync(connection, client) do
+          {:ok, payload} ->
+            finalize_success(connection, payload, metadata, start_time)
+
+          {:error, reason} ->
+            finalize_failure(connection, reason, metadata, start_time)
+        end
 
       {:error, reason} ->
         finalize_failure(connection, reason, metadata, start_time)
@@ -156,7 +162,7 @@ defmodule MoneyTree.Teller.Synchronizer do
       |> Enum.reject(fn {_k, v} -> is_nil(v) end)
       |> Map.new()
 
-    case maybe_rate_limited(client.list_accounts(request_params)) do
+    case maybe_rate_limited(list_accounts(client, request_params)) do
       {:ok, response} ->
         {page_accounts, next_cursor} = normalize_paged_response(response)
         collected_accounts = accounts ++ page_accounts
@@ -206,14 +212,14 @@ defmodule MoneyTree.Teller.Synchronizer do
              type: get_in_any(payload, ["type", :type]) || "account",
              subtype: get_in_any(payload, ["subtype", :subtype]),
              current_balance:
-               to_decimal(
-                 get_in_any(payload, [
-                   ["balances", "current"],
-                   ["balances", :current],
-                   [:balances, "current"],
-                   [:balances, :current]
-                 ])
-               ),
+               get_in_any(payload, [
+                 ["balances", "current"],
+                 ["balances", :current],
+                 [:balances, "current"],
+                 [:balances, :current]
+               ])
+               |> to_decimal()
+               |> Kernel.||(D.new("0")),
              available_balance:
                to_decimal(
                  get_in_any(payload, [
@@ -300,7 +306,7 @@ defmodule MoneyTree.Teller.Synchronizer do
       |> Enum.reject(fn {_k, v} -> is_nil(v) end)
       |> Map.new()
 
-    with {:ok, response} <- maybe_rate_limited(client.list_transactions(teller_id, params)),
+    with {:ok, response} <- maybe_rate_limited(list_transactions(client, teller_id, params)),
          {:ok, {transactions, next_cursor}} <- {:ok, normalize_paged_response(response)},
          {:ok, processed} <- persist_transactions(account, transactions) do
       updated_count = count + processed
@@ -339,6 +345,51 @@ defmodule MoneyTree.Teller.Synchronizer do
       end
     end)
   end
+
+  defp build_client(client_module, %Connection{} = connection) when is_atom(client_module) do
+    access_token = access_token(connection)
+
+    cond do
+      function_exported?(client_module, :new, 1) and is_binary(access_token) ->
+        {:ok, client_module.new(access_token: access_token)}
+
+      function_exported?(client_module, :new, 1) ->
+        {:error, {:missing_access_token, %{connection_id: connection.id}}}
+
+      true ->
+        {:ok, client_module}
+    end
+  end
+
+  defp build_client(client, _connection) do
+    {:ok, client}
+  end
+
+  defp list_accounts(%MoneyTree.Teller.Client{} = client, params) do
+    MoneyTree.Teller.Client.list_accounts(client, params)
+  end
+
+  defp list_accounts(client, params) when is_atom(client), do: client.list_accounts(params)
+
+  defp list_transactions(%MoneyTree.Teller.Client{} = client, teller_id, params) do
+    MoneyTree.Teller.Client.list_transactions(client, teller_id, params)
+  end
+
+  defp list_transactions(client, teller_id, params) when is_atom(client),
+    do: client.list_transactions(teller_id, params)
+
+  defp access_token(%Connection{encrypted_credentials: credentials})
+       when is_binary(credentials) do
+    case Jason.decode(credentials) do
+      {:ok, payload} when is_map(payload) ->
+        payload["access_token"] || payload["token"] || payload["accessToken"]
+
+      _ ->
+        nil
+    end
+  end
+
+  defp access_token(_connection), do: nil
 
   defp build_transaction_attrs(account, payload, timestamp) do
     external_id = get_id(payload)
@@ -699,6 +750,10 @@ defmodule MoneyTree.Teller.Synchronizer do
 
   defp normalize_error({:invalid_transaction_currency, info}) do
     %{type: :invalid_transaction_currency, details: info}
+  end
+
+  defp normalize_error({:missing_access_token, info}) do
+    %{type: :missing_access_token, details: info}
   end
 
   defp normalize_error(%Changeset{} = changeset) do

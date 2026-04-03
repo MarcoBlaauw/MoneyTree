@@ -62,7 +62,6 @@ defmodule MoneyTree.Teller.ClientTest do
     base_config =
       original
       |> Keyword.merge(
-        api_key: "test-key",
         api_host: Keyword.get(original, :api_host, "https://api.teller.io"),
         connect_host: Keyword.get(original, :connect_host, "https://connect.teller.io"),
         timeout: Keyword.get(original, :timeout, :timer.seconds(10)),

@@ -29,10 +29,10 @@ defmodule MoneyTreeWeb.TransfersLive do
   @impl true
   def handle_event(
         "validate",
-        %{"transfer" => params},
+        params,
         %{assigns: %{current_user: user}} = socket
       ) do
-    changeset = Transfers.change_transfer(user, params)
+    changeset = Transfers.change_transfer(user, normalize_transfer_params(params))
     {:noreply, assign(socket, changeset: changeset)}
   end
 
@@ -80,9 +80,11 @@ defmodule MoneyTreeWeb.TransfersLive do
     {:noreply, put_flash(socket, :error, "Unlock transfers before confirming a transfer.")}
   end
 
-  def handle_event("confirm-transfer", %{"transfer" => params}, socket) do
+  def handle_event("confirm-transfer", params, socket) do
+    transfer_params = normalize_transfer_params(params)
+
     with :ok <- ensure_step_up(socket.assigns),
-         {:ok, result} <- submit_transfer(socket, params) do
+         {:ok, result} <- submit_transfer(socket, transfer_params) do
       {:noreply, transfer_success(socket, result)}
     else
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -202,6 +204,13 @@ defmodule MoneyTreeWeb.TransfersLive do
 
   defp submit_transfer(%{assigns: %{current_user: current_user}} = _socket, params) do
     Transfers.submit_transfer(current_user, params)
+  end
+
+  defp normalize_transfer_params(params) when is_map(params) do
+    Map.merge(
+      Map.get(params, "transfer_request", %{}),
+      Map.get(params, "transfer", %{})
+    )
   end
 
   defp transfer_success(socket, %{

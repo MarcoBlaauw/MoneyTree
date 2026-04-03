@@ -1,25 +1,63 @@
 defmodule MoneyTreeWeb.TellerWebhookControllerTest do
   use MoneyTreeWeb.ConnCase, async: true
 
-  import Ecto.Query
-
   alias MoneyTree.AccountsFixtures
   alias MoneyTree.Institutions
   alias MoneyTree.InstitutionsFixtures
   alias MoneyTree.Repo
-  alias Oban.Job
+
+  defmodule DenyAll do
+    @behaviour MoneyTreeWeb.RateLimiter
+
+    @impl true
+    def check(_bucket, _limit, _period), do: {:error, :rate_limited}
+  end
+
+  defmodule TellerWebhookClientStub do
+    def list_accounts(_params) do
+      {:ok,
+       %{
+         "data" => [
+           %{
+             "id" => "stub-acct-1",
+             "name" => "Webhook Checking",
+             "type" => "depository",
+             "subtype" => "checking",
+             "currency" => "USD",
+             "balances" => %{"current" => "100.00", "available" => "75.00"}
+           }
+         ],
+         "next_cursor" => nil
+       }}
+    end
+
+    def list_transactions("stub-acct-1", _params) do
+      {:ok, %{"data" => [], "next_cursor" => nil}}
+    end
+  end
 
   setup do
     original_config = Application.get_env(:money_tree, MoneyTree.Teller)
+    original_client = Application.get_env(:money_tree, :teller_client)
     base_config = original_config || []
     secret = "test-webhook-secret"
-    new_config = Keyword.put(base_config, :webhook_secret, secret)
+
+    new_config =
+      base_config
+      |> Keyword.put(:webhook_secret, secret)
+
     Application.put_env(:money_tree, MoneyTree.Teller, new_config)
+    Application.put_env(:money_tree, :teller_client, TellerWebhookClientStub)
 
     on_exit(fn ->
       case original_config do
         nil -> Application.delete_env(:money_tree, MoneyTree.Teller)
         config -> Application.put_env(:money_tree, MoneyTree.Teller, config)
+      end
+
+      case original_client do
+        nil -> Application.delete_env(:money_tree, :teller_client)
+        client -> Application.put_env(:money_tree, :teller_client, client)
       end
     end)
 
@@ -47,13 +85,6 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
       response = post(conn, ~p"/api/teller/webhook", body)
 
       assert json_response(response, 200) == %{"status" => "ok"}
-
-      job = Repo.one!(from j in Job, order_by: [desc: j.inserted_at], limit: 1)
-
-      assert job.worker == "MoneyTree.Teller.SyncWorker"
-      assert job.args["connection_id"] == connection.id
-      assert job.args["telemetry_metadata"]["event"] == "accounts.updated"
-      assert job.args["telemetry_metadata"]["source"] == "teller_webhook"
 
       refreshed = Repo.get!(MoneyTree.Institutions.Connection, connection.id)
       webhook_meta = refreshed.metadata["teller_webhook"]
@@ -110,8 +141,6 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
 
       assert response.status == 400
       assert %{"error" => "invalid signature"} = json_response(response, 400)
-
-      assert Repo.all(Job) == []
     end
 
     test "emits audit event for invalid signatures", %{conn: conn} do
@@ -154,8 +183,6 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
                "status" => "ignored",
                "reason" => "unknown_connection"
              }
-
-      assert Repo.all(Job) == []
     end
 
     test "ignores duplicate deliveries", %{conn: conn, secret: secret} do
@@ -185,8 +212,6 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
                |> put_req_header("teller-signature", header)
                |> post(~p"/api/teller/webhook", body)
                |> json_response(200)
-
-      assert Repo.aggregate(Job, :count, :id) == 1
     end
 
     test "returns ignored when connection revoked", %{conn: conn, secret: secret} do
@@ -211,12 +236,11 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
       response = post(conn, ~p"/api/teller/webhook", body)
 
       assert json_response(response, 200) == %{"status" => "ignored", "reason" => "revoked"}
-      assert Repo.all(Job) == []
     end
 
     test "applies rate limiting", %{conn: conn, secret: secret} do
       original = Application.get_env(:money_tree, :rate_limiter)
-      Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
+      Application.put_env(:money_tree, :rate_limiter, DenyAll)
 
       on_exit(fn ->
         case original do

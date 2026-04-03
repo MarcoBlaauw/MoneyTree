@@ -11,8 +11,12 @@ defmodule MoneyTree.Accounts do
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Accounts.AccountInvitation
   alias MoneyTree.Accounts.AccountMembership
+  alias MoneyTree.Accounts.MagicLinkToken
+  alias MoneyTree.Accounts.WebAuthnChallenge
+  alias MoneyTree.Accounts.WebAuthnCredential
   alias MoneyTree.Audit
   alias MoneyTree.Mailer
+  alias MoneyTree.Notifications
   alias MoneyTree.Repo
   alias MoneyTree.Sessions.Session
   alias MoneyTree.Transactions
@@ -22,6 +26,9 @@ defmodule MoneyTree.Accounts do
 
   @default_session_ttl 60 * 60 * 24 * 30
   @default_invitation_ttl 60 * 60 * 24 * 7
+  @default_magic_link_ttl 60 * 15
+  @default_webauthn_challenge_ttl 60 * 5
+  @default_webauthn_timeout_ms 60_000
 
   @default_user_page 1
   @default_user_per_page 25
@@ -112,6 +119,35 @@ defmodule MoneyTree.Accounts do
   end
 
   def fetch_user(_user_id, _opts), do: {:error, :not_found}
+
+  @doc """
+  Updates a user's editable profile fields.
+  """
+  @spec update_user_profile(User.t() | binary(), map()) ::
+          {:ok, User.t()} | {:error, :not_found | Changeset.t()}
+  def update_user_profile(user_or_id, attrs)
+
+  def update_user_profile(%User{} = user, attrs) when is_map(attrs) do
+    user
+    |> User.profile_changeset(attrs)
+    |> Repo.update()
+  end
+
+  def update_user_profile(user_id, attrs) when is_binary(user_id) and is_map(attrs) do
+    with {:ok, %User{} = user} <- fetch_user(user_id) do
+      update_user_profile(user, attrs)
+    end
+  end
+
+  def update_user_profile(_user_id, _attrs), do: {:error, :not_found}
+
+  @doc """
+  Returns a changeset for editing a user's profile.
+  """
+  @spec change_user_profile(User.t(), map()) :: Changeset.t()
+  def change_user_profile(%User{} = user, attrs \\ %{}) when is_map(attrs) do
+    User.profile_changeset(user, attrs)
+  end
 
   @doc """
   Updates a user's role, validating allowed values and recording an audit event.
@@ -337,6 +373,330 @@ defmodule MoneyTree.Accounts do
   def get_user_by_session_token(_), do: {:error, :invalid_token}
 
   @doc """
+  Requests a one-time magic login link for an existing user email.
+
+  This function intentionally returns `:ok` even when no matching user exists so
+  the web layer can avoid exposing account existence.
+  """
+  @spec request_magic_link(String.t(), map()) :: :ok | {:error, Changeset.t()}
+  def request_magic_link(email, attrs \\ %{}) when is_binary(email) do
+    case get_user_by_email(email) do
+      nil ->
+        Audit.log(:magic_link_requested_unknown_email, %{email: normalize_email(email)})
+        :ok
+
+      %User{} = user ->
+        token = generate_magic_link_token()
+        token_hash = hash_magic_link_token(token)
+        attrs = Map.new(attrs)
+        now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+        params = %{
+          user_id: user.id,
+          token_hash: token_hash,
+          expires_at:
+            Map.get(attrs, :expires_at) ||
+              Map.get(attrs, "expires_at") ||
+              DateTime.add(now, @default_magic_link_ttl, :second),
+          requested_ip: Map.get(attrs, :ip_address) || Map.get(attrs, "ip_address"),
+          requested_user_agent: Map.get(attrs, :user_agent) || Map.get(attrs, "user_agent"),
+          context: Map.get(attrs, :context) || Map.get(attrs, "context") || "web_magic_link"
+        }
+
+        Multi.new()
+        |> Multi.delete_all(
+          :cleanup,
+          from(
+            token in MagicLinkToken,
+            where:
+              token.user_id == ^user.id or token.expires_at < ^now or
+                not is_nil(token.consumed_at)
+          )
+        )
+        |> Multi.insert(:magic_link_token, MagicLinkToken.changeset(%MagicLinkToken{}, params))
+        |> Repo.transaction()
+        |> case do
+          {:ok, %{magic_link_token: magic_link_token}} ->
+            deliver_magic_link_email(user, token, magic_link_token)
+            Audit.log(:magic_link_requested, %{user_id: user.id})
+            :ok
+
+          {:error, :magic_link_token, %Changeset{} = changeset, _changes} ->
+            {:error, changeset}
+        end
+    end
+  end
+
+  @doc """
+  Consumes a one-time magic login token and returns the associated user.
+  """
+  @spec consume_magic_link(String.t()) ::
+          {:ok, User.t()} | {:error, :invalid_token | :expired | :already_used}
+  def consume_magic_link(token) when is_binary(token) do
+    token_hash = hash_magic_link_token(token)
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    query =
+      from magic_link in MagicLinkToken,
+        where: magic_link.token_hash == ^token_hash,
+        preload: [:user]
+
+    case Repo.one(query) do
+      nil ->
+        Audit.log(:magic_link_invalid, %{})
+        {:error, :invalid_token}
+
+      %MagicLinkToken{consumed_at: consumed_at} = magic_link when not is_nil(consumed_at) ->
+        Audit.log(:magic_link_already_used, %{user_id: magic_link.user_id})
+        {:error, :already_used}
+
+      %MagicLinkToken{} = magic_link ->
+        if DateTime.compare(magic_link.expires_at, now) == :lt do
+          Repo.delete(magic_link)
+          Audit.log(:magic_link_expired, %{user_id: magic_link.user_id})
+          {:error, :expired}
+        else
+          {:ok, _updated} =
+            magic_link
+            |> Changeset.change(consumed_at: now)
+            |> Repo.update()
+
+          Audit.log(:magic_link_consumed, %{user_id: magic_link.user_id})
+          {:ok, magic_link.user}
+        end
+    end
+  end
+
+  def consume_magic_link(_token), do: {:error, :invalid_token}
+
+  @doc """
+  Lists active WebAuthn credentials for the user.
+  """
+  @spec list_webauthn_credentials(User.t() | binary()) :: [WebAuthnCredential.t()]
+  def list_webauthn_credentials(user) do
+    user_id = normalize_user_id(user)
+
+    from(credential in WebAuthnCredential,
+      where: credential.user_id == ^user_id and is_nil(credential.revoked_at),
+      order_by: [desc: credential.inserted_at]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Persists a WebAuthn credential for future passkey or hardware-key sign-in.
+  """
+  @spec register_webauthn_credential(User.t() | binary(), map()) ::
+          {:ok, WebAuthnCredential.t()} | {:error, Changeset.t()}
+  def register_webauthn_credential(user, attrs) when is_map(attrs) do
+    user_id = normalize_user_id(user)
+
+    attrs =
+      attrs
+      |> Map.new()
+      |> normalize_webauthn_credential_attrs()
+      |> Map.put(:user_id, user_id)
+
+    %WebAuthnCredential{}
+    |> WebAuthnCredential.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Fetches a user by email for passwordless login flows.
+  """
+  @spec get_user_by_email(String.t()) :: User.t() | nil
+  def get_user_by_email(email) when is_binary(email) do
+    normalized_email = normalize_email(email)
+
+    from(u in User, where: fragment("LOWER(?)", u.email) == ^normalized_email)
+    |> Repo.one()
+  end
+
+  def get_user_by_email(_email), do: nil
+
+  @doc """
+  Revokes an existing WebAuthn credential for the supplied user.
+  """
+  @spec revoke_webauthn_credential(User.t() | binary(), binary()) ::
+          {:ok, WebAuthnCredential.t()} | {:error, :not_found}
+  def revoke_webauthn_credential(user, credential_id) when is_binary(credential_id) do
+    user_id = normalize_user_id(user)
+
+    query =
+      from(credential in WebAuthnCredential,
+        where:
+          credential.id == ^credential_id and credential.user_id == ^user_id and
+            is_nil(credential.revoked_at)
+      )
+
+    case Repo.one(query) do
+      nil ->
+        {:error, :not_found}
+
+      %WebAuthnCredential{} = credential ->
+        now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+        {:ok,
+         credential
+         |> Changeset.change(revoked_at: now)
+         |> Repo.update!()}
+    end
+  end
+
+  @doc """
+  Creates WebAuthn registration options and stores the one-time challenge.
+  """
+  @spec create_webauthn_registration_options(User.t(), map()) ::
+          {:ok, WebAuthnChallenge.t(), map()} | {:error, Changeset.t()}
+  def create_webauthn_registration_options(%User{} = user, attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    kind = normalize_webauthn_kind(Map.get(attrs, :kind) || Map.get(attrs, "kind"))
+    attachment = kind_to_attachment(kind)
+    origin = Map.get(attrs, :origin) || Map.get(attrs, "origin") || webauthn_origin()
+    rp_id = Map.get(attrs, :rp_id) || Map.get(attrs, "rp_id") || webauthn_rp_id()
+
+    challenge_options =
+      build_webauthn_challenge_options(
+        origin: origin,
+        rp_id: rp_id,
+        user_verification:
+          Map.get(attrs, :user_verification) || Map.get(attrs, "user_verification") || "preferred"
+      )
+
+    challenge_context = webauthn_adapter().new_registration_challenge(challenge_options)
+
+    params =
+      webauthn_challenge_params(user, challenge_context, %{
+        purpose: "registration",
+        context: Map.get(attrs, :context) || Map.get(attrs, "context") || "security_settings",
+        authenticator_attachment: attachment,
+        expires_at: DateTime.add(now, webauthn_challenge_ttl_seconds(), :second)
+      })
+
+    Multi.new()
+    |> Multi.delete_all(
+      :cleanup,
+      from(challenge_record in WebAuthnChallenge,
+        where:
+          challenge_record.user_id == ^user.id and
+            (challenge_record.expires_at < ^now or not is_nil(challenge_record.used_at))
+      )
+    )
+    |> Multi.insert(:challenge, WebAuthnChallenge.changeset(%WebAuthnChallenge{}, params))
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{challenge: challenge_record}} ->
+        {:ok, challenge_record, registration_options(user, challenge_record, challenge_context)}
+
+      {:error, :challenge, %Changeset{} = changeset, _changes} ->
+        {:error, changeset}
+    end
+  end
+
+  @doc """
+  Creates WebAuthn authentication options and stores the one-time challenge.
+  """
+  @spec create_webauthn_authentication_options(User.t(), map()) ::
+          {:ok, WebAuthnChallenge.t(), map()} | {:error, Changeset.t()}
+  def create_webauthn_authentication_options(%User{} = user, attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+    origin = Map.get(attrs, :origin) || Map.get(attrs, "origin") || webauthn_origin()
+    rp_id = Map.get(attrs, :rp_id) || Map.get(attrs, "rp_id") || webauthn_rp_id()
+
+    challenge_context =
+      webauthn_adapter().new_authentication_challenge(
+        build_webauthn_challenge_options(
+          origin: origin,
+          rp_id: rp_id,
+          user_verification:
+            Map.get(attrs, :user_verification) || Map.get(attrs, "user_verification") ||
+              "preferred",
+          allow_credentials: webauthn_allow_credentials(user)
+        )
+      )
+
+    params =
+      webauthn_challenge_params(user, challenge_context, %{
+        purpose: "authentication",
+        context: Map.get(attrs, :context) || Map.get(attrs, "context") || "security_settings",
+        expires_at: DateTime.add(now, webauthn_challenge_ttl_seconds(), :second)
+      })
+
+    Multi.new()
+    |> Multi.delete_all(
+      :cleanup,
+      from(challenge_record in WebAuthnChallenge,
+        where:
+          challenge_record.user_id == ^user.id and
+            (challenge_record.expires_at < ^now or not is_nil(challenge_record.used_at))
+      )
+    )
+    |> Multi.insert(:challenge, WebAuthnChallenge.changeset(%WebAuthnChallenge{}, params))
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{challenge: challenge_record}} ->
+        {:ok, challenge_record, authentication_options(user, challenge_record, challenge_context)}
+
+      {:error, :challenge, %Changeset{} = changeset, _changes} ->
+        {:error, changeset}
+    end
+  end
+
+  @doc """
+  Completes WebAuthn registration and persists the verified credential.
+  """
+  @spec complete_webauthn_registration(User.t(), binary(), map()) ::
+          {:ok, WebAuthnCredential.t()} | {:error, :not_found | :expired | :already_used | term()}
+  def complete_webauthn_registration(%User{} = user, challenge_id, attrs)
+      when is_binary(challenge_id) and is_map(attrs) do
+    with {:ok, challenge} <- fetch_webauthn_challenge(user, challenge_id, "registration"),
+         {:ok, challenge_context} <- build_registration_challenge_context(user, challenge),
+         {:ok, attestation_object} <-
+           fetch_response_binary(attrs, ["response", "attestationObject"]),
+         {:ok, client_data_json} <- fetch_response_binary(attrs, ["response", "clientDataJSON"]),
+         {:ok, registration} <-
+           webauthn_adapter().register(attestation_object, client_data_json, challenge_context),
+         {:ok, credential} <-
+           persist_verified_webauthn_credential(user, challenge, attrs, registration),
+         {:ok, _challenge} <- mark_webauthn_challenge_used(challenge) do
+      {:ok, credential}
+    end
+  end
+
+  @doc """
+  Completes WebAuthn authentication and returns the authenticated user.
+  """
+  @spec authenticate_with_webauthn(User.t(), binary(), map()) ::
+          {:ok, User.t()} | {:error, :not_found | :expired | :already_used | term()}
+  def authenticate_with_webauthn(%User{} = user, challenge_id, attrs)
+      when is_binary(challenge_id) and is_map(attrs) do
+    with {:ok, challenge} <- fetch_webauthn_challenge(user, challenge_id, "authentication"),
+         {:ok, challenge_context} <- build_authentication_challenge_context(user, challenge),
+         {:ok, credential_id} <- fetch_top_level_binary(attrs, "id"),
+         {:ok, authenticator_data} <-
+           fetch_response_binary(attrs, ["response", "authenticatorData"]),
+         {:ok, client_data_json} <- fetch_response_binary(attrs, ["response", "clientDataJSON"]),
+         {:ok, signature} <- fetch_response_binary(attrs, ["response", "signature"]),
+         {:ok, credential} <- fetch_matching_webauthn_credential(user, credential_id),
+         {:ok, _result} <-
+           webauthn_adapter().authenticate(
+             credential_id,
+             authenticator_data,
+             signature,
+             client_data_json,
+             challenge_context,
+             webauthn_allow_credentials(user)
+           ),
+         {:ok, _credential} <- touch_webauthn_credential(credential),
+         {:ok, _challenge} <- mark_webauthn_challenge_used(challenge) do
+      {:ok, user}
+    end
+  end
+
+  @doc """
   Returns the cookie name used for session tokens.
   """
   @spec session_cookie_name() :: String.t()
@@ -349,6 +709,24 @@ defmodule MoneyTree.Accounts do
   def session_ttl_seconds do
     Application.get_env(:money_tree, __MODULE__, [])
     |> Keyword.get(:session_ttl, @default_session_ttl)
+  end
+
+  @doc """
+  Returns the configured WebAuthn challenge TTL in seconds.
+  """
+  @spec webauthn_challenge_ttl_seconds() :: pos_integer()
+  def webauthn_challenge_ttl_seconds do
+    Application.get_env(:money_tree, __MODULE__, [])
+    |> Keyword.get(:webauthn_challenge_ttl, @default_webauthn_challenge_ttl)
+  end
+
+  @doc """
+  Returns the configured WebAuthn timeout in milliseconds.
+  """
+  @spec webauthn_timeout_ms() :: pos_integer()
+  def webauthn_timeout_ms do
+    Application.get_env(:money_tree, __MODULE__, [])
+    |> Keyword.get(:webauthn_timeout_ms, @default_webauthn_timeout_ms)
   end
 
   @doc """
@@ -388,9 +766,23 @@ defmodule MoneyTree.Accounts do
   @spec fetch_accessible_account(User.t() | binary(), binary(), keyword()) ::
           {:ok, Account.t()} | {:error, :not_found}
   def fetch_accessible_account(user, account_id, opts \\ []) do
+    user_id = normalize_user_id(user)
+
+    membership_query =
+      from membership in AccountMembership,
+        where:
+          membership.account_id == parent_as(:account).id and
+            membership.user_id == ^user_id and
+            is_nil(membership.revoked_at),
+        select: 1
+
     query =
-      accessible_accounts_query(user)
-      |> where([account], account.id == ^account_id)
+      from(account in Account,
+        as: :account,
+        where:
+          account.id == ^account_id and
+            (account.user_id == ^user_id or exists(membership_query))
+      )
       |> maybe_preload_accounts(opts)
 
     query =
@@ -562,10 +954,13 @@ defmodule MoneyTree.Accounts do
       currency: currency,
       assets: format_money(asset_total, currency, opts),
       assets_masked: mask_money(asset_total, currency, opts),
+      assets_decimal: asset_total,
       liabilities: format_money(liability_total, currency, opts),
       liabilities_masked: mask_money(liability_total, currency, opts),
+      liabilities_decimal: liability_total,
       net_worth: format_money(net_worth, currency, opts),
       net_worth_masked: mask_money(net_worth, currency, opts),
+      net_worth_decimal: net_worth,
       breakdown: %{
         assets: format_group_totals(asset_groups, opts),
         liabilities: format_group_totals(liability_groups, opts)
@@ -593,10 +988,13 @@ defmodule MoneyTree.Accounts do
       currency: currency,
       savings_total: format_money(savings_total, currency, opts),
       savings_total_masked: mask_money(savings_total, currency, opts),
+      savings_total_decimal: savings_total,
       investment_total: format_money(investment_total, currency, opts),
       investment_total_masked: mask_money(investment_total, currency, opts),
+      investment_total_decimal: investment_total,
       combined_total: format_money(combined_total, currency, opts),
       combined_total_masked: mask_money(combined_total, currency, opts),
+      combined_total_decimal: combined_total,
       savings_accounts: Enum.map(savings_accounts, &format_account_listing(&1, opts)),
       investment_accounts: Enum.map(investment_accounts, &format_account_listing(&1, opts))
     }
@@ -608,6 +1006,10 @@ defmodule MoneyTree.Accounts do
   @spec user_settings(User.t()) :: map()
   def user_settings(%User{} = user) do
     sessions = list_active_sessions(user)
+    notifications = Notifications.preference_snapshot(user)
+    credentials = list_webauthn_credentials(user)
+    passkeys = Enum.filter(credentials, &(&1.kind == "passkey"))
+    security_keys = Enum.filter(credentials, &(&1.kind == "security_key"))
 
     %{
       profile: %{
@@ -617,12 +1019,18 @@ defmodule MoneyTree.Accounts do
       },
       security: %{
         multi_factor_enabled: Map.get(user, :multi_factor_enabled, false),
-        last_login_at: latest_session_timestamp(sessions)
+        password_enabled: is_binary(user.password_hash) and user.password_hash != "",
+        magic_link_enabled: true,
+        passkeys_count: length(passkeys),
+        security_keys_count: length(security_keys),
+        passkeys: Enum.map(passkeys, &format_webauthn_credential/1),
+        security_keys: Enum.map(security_keys, &format_webauthn_credential/1),
+        last_login_at: latest_session_timestamp(sessions),
+        last_passkey_registered_at: latest_webauthn_timestamp(passkeys),
+        last_security_key_registered_at: latest_webauthn_timestamp(security_keys),
+        registration_ready: true
       },
-      notifications: %{
-        transfer_alerts: true,
-        security_alerts: true
-      },
+      notifications: notifications,
       sessions:
         Enum.map(sessions, fn session ->
           %{
@@ -707,6 +1115,366 @@ defmodule MoneyTree.Accounts do
   end
 
   defp apr_precision(opts), do: Keyword.get(opts, :apr_precision, 2)
+
+  defp registration_options(
+         %User{} = user,
+         %WebAuthnChallenge{} = challenge_record,
+         challenge_context
+       ) do
+    %{
+      challenge_id: challenge_record.id,
+      challenge: Base.url_encode64(challenge_context.challenge, padding: false),
+      rp: %{id: challenge_record.rp_id, name: webauthn_rp_name()},
+      user: %{
+        id: user_handle_for(user),
+        name: user.email,
+        displayName: user_display_name(user)
+      },
+      timeout: webauthn_timeout_ms(),
+      attestation: "none",
+      pubKeyCredParams: [
+        %{type: "public-key", alg: -7},
+        %{type: "public-key", alg: -257}
+      ],
+      authenticatorSelection:
+        compact_map(%{
+          authenticatorAttachment: challenge_record.authenticator_attachment,
+          residentKey: "preferred",
+          requireResidentKey: false,
+          userVerification: challenge_record.user_verification
+        }),
+      excludeCredentials:
+        Enum.map(list_webauthn_credentials(user), fn credential ->
+          compact_map(%{
+            type: "public-key",
+            id: Base.url_encode64(credential.credential_id, padding: false),
+            transports: credential.transports
+          })
+        end)
+    }
+  end
+
+  defp authentication_options(user, %WebAuthnChallenge{} = challenge_record, challenge_context) do
+    %{
+      challenge_id: challenge_record.id,
+      challenge: Base.url_encode64(challenge_context.challenge, padding: false),
+      rpId: challenge_record.rp_id,
+      timeout: webauthn_timeout_ms(),
+      userVerification: challenge_record.user_verification,
+      allowCredentials:
+        Enum.map(list_webauthn_credentials(user), fn credential ->
+          compact_map(%{
+            type: "public-key",
+            id: Base.url_encode64(credential.credential_id, padding: false),
+            transports: credential.transports
+          })
+        end)
+    }
+  end
+
+  defp format_webauthn_credential(%WebAuthnCredential{} = credential) do
+    %{
+      id: credential.id,
+      label: credential.label || default_webauthn_label(credential),
+      kind: credential.kind,
+      attachment: credential.attachment,
+      transports: credential.transports,
+      sign_count: credential.sign_count,
+      backed_up: credential.backed_up,
+      backup_eligible: credential.backup_eligible,
+      inserted_at: credential.inserted_at,
+      last_used_at: credential.last_used_at,
+      last_verified_at: credential.last_verified_at
+    }
+  end
+
+  defp format_webauthn_credential(_), do: %{}
+
+  defp default_webauthn_label(%WebAuthnCredential{kind: "security_key"}), do: "Security key"
+  defp default_webauthn_label(%WebAuthnCredential{}), do: "Passkey"
+
+  defp latest_webauthn_timestamp(credentials) do
+    credentials
+    |> Enum.map(& &1.inserted_at)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.max(DateTime, fn -> nil end)
+  end
+
+  defp normalize_webauthn_credential_attrs(attrs) do
+    attrs
+    |> maybe_decode_binary_field(:credential_id)
+    |> maybe_decode_binary_field("credential_id")
+    |> maybe_decode_binary_field(:public_key)
+    |> maybe_decode_binary_field("public_key")
+    |> maybe_decode_binary_field(:aaguid)
+    |> maybe_decode_binary_field("aaguid")
+    |> maybe_decode_binary_field(:user_handle)
+    |> maybe_decode_binary_field("user_handle")
+    |> normalize_webauthn_kind_field()
+  end
+
+  defp normalize_webauthn_kind_field(attrs) do
+    kind = Map.get(attrs, :kind) || Map.get(attrs, "kind")
+    normalized = normalize_webauthn_kind(kind)
+
+    attrs
+    |> Map.put(:kind, normalized)
+    |> Map.delete("kind")
+  end
+
+  defp maybe_decode_binary_field(attrs, key) do
+    case Map.fetch(attrs, key) do
+      {:ok, value} when is_binary(value) ->
+        case Base.url_decode64(value, padding: false) do
+          {:ok, decoded} -> Map.put(attrs, key, decoded)
+          :error -> attrs
+        end
+
+      _ ->
+        attrs
+    end
+  end
+
+  defp normalize_webauthn_kind("security_key"), do: "security_key"
+  defp normalize_webauthn_kind("security-key"), do: "security_key"
+  defp normalize_webauthn_kind(:security_key), do: "security_key"
+  defp normalize_webauthn_kind(_), do: "passkey"
+
+  defp kind_to_attachment("security_key"), do: "cross-platform"
+  defp kind_to_attachment(_), do: "platform"
+
+  defp webauthn_rp_name do
+    Application.get_env(:money_tree, __MODULE__, [])
+    |> Keyword.get(:webauthn_rp_name, "MoneyTree")
+  end
+
+  defp webauthn_rp_id do
+    Application.get_env(:money_tree, __MODULE__, [])
+    |> Keyword.get(:rp_id, endpoint_host())
+  end
+
+  defp webauthn_origin do
+    Application.get_env(:money_tree, __MODULE__, [])
+    |> Keyword.get(:origin, endpoint_origin())
+  end
+
+  defp endpoint_host do
+    Application.fetch_env!(:money_tree, MoneyTreeWeb.Endpoint)
+    |> Keyword.get(:url, [])
+    |> Keyword.get(:host, "localhost")
+  end
+
+  defp endpoint_origin do
+    endpoint_config = Application.fetch_env!(:money_tree, MoneyTreeWeb.Endpoint)
+    url_config = Keyword.get(endpoint_config, :url, [])
+    scheme = Keyword.get(url_config, :scheme, "http")
+    host = Keyword.get(url_config, :host, "localhost")
+    port = Keyword.get(url_config, :port)
+
+    case {scheme, port} do
+      {"http", 80} -> "#{scheme}://#{host}"
+      {"https", 443} -> "#{scheme}://#{host}"
+      {_, nil} -> "#{scheme}://#{host}"
+      _ -> "#{scheme}://#{host}:#{port}"
+    end
+  end
+
+  defp user_display_name(%User{encrypted_full_name: full_name, email: email}) do
+    case full_name && String.trim(full_name) do
+      nil -> email
+      "" -> email
+      name -> name
+    end
+  end
+
+  defp user_handle_for(%User{id: user_id}) do
+    :sha256
+    |> :crypto.hash("webauthn-user:" <> user_id)
+    |> Base.url_encode64(padding: false)
+  end
+
+  defp compact_map(map) do
+    map
+    |> Enum.reject(fn
+      {_key, nil} -> true
+      {_key, []} -> true
+      _ -> false
+    end)
+    |> Map.new()
+  end
+
+  defp webauthn_adapter do
+    Application.get_env(
+      :money_tree,
+      :webauthn_adapter,
+      MoneyTree.Accounts.WebAuthn.WaxAdapter
+    )
+  end
+
+  defp build_webauthn_challenge_options(extra) do
+    [
+      origin: webauthn_origin(),
+      rp_id: webauthn_rp_id(),
+      timeout: webauthn_challenge_ttl_seconds()
+    ]
+    |> Keyword.merge(extra)
+  end
+
+  defp webauthn_challenge_params(%User{} = user, challenge_context, attrs) do
+    attrs
+    |> Map.put(:user_id, user.id)
+    |> Map.put(:challenge, Base.url_encode64(challenge_context.challenge, padding: false))
+    |> Map.put(:rp_id, challenge_context.rp_id)
+    |> Map.put(:origin, challenge_context.origin)
+    |> Map.put(:user_verification, challenge_context.user_verification)
+  end
+
+  defp fetch_webauthn_challenge(%User{} = user, challenge_id, purpose) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    query =
+      from(challenge in WebAuthnChallenge,
+        where:
+          challenge.id == ^challenge_id and challenge.user_id == ^user.id and
+            challenge.purpose == ^purpose
+      )
+
+    case Repo.one(query) do
+      nil ->
+        {:error, :not_found}
+
+      %WebAuthnChallenge{used_at: used_at} when not is_nil(used_at) ->
+        {:error, :already_used}
+
+      %WebAuthnChallenge{} = challenge ->
+        if DateTime.compare(challenge.expires_at, now) == :lt do
+          Repo.delete(challenge)
+          {:error, :expired}
+        else
+          {:ok, challenge}
+        end
+    end
+  end
+
+  defp build_registration_challenge_context(_user, %WebAuthnChallenge{} = challenge) do
+    with {:ok, challenge_bytes} <- Base.url_decode64(challenge.challenge, padding: false) do
+      {:ok,
+       webauthn_adapter().new_registration_challenge(
+         build_webauthn_challenge_options(
+           user_verification: challenge.user_verification,
+           bytes: challenge_bytes
+         )
+       )}
+    end
+  end
+
+  defp build_authentication_challenge_context(user, %WebAuthnChallenge{} = challenge) do
+    with {:ok, challenge_bytes} <- Base.url_decode64(challenge.challenge, padding: false) do
+      {:ok,
+       webauthn_adapter().new_authentication_challenge(
+         build_webauthn_challenge_options(
+           user_verification: challenge.user_verification,
+           allow_credentials: webauthn_allow_credentials(user),
+           bytes: challenge_bytes
+         )
+       )}
+    end
+  end
+
+  defp fetch_response_binary(attrs, [root_key, field_key]) do
+    attrs
+    |> Map.get(root_key, %{})
+    |> case do
+      %{} = payload -> fetch_top_level_binary(payload, field_key)
+      _ -> {:error, :invalid_response}
+    end
+  end
+
+  defp fetch_top_level_binary(attrs, key) when is_map(attrs) do
+    case Map.get(attrs, key) do
+      value when is_binary(value) ->
+        Base.url_decode64(value, padding: false)
+
+      _ ->
+        {:error, :invalid_response}
+    end
+  end
+
+  defp persist_verified_webauthn_credential(%User{} = user, challenge, attrs, registration) do
+    kind = attachment_to_kind(challenge.authenticator_attachment)
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    register_webauthn_credential(user, %{
+      credential_id: registration.credential_id,
+      public_key: :erlang.term_to_binary(registration.public_key),
+      label: Map.get(attrs, "label") || default_label_for_kind(kind),
+      kind: kind,
+      aaguid: registration.aaguid,
+      sign_count: registration.sign_count,
+      attachment: challenge.authenticator_attachment,
+      transports: Map.get(attrs, "transports", []),
+      user_handle: Map.get(attrs, "userHandle") |> decode_optional_binary(),
+      last_used_at: now,
+      last_verified_at: now,
+      backup_eligible: Map.get(attrs, "backupEligible", false),
+      backed_up: Map.get(attrs, "backedUp", false)
+    })
+  end
+
+  defp fetch_matching_webauthn_credential(%User{} = user, credential_id) do
+    query =
+      from(credential in WebAuthnCredential,
+        where:
+          credential.user_id == ^user.id and credential.credential_id == ^credential_id and
+            is_nil(credential.revoked_at)
+      )
+
+    case Repo.one(query) do
+      nil -> {:error, :invalid_credentials}
+      credential -> {:ok, credential}
+    end
+  end
+
+  defp touch_webauthn_credential(%WebAuthnCredential{} = credential) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    {:ok,
+     credential
+     |> Changeset.change(last_used_at: now, last_verified_at: now)
+     |> Repo.update!()}
+  end
+
+  defp mark_webauthn_challenge_used(%WebAuthnChallenge{} = challenge) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    {:ok,
+     challenge
+     |> Changeset.change(used_at: now)
+     |> Repo.update!()}
+  end
+
+  defp webauthn_allow_credentials(user) do
+    user
+    |> list_webauthn_credentials()
+    |> Enum.map(fn credential ->
+      {credential.credential_id, :erlang.binary_to_term(credential.public_key)}
+    end)
+  end
+
+  defp attachment_to_kind("cross-platform"), do: "security_key"
+  defp attachment_to_kind(_), do: "passkey"
+
+  defp default_label_for_kind("security_key"), do: "Security key"
+  defp default_label_for_kind(_), do: "Passkey"
+
+  defp decode_optional_binary(value) when is_binary(value) do
+    case Base.url_decode64(value, padding: false) do
+      {:ok, decoded} -> decoded
+      :error -> nil
+    end
+  end
+
+  defp decode_optional_binary(_), do: nil
 
   defp account_summary(%Account{} = account, opts) do
     %{
@@ -856,7 +1624,8 @@ defmodule MoneyTree.Accounts do
       %{
         label: label,
         total: format_money(total, currency, opts),
-        total_masked: mask_money(total, currency, opts)
+        total_masked: mask_money(total, currency, opts),
+        total_decimal: total
       }
     end)
     |> Enum.sort_by(& &1.label)
@@ -971,6 +1740,13 @@ defmodule MoneyTree.Accounts do
   defp normalize_user_id(%User{id: id}) when is_binary(id), do: id
   defp normalize_user_id(id) when is_binary(id), do: id
 
+  defp stringify_keys(attrs) do
+    Map.new(attrs, fn
+      {key, value} when is_atom(key) -> {Atom.to_string(key), value}
+      {key, value} -> {key, value}
+    end)
+  end
+
   @doc """
   Creates a new invitation for the given account and sends a notification email.
   """
@@ -984,6 +1760,8 @@ defmodule MoneyTree.Accounts do
           {:ok, AccountInvitation.t(), String.t()} | {:error, term()}
   def create_account_invitation(%User{} = inviter, %Account{} = account, attrs)
       when is_map(attrs) do
+    attrs = stringify_keys(attrs)
+
     with :ok <- ensure_account_access(inviter.id, account),
          {:ok, email} <- fetch_email(attrs),
          :ok <- ensure_not_already_member(account.id, email),
@@ -993,13 +1771,13 @@ defmodule MoneyTree.Accounts do
 
       params =
         attrs
-        |> Map.drop([:token, "token"])
-        |> Map.put(:email, email)
-        |> Map.put(:expires_at, expires_at)
-        |> Map.put(:token_hash, hash_invitation_token(token))
-        |> Map.put(:account_id, account.id)
-        |> Map.put(:user_id, inviter.id)
-        |> Map.put_new(:status, :pending)
+        |> Map.drop(["token"])
+        |> Map.put("email", email)
+        |> Map.put("expires_at", expires_at)
+        |> Map.put("token_hash", hash_invitation_token(token))
+        |> Map.put("account_id", account.id)
+        |> Map.put("user_id", inviter.id)
+        |> Map.put_new("status", :pending)
 
       %AccountInvitation{}
       |> AccountInvitation.changeset(params)
@@ -1254,11 +2032,45 @@ defmodule MoneyTree.Accounts do
     :ok
   end
 
-  defp get_user_by_email(email) when is_binary(email) do
-    normalized_email = normalize_email(email)
+  defp deliver_magic_link_email(%User{} = user, token, %MagicLinkToken{} = magic_link_token) do
+    sender =
+      Application.get_env(
+        :money_tree,
+        :auth_sender,
+        Application.get_env(
+          :money_tree,
+          :invitation_sender,
+          {"MoneyTree", "no-reply@moneytree.app"}
+        )
+      )
 
-    from(u in User, where: fragment("LOWER(?)", u.email) == ^normalized_email)
-    |> Repo.one()
+    magic_link_base_url =
+      Application.get_env(
+        :money_tree,
+        :magic_link_base_url,
+        "http://localhost:4000/login/magic"
+      )
+
+    magic_link = magic_link_base_url <> "/" <> token
+
+    minutes =
+      magic_link_token.expires_at
+      |> DateTime.diff(magic_link_token.inserted_at || DateTime.utc_now(), :minute)
+      |> max(1)
+
+    body =
+      "Use this secure sign-in link to access MoneyTree:\n\n" <>
+        magic_link <>
+        "\n\nThis link expires in #{minutes} minutes and can only be used once."
+
+    Email.new()
+    |> Email.to(user.email)
+    |> Email.from(sender)
+    |> Email.subject("Your MoneyTree sign-in link")
+    |> Email.text_body(body)
+    |> Mailer.deliver()
+
+    :ok
   end
 
   defp normalize_user_pagination_opts(opts) when is_list(opts), do: opts
@@ -1475,6 +2287,14 @@ defmodule MoneyTree.Accounts do
   end
 
   defp hash_invitation_token(token) when is_binary(token) do
+    :crypto.hash(:sha256, token)
+  end
+
+  defp generate_magic_link_token do
+    generate_url_safe_token()
+  end
+
+  defp hash_magic_link_token(token) when is_binary(token) do
     :crypto.hash(:sha256, token)
   end
 

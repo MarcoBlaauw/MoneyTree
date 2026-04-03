@@ -31,6 +31,7 @@ config :money_tree, MoneyTreeWeb.Endpoint,
   server: false
 
 config :money_tree, MoneyTree.Mailer, adapter: Swoosh.Adapters.Test
+config :money_tree, :webauthn_adapter, MoneyTree.Accounts.WebAuthn.FakeAdapter
 
 config :swoosh, :api_client, false
 
@@ -38,6 +39,8 @@ config :money_tree, Oban,
   testing: :inline,
   queues: false,
   plugins: false
+
+config :money_tree, :disable_oban_tracing, true
 
 config :logger, level: :warning
 

@@ -12,6 +12,7 @@ defmodule MoneyTree.Teller.Client do
   @type request_option ::
           {:base_url, String.t()}
           | {:connect_base_url, String.t()}
+          | {:access_token, String.t()}
           | {:adapter, module() | {module(), keyword()}}
           | {:finch, module()}
           | {:timeout, non_neg_integer()}
@@ -29,12 +30,13 @@ defmodule MoneyTree.Teller.Client do
   @type t :: %__MODULE__{
           api_request: Req.Request.t(),
           connect_request: Req.Request.t(),
+          access_token: String.t() | nil,
           retry: keyword(),
           telemetry_metadata: map()
         }
 
   @enforce_keys [:api_request, :connect_request, :retry, :telemetry_metadata]
-  defstruct [:api_request, :connect_request, :retry, :telemetry_metadata]
+  defstruct [:api_request, :connect_request, :access_token, :retry, :telemetry_metadata]
 
   @default_headers [
     {"accept", "application/json"},
@@ -49,9 +51,6 @@ defmodule MoneyTree.Teller.Client do
     retry_transport_errors: true
   ]
 
-  @telemetry_event [:money_tree, :teller, :request]
-  @telemetry_span_event [:money_tree, :teller, :request, :span]
-
   @doc """
   Builds a new Teller client using application configuration.
 
@@ -62,8 +61,8 @@ defmodule MoneyTree.Teller.Client do
   def new(opts \\ []) do
     config = Application.fetch_env!(:money_tree, MoneyTree.Teller)
 
-    api_key = Keyword.fetch!(config, :api_key)
     api_host = Keyword.get(opts, :base_url, Keyword.fetch!(config, :api_host))
+    access_token = Keyword.get(opts, :access_token)
 
     connect_host =
       Keyword.get(opts, :connect_base_url, Keyword.get(config, :connect_host, api_host))
@@ -79,11 +78,7 @@ defmodule MoneyTree.Teller.Client do
       |> Map.new()
       |> Map.merge(Map.new(Keyword.get(opts, :telemetry_metadata, %{})))
 
-    base_headers =
-      @default_headers ++
-        [
-          {"authorization", "Basic " <> Base.encode64("#{api_key}:")}
-        ] ++ Keyword.get(opts, :headers, [])
+    base_headers = @default_headers ++ Keyword.get(opts, :headers, [])
 
     transport_opts =
       config
@@ -101,16 +96,14 @@ defmodule MoneyTree.Teller.Client do
         finch: finch,
         receive_timeout: timeout,
         connect_options: connect_options,
-        headers: base_headers,
-        telemetry_event: @telemetry_event,
-        telemetry_span_event: @telemetry_span_event,
-        telemetry_metadata: telemetry_metadata
+        headers: base_headers
       ]
       |> maybe_put_adapter(adapter)
 
     %__MODULE__{
       api_request: Req.new(Keyword.put(common_opts, :base_url, api_host)),
       connect_request: Req.new(Keyword.put(common_opts, :base_url, connect_host)),
+      access_token: normalize_access_token(access_token),
       retry: retry,
       telemetry_metadata: telemetry_metadata
     }
@@ -234,7 +227,10 @@ defmodule MoneyTree.Teller.Client do
   """
   @spec list_accounts(map()) :: {:ok, list()} | {:error, map()}
   def list_accounts(params) when is_map(params) do
-    new() |> list_accounts(params)
+    {access_token, params} = pop_access_token(params)
+
+    new(access_token: access_token)
+    |> list_accounts(params)
   end
 
   @doc false
@@ -258,7 +254,10 @@ defmodule MoneyTree.Teller.Client do
   @spec list_transactions(binary(), map()) :: {:ok, list()} | {:error, map()}
   def list_transactions(account_id, params \\ %{})
       when is_binary(account_id) and is_map(params) do
-    new() |> list_transactions(account_id, params)
+    {access_token, params} = pop_access_token(params)
+
+    new(access_token: access_token)
+    |> list_transactions(account_id, params)
   end
 
   @doc false
@@ -302,11 +301,19 @@ defmodule MoneyTree.Teller.Client do
       opts
       |> Keyword.put(:method, method)
       |> Keyword.put(:url, path)
-      |> Keyword.put(:telemetry_metadata, metadata)
+      |> maybe_put_authorization_header(client.access_token)
 
     request
     |> Req.Request.put_private(:money_tree_metadata, metadata)
     |> perform_with_retry(merged_opts, client.retry)
+  end
+
+  defp maybe_put_authorization_header(opts, nil), do: opts
+
+  defp maybe_put_authorization_header(opts, access_token) do
+    headers = Keyword.get(opts, :headers, [])
+    authorization = {"authorization", "Basic " <> Base.encode64("#{access_token}:")}
+    Keyword.put(opts, :headers, [authorization | headers])
   end
 
   defp perform_with_retry(request, opts, retry_opts, attempt \\ 1)
@@ -418,12 +425,35 @@ defmodule MoneyTree.Teller.Client do
 
   defp stringify_keys(_other), do: %{}
 
+  defp pop_access_token(params) when is_map(params) do
+    access_token =
+      params[:access_token] || params["access_token"] || params[:token] || params["token"]
+
+    cleaned_params =
+      params
+      |> Map.delete(:access_token)
+      |> Map.delete("access_token")
+      |> Map.delete(:token)
+      |> Map.delete("token")
+
+    {access_token, cleaned_params}
+  end
+
   defp normalize_retry(false), do: nil
   defp normalize_retry(:none), do: nil
   defp normalize_retry(nil), do: nil
   defp normalize_retry(retry) when is_map(retry), do: Map.to_list(retry)
   defp normalize_retry(retry) when is_list(retry), do: retry
   defp normalize_retry(_other), do: @default_retry
+
+  defp normalize_access_token(token) when is_binary(token) do
+    case String.trim(token) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp normalize_access_token(_token), do: nil
 
   defp maybe_put_application_id(params, nil), do: params
 

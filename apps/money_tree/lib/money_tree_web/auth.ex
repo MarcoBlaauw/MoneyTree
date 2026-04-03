@@ -6,12 +6,19 @@ defmodule MoneyTreeWeb.Auth do
   alias MoneyTree.Accounts
 
   @session_signing_salt "ueDhFrwe"
+  @browser_session_cookie_name "_money_tree_browser_session"
 
   @doc """
   Cookie name used to transport session tokens.
   """
   @spec session_cookie_name() :: String.t()
   def session_cookie_name, do: Accounts.session_cookie_name()
+
+  @doc """
+  Cookie name used by `Plug.Session` for browser session storage.
+  """
+  @spec browser_session_cookie_name() :: String.t()
+  def browser_session_cookie_name, do: @browser_session_cookie_name
 
   @doc """
   Signing salt shared between the browser session and LiveView websocket sessions.
@@ -26,7 +33,7 @@ defmodule MoneyTreeWeb.Auth do
   def session_plug_options do
     [
       store: :cookie,
-      key: session_cookie_name(),
+      key: browser_session_cookie_name(),
       signing_salt: session_signing_salt(),
       same_site: "Strict",
       http_only: true,

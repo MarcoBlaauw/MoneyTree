@@ -11,6 +11,9 @@ defmodule MoneyTree.Users.User do
   alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Encrypted.Binary
+  alias MoneyTree.Accounts.MagicLinkToken
+  alias MoneyTree.Accounts.WebAuthnChallenge
+  alias MoneyTree.Accounts.WebAuthnCredential
   alias MoneyTree.Sessions.Session
 
   @roles [:owner, :member, :advisor]
@@ -37,6 +40,9 @@ defmodule MoneyTree.Users.User do
     )
 
     has_many(:sessions, Session)
+    has_many(:magic_link_tokens, MagicLinkToken)
+    has_many(:webauthn_credentials, WebAuthnCredential)
+    has_many(:webauthn_challenges, WebAuthnChallenge)
 
     timestamps()
   end
@@ -66,6 +72,17 @@ defmodule MoneyTree.Users.User do
     |> cast(attrs, [:password])
     |> validate_required([:password])
     |> validate_password()
+  end
+
+  def profile_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:email, :encrypted_full_name])
+    |> validate_required([:email])
+    |> update_change(:email, &normalize_email/1)
+    |> validate_length(:email, max: 255)
+    |> validate_format(:email, ~r/^[^\s]+@[^\s]+$/)
+    |> validate_length(:encrypted_full_name, max: 255)
+    |> unique_constraint(:email)
   end
 
   def roles, do: @roles

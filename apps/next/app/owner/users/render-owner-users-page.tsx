@@ -3,7 +3,7 @@ import React from "react";
 import type { CurrentUserProfile } from "../../lib/current-user";
 import { getCurrentUser } from "../../lib/current-user";
 import type { FetchOwnerUsersOptions, OwnerUsersResult } from "../../lib/owner-users";
-import { getOwnerUsers } from "../../lib/owner-users";
+import { getOwnerUsers } from "../../lib/owner-users.server";
 import OwnerUsersClient from "./owner-users-client";
 
 type OwnerUsersPageOptions = {

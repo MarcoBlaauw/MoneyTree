@@ -65,7 +65,6 @@ end
 if config_env() == :prod do
   missing_teller_env =
     [
-      "TELLER_API_KEY",
       "TELLER_CONNECT_APPLICATION_ID",
       "TELLER_WEBHOOK_SECRET"
     ]
@@ -86,25 +85,213 @@ teller_env = fn key ->
   end
 end
 
-cert_file = teller_env.("TELLER_CERT_FILE") || teller_env.("TELLER_CERT_PATH")
-key_file = teller_env.("TELLER_KEY_FILE") || teller_env.("TELLER_KEY_PATH")
+resolve_runtime_path = fn path ->
+  path
+  |> Path.expand(File.cwd!())
+end
+
+validate_runtime_file! = fn path, label ->
+  expanded = resolve_runtime_path.(path)
+
+  if File.regular?(expanded) do
+    expanded
+  else
+    raise """
+    #{label} is configured as #{inspect(path)}, but no readable file exists at #{expanded}.
+    Update your .env to point at the correct Teller certificate/key path.
+    """
+  end
+end
+
+cert_file =
+  case teller_env.("TELLER_CERT_FILE") || teller_env.("TELLER_CERT_PATH") do
+    nil -> nil
+    path -> validate_runtime_file!.(path, "TELLER_CERT_FILE")
+  end
+
+key_file =
+  case teller_env.("TELLER_KEY_FILE") || teller_env.("TELLER_KEY_PATH") do
+    nil -> nil
+    path -> validate_runtime_file!.(path, "TELLER_KEY_FILE")
+  end
+
+cert_pem = teller_env.("TELLER_CERT_PEM")
+key_pem = teller_env.("TELLER_KEY_PEM")
+
+if config_env() == :prod do
+  cert_pair_present? =
+    (is_binary(cert_pem) and is_binary(key_pem)) or
+      (is_binary(cert_file) and is_binary(key_file))
+
+  if not cert_pair_present? do
+    raise """
+    Teller production configuration requires a client certificate and private key.
+    Set either TELLER_CERT_PEM and TELLER_KEY_PEM, or TELLER_CERT_FILE and TELLER_KEY_FILE.
+    """
+  end
+end
 
 teller_runtime_config =
   [
-    api_key: teller_env.("TELLER_API_KEY"),
     connect_application_id: teller_env.("TELLER_CONNECT_APPLICATION_ID"),
     webhook_secret: teller_env.("TELLER_WEBHOOK_SECRET"),
     api_host: teller_env.("TELLER_API_HOST"),
     connect_host: teller_env.("TELLER_CONNECT_HOST"),
     webhook_host: teller_env.("TELLER_WEBHOOK_HOST"),
-    client_cert_pem: teller_env.("TELLER_CERT_PEM"),
-    client_key_pem: teller_env.("TELLER_KEY_PEM"),
+    client_cert_pem: cert_pem,
+    client_key_pem: key_pem,
     client_cert_file: cert_file,
     client_key_file: key_file
   ]
   |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
 config :money_tree, MoneyTree.Teller, Keyword.merge(base_teller_config, teller_runtime_config)
+
+mailer_env = fn key ->
+  case System.get_env(key) do
+    nil -> nil
+    "" -> nil
+    value -> value
+  end
+end
+
+mail_from_name = mailer_env.("MAILER_FROM_NAME") || "MoneyTree"
+mail_from_email = mailer_env.("MAILER_FROM_EMAIL") || "no-reply@moneytree.app"
+
+config :money_tree, :notification_sender, {mail_from_name, mail_from_email}
+config :money_tree, :invitation_sender, {mail_from_name, mail_from_email}
+config :money_tree, :auth_sender, {mail_from_name, mail_from_email}
+
+if invitation_base_url = mailer_env.("INVITATION_BASE_URL") do
+  config :money_tree, :invitation_base_url, invitation_base_url
+end
+
+if magic_link_base_url = mailer_env.("MAGIC_LINK_BASE_URL") do
+  config :money_tree, :magic_link_base_url, magic_link_base_url
+end
+
+webauthn_runtime_config =
+  [
+    rp_id: mailer_env.("WEBAUTHN_RP_ID"),
+    rp_name: mailer_env.("WEBAUTHN_RP_NAME"),
+    origin: mailer_env.("WEBAUTHN_ORIGIN")
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+if webauthn_runtime_config != [] do
+  base_accounts_config = Application.get_env(:money_tree, MoneyTree.Accounts, [])
+
+  config :money_tree,
+         MoneyTree.Accounts,
+         Keyword.merge(base_accounts_config, webauthn_runtime_config)
+end
+
+smtp_enabled? =
+  config_env() == :prod or
+    is_binary(mailer_env.("MAILER_SMTP_HOST")) or
+    is_binary(mailer_env.("MAILER_SMTP_USERNAME"))
+
+if smtp_enabled? do
+  smtp_port =
+    case mailer_env.("MAILER_SMTP_PORT") do
+      nil -> if config_env() == :prod, do: 587, else: 25
+      value -> String.to_integer(value)
+    end
+
+  smtp_ssl? = mailer_env.("MAILER_SMTP_SSL") in ~w(true 1)
+
+  _smtp_tls =
+    mailer_env.("MAILER_SMTP_TLS") || if(config_env() == :prod, do: "if_available", else: "never")
+
+  smtp_auth =
+    case mailer_env.("MAILER_SMTP_AUTH") do
+      nil ->
+        :always
+
+      "always" ->
+        :always
+
+      "never" ->
+        :never
+
+      "if_available" ->
+        :if_available
+
+      other ->
+        raise "MAILER_SMTP_AUTH must be one of always, never, if_available; got: #{inspect(other)}"
+    end
+
+  relay =
+    mailer_env.("MAILER_SMTP_HOST") ||
+      if config_env() == :prod do
+        raise """
+        MAILER_SMTP_HOST is required for production email delivery.
+        Use your Amazon SES SMTP endpoint in production.
+        """
+      else
+        nil
+      end
+
+  if config_env() == :prod and
+       (mailer_env.("MAILER_SMTP_USERNAME") in [nil, ""] or
+          mailer_env.("MAILER_SMTP_PASSWORD") in [nil, ""]) do
+    raise """
+    MAILER_SMTP_USERNAME and MAILER_SMTP_PASSWORD are required for production email delivery.
+    Use Amazon SES SMTP credentials in production.
+    """
+  end
+
+  if relay do
+    verify_mode =
+      case mailer_env.("MAILER_SMTP_VERIFY") do
+        nil ->
+          :verify_peer
+
+        "peer" ->
+          :verify_peer
+
+        "verify_peer" ->
+          :verify_peer
+
+        "none" ->
+          :verify_none
+
+        "verify_none" ->
+          :verify_none
+
+        other ->
+          raise "MAILER_SMTP_VERIFY must be one of peer, verify_peer, none, verify_none; got: #{inspect(other)}"
+      end
+
+    ssl_options =
+      case verify_mode do
+        :verify_peer -> [verify: :verify_peer]
+        :verify_none -> [verify: :verify_none]
+      end
+
+    auth_config =
+      if smtp_auth == :never do
+        nil
+      else
+        [
+          username: mailer_env.("MAILER_SMTP_USERNAME"),
+          password: mailer_env.("MAILER_SMTP_PASSWORD")
+        ]
+      end
+
+    mailer_config = [
+      adapter: Swoosh.Adapters.Mua,
+      relay: relay,
+      port: smtp_port,
+      protocol: if(smtp_ssl?, do: :ssl, else: :tcp),
+      auth: auth_config,
+      mx: false,
+      ssl: ssl_options
+    ]
+
+    config :money_tree, MoneyTree.Mailer, mailer_config
+  end
+end
 
 if config_env() != :test do
   default_limit = System.get_env("OBAN_DEFAULT_LIMIT") || "10"

@@ -81,14 +81,29 @@ docker compose stop db
 
 The API will be available on [http://localhost:4000](http://localhost:4000).
 
+### Email Delivery
+
+MoneyTree uses Swoosh for invitations, notifications, and future authentication emails. In development,
+you can either keep the default local mailbox preview or point the app at your own SMTP server with the
+`MAILER_SMTP_*` variables from [.env.example](./.env.example). In production, use Amazon SES SMTP
+credentials and set:
+
+- `MAILER_SMTP_HOST`
+- `MAILER_SMTP_PORT`
+- `MAILER_SMTP_USERNAME`
+- `MAILER_SMTP_PASSWORD`
+- `MAILER_FROM_EMAIL`
+
+Development mailbox preview remains available at `/dev/mailbox` when dev routes are enabled.
+
 ### Teller Integration
 
 MoneyTree ships with a Teller integration for account aggregation. Teller separates sandbox and production credentials, so
 start by creating a sandbox account at [Teller](https://teller.io) and generating the following values from the Console:
 
-- **API key** – used for direct Teller API calls (`TELLER_API_KEY`).
 - **Connect application ID** – embedded in Connect URLs (`TELLER_CONNECT_APPLICATION_ID`).
 - **Webhook secret** – verifies Teller webhook signatures (`TELLER_WEBHOOK_SECRET`).
+- **Client certificate and private key** – required for Teller mTLS (`TELLER_CERT_PEM`/`TELLER_KEY_PEM` or `TELLER_CERT_FILE`/`TELLER_KEY_FILE`).
 
 Store the sandbox values in `.env` (see `.env.example` for details) and never commit them to version control. When you promote to
 production, rotate the variables and restart your deployment so the new secrets take effect.

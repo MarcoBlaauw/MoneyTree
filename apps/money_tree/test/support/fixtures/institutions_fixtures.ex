@@ -30,7 +30,7 @@ defmodule MoneyTree.InstitutionsFixtures do
     attrs = Map.drop(Map.new(attrs), [:institution])
 
     default = %{
-      encrypted_credentials: "{}",
+      encrypted_credentials: Jason.encode!(%{"access_token" => "fixture-access-token"}),
       metadata: %{"status" => "active", "provider" => "teller"},
       provider: "teller",
       provider_metadata: %{},

@@ -15,7 +15,7 @@ defmodule MoneyTree.Recurring do
   alias MoneyTree.Transactions.Transaction
   alias Oban
 
-  @lookback_days 180
+  @lookback_days 365
   @min_series_transactions 3
 
   @spec schedule_detection(Connection.t()) :: :ok | {:error, term()}
@@ -85,10 +85,16 @@ defmodule MoneyTree.Recurring do
     Transaction
     |> join(:inner, [t], a in Account, on: t.account_id == a.id)
     |> where([t, a], a.user_id == ^user_id)
-    |> where([t, a], is_nil(^connection_id) or a.institution_connection_id == ^connection_id)
+    |> maybe_filter_connection(connection_id)
     |> where([t], t.posted_at >= ^cutoff)
     |> where([t], t.status in ["posted", "pending"])
     |> select([t, a], %{t | account: a})
+  end
+
+  defp maybe_filter_connection(query, nil), do: query
+
+  defp maybe_filter_connection(query, connection_id) do
+    where(query, [_t, a], a.institution_connection_id == ^connection_id)
   end
 
   defp deduplicate_pending_posted_pairs(transactions) do
@@ -141,7 +147,8 @@ defmodule MoneyTree.Recurring do
     amount_confidence = amount_confidence(amounts, avg_amount)
 
     last_tx = List.last(txns)
-    next_expected_at = DateTime.add(last_tx.posted_at, cadence_days * 86_400, :second)
+    last_seen_at = DateTime.truncate(last_tx.posted_at, :second)
+    next_expected_at = DateTime.add(last_seen_at, cadence_days * 86_400, :second)
 
     confidence =
       interval_confidence
@@ -164,7 +171,7 @@ defmodule MoneyTree.Recurring do
       expected_amount_max: max_amount,
       confidence: confidence,
       status: status,
-      last_seen_at: last_tx.posted_at,
+      last_seen_at: last_seen_at,
       next_expected_at: next_expected_at
     }
 
@@ -183,7 +190,7 @@ defmodule MoneyTree.Recurring do
           expected_amount_max: max_amount,
           confidence: confidence,
           status: status,
-          last_seen_at: last_tx.posted_at,
+          last_seen_at: last_seen_at,
           next_expected_at: next_expected_at,
           updated_at: DateTime.utc_now()
         ]
@@ -195,11 +202,16 @@ defmodule MoneyTree.Recurring do
   defp process_anomalies(%Series{} = series, txns) do
     now = DateTime.utc_now()
     window_end = DateTime.add(series.next_expected_at, series.expected_window_days * 86_400, :second)
+    expense_series? =
+      case List.last(txns) do
+        %{amount: %D{} = amount} -> D.compare(amount, D.new("0")) == :lt
+        _ -> false
+      end
 
     active_types = []
 
     active_types =
-      if DateTime.compare(now, window_end) == :gt do
+      if expense_series? and DateTime.compare(now, window_end) == :gt do
         record_anomaly(series, "missing_cycle", DateTime.to_date(series.next_expected_at), %{now: now})
         ["missing_cycle" | active_types]
       else
@@ -207,7 +219,9 @@ defmodule MoneyTree.Recurring do
       end
 
     active_types =
-      if DateTime.compare(now, series.next_expected_at) == :gt and DateTime.compare(now, window_end) != :gt do
+      if expense_series? and
+           DateTime.compare(now, series.next_expected_at) == :gt and
+           DateTime.compare(now, window_end) != :gt do
         record_anomaly(series, "late_cycle", DateTime.to_date(series.next_expected_at), %{now: now})
         ["late_cycle" | active_types]
       else
@@ -220,15 +234,29 @@ defmodule MoneyTree.Recurring do
 
       latest ->
         latest_abs = D.abs(latest.amount)
+        historical_amounts =
+          txns
+          |> Enum.drop(-1)
+          |> Enum.map(fn tx -> D.abs(tx.amount) end)
 
-        below_min = series.expected_amount_min && D.compare(latest_abs, series.expected_amount_min) == :lt
-        above_max = series.expected_amount_max && D.compare(latest_abs, series.expected_amount_max) == :gt
+        {expected_min, expected_max} =
+          case historical_amounts do
+            [] ->
+              {series.expected_amount_min, series.expected_amount_max}
+
+            amounts ->
+              average = average_decimal(amounts)
+              {expected_min(amounts, average), expected_max(amounts, average)}
+          end
+
+        below_min = expected_min && D.compare(latest_abs, expected_min) == :lt
+        above_max = expected_max && D.compare(latest_abs, expected_max) == :gt
 
         if below_min or above_max do
           record_anomaly(series, "unusual_amount", DateTime.to_date(latest.posted_at), %{
             observed_amount: latest_abs,
-            expected_amount_min: series.expected_amount_min,
-            expected_amount_max: series.expected_amount_max,
+            expected_amount_min: expected_min,
+            expected_amount_max: expected_max,
             transaction_id: latest.id
           })
 

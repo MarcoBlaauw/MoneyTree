@@ -13,7 +13,7 @@ type SortState = {
   direction: "asc" | "desc";
 };
 
-const BASE_ROLES = ["owner", "advisor", "member"] as const;
+const BASE_ROLES: string[] = ["owner", "advisor", "member"];
 
 function useOptionalRouter() {
   try {

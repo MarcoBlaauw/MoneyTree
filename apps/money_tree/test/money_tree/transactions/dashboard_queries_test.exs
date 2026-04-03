@@ -44,7 +44,9 @@ defmodule MoneyTree.Transactions.DashboardQueriesTest do
     assert summary.monthly_total_decimal == Decimal.new("30.00")
   end
 
-  defp insert_transaction(%Account{} = account, amount, opts \\ %{}) do
+  defp insert_transaction(%Account{} = account, amount, opts \\ []) do
+    opts = Enum.into(opts, %{})
+
     params = %{
       external_id: System.unique_integer([:positive]) |> Integer.to_string(),
       amount: amount,

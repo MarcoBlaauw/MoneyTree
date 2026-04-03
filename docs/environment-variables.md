@@ -46,23 +46,47 @@ source .env
 | --- | --- | --- | --- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | — | OpenTelemetry collector endpoint for exporting traces and metrics. Leave blank to disable external export. |
 
-## Teller integration
+## Mail delivery
 
-Teller credentials are mandatory in production environments. Use sandbox values for development and
-never commit secrets to the repository.
+MoneyTree currently uses Swoosh for all email delivery. Development can use a local or custom SMTP server.
+Production should use Amazon SES SMTP credentials so invitations, notifications, and future magic-link
+authentication emails share one delivery path.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `TELLER_API_KEY` | Yes (production) | — | Teller API key for direct API requests. Obtain from the Teller Console. |
+| `MAILER_FROM_NAME` | No | `MoneyTree` | Display name used in the From header. |
+| `MAILER_FROM_EMAIL` | No | `no-reply@moneytree.app` | Sender address used for invitations, notifications, and future auth emails. |
+| `INVITATION_BASE_URL` | No | app default | Override the base URL used in invitation emails. |
+| `MAGIC_LINK_BASE_URL` | No | app default | Override the base URL used in email sign-in links. |
+| `WEBAUTHN_RP_ID` | No | endpoint host | Override the WebAuthn relying-party ID if it differs from the Phoenix endpoint host. |
+| `WEBAUTHN_RP_NAME` | No | `MoneyTree` | Display name shown during passkey and hardware-security-key registration. |
+| `WEBAUTHN_ORIGIN` | No | endpoint origin | Override the WebAuthn origin when the public browser origin differs from the endpoint defaults. |
+| `MAILER_SMTP_HOST` | Yes (production) | — | SMTP relay hostname. In production, use the Amazon SES SMTP endpoint for your AWS region. |
+| `MAILER_SMTP_PORT` | No | `587` in production | SMTP port. |
+| `MAILER_SMTP_USERNAME` | Yes (production) | — | SMTP username. In production, use SES SMTP credentials rather than AWS access keys. |
+| `MAILER_SMTP_PASSWORD` | Yes (production) | — | SMTP password. |
+| `MAILER_SMTP_TLS` | No | `if_available` in production | TLS mode for Swoosh SMTP adapter: `always`, `never`, or `if_available`. |
+| `MAILER_SMTP_SSL` | No | `false` | Whether to use implicit SSL/TLS. |
+| `MAILER_SMTP_AUTH` | No | `always` | SMTP auth policy: `always`, `never`, or `if_available`. |
+| `MAILER_SMTP_VERIFY` | No | `verify_peer` | SMTP TLS certificate verification mode. Use `none` only for development against a server with a non-standard certificate chain. |
+
+## Teller integration
+
+Teller integration requires app-level Connect/webhook configuration plus a client certificate/private
+key pair for mTLS. End-user account access tokens are not configured globally; they are returned by
+Teller during the exchange flow and stored on each institution connection.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
 | `TELLER_CONNECT_APPLICATION_ID` | Yes (production) | — | Connect application ID embedded in Teller Connect sessions. |
 | `TELLER_WEBHOOK_SECRET` | Yes (production) | — | Webhook signing secret used to verify Teller webhook payloads. |
 | `TELLER_API_HOST` | No | Teller default | Override the Teller API base URL when instructed by Teller support. |
 | `TELLER_CONNECT_HOST` | No | Teller default | Override the Teller Connect base URL for non-standard environments. |
 | `TELLER_WEBHOOK_HOST` | No | Teller default | Override the webhook host when using alternative tunnels or sandbox endpoints. |
-| `TELLER_CERT_PEM` | No | — | Inline PEM-encoded client certificate for mutual TLS. Provide either this or `TELLER_CERT_FILE`. |
-| `TELLER_KEY_PEM` | No | — | Inline PEM-encoded private key that pairs with `TELLER_CERT_PEM`. |
-| `TELLER_CERT_FILE` | No | — | Filesystem path to the client certificate (PEM) used for mutual TLS. |
-| `TELLER_KEY_FILE` | No | — | Filesystem path to the client private key (PEM). |
+| `TELLER_CERT_PEM` | Yes (production, unless using files) | — | Inline PEM-encoded client certificate for Teller mTLS. Provide either this and `TELLER_KEY_PEM`, or file-based equivalents. |
+| `TELLER_KEY_PEM` | Yes (production, unless using files) | — | Inline PEM-encoded private key that pairs with `TELLER_CERT_PEM`. |
+| `TELLER_CERT_FILE` | Yes (production, unless using PEM vars) | — | Filesystem path to the client certificate (PEM) used for Teller mTLS. |
+| `TELLER_KEY_FILE` | Yes (production, unless using PEM vars) | — | Filesystem path to the client private key (PEM). |
 
 ## Additional tips
 

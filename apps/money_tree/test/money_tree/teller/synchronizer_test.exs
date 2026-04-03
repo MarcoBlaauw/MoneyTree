@@ -246,5 +246,27 @@ defmodule MoneyTree.Teller.SynchronizerTest do
 
       assert refreshed.last_sync_error_at
     end
+
+    test "fails fast when stored Teller credentials do not include an access token" do
+      user = AccountsFixtures.user_fixture()
+
+      connection =
+        InstitutionsFixtures.connection_fixture(user, %{
+          encrypted_credentials: Jason.encode!(%{"user_id" => "user-without-token"})
+        })
+
+      assert {:error, {:missing_access_token, %{connection_id: connection_id}}} =
+               Synchronizer.sync(connection, client: MoneyTree.Teller.Client)
+
+      assert connection_id == connection.id
+
+      refreshed = Repo.get!(Connection, connection.id)
+
+      error_type =
+        Map.get(refreshed.last_sync_error, :type) || Map.get(refreshed.last_sync_error, "type")
+
+      assert error_type == :missing_access_token or error_type == "missing_access_token"
+      assert refreshed.last_sync_error_at
+    end
   end
 end

@@ -13,7 +13,11 @@ config :money_tree, MoneyTree.Repo,
   migration_foreign_key: [type: :binary_id],
   migration_timestamps: [type: :utc_datetime_usec]
 
-config :money_tree, MoneyTree.Accounts, session_ttl: 60 * 60 * 24 * 30
+config :money_tree, MoneyTree.Accounts,
+  session_ttl: 60 * 60 * 24 * 30,
+  webauthn_rp_name: "MoneyTree",
+  webauthn_timeout_ms: 60_000,
+  webauthn_challenge_ttl: 60 * 5
 
 config :money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop
 config :money_tree, :secure_cookies, true
@@ -55,7 +59,8 @@ config :money_tree, Oban,
     {Oban.Plugins.Lifeline, rescue_after: 60},
     {Oban.Plugins.Cron,
      crontab: [
-       {"*/30 * * * *", MoneyTree.Teller.SyncWorker, args: %{"mode" => "dispatch"}}
+       {"*/30 * * * *", MoneyTree.Teller.SyncWorker, args: %{"mode" => "dispatch"}},
+       {"0 7 * * *", MoneyTree.Obligations.CheckWorker, args: %{}}
      ]}
   ]
 
@@ -64,6 +69,14 @@ config :money_tree, :opentelemetry_exporter, []
 config :req, :default_options, finch: MoneyTree.Finch
 
 config :money_tree, MoneyTree.Mailer, adapter: Swoosh.Adapters.Local
+config :money_tree, :notification_sender, {"MoneyTree", "no-reply@moneytree.app"}
+
+config :money_tree,
+       :notification_destination_resolver,
+       MoneyTree.Notifications.NullDestinationResolver
+
+config :money_tree, :notification_sms_adapter, MoneyTree.Notifications.SMS.DisabledAdapter
+config :money_tree, :notification_push_adapter, MoneyTree.Notifications.Push.DisabledAdapter
 
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",

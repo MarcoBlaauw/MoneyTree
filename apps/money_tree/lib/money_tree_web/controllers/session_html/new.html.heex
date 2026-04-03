@@ -1,15 +1,54 @@
 <section class="mx-auto mt-24 w-full max-w-md space-y-8">
   <div class="space-y-2 text-center">
     <h1 class="text-3xl font-semibold text-zinc-900">Sign in to MoneyTree</h1>
-    <p class="text-sm text-zinc-600">Use your account credentials to access the app.</p>
+    <p class="text-sm text-zinc-600">Use a one-time email link or your existing password while passwordless sign-in is being rolled out.</p>
   </div>
 
-  <.simple_form for={@form} action={~p"/login"} method="post" class="space-y-4">
-    <.input field={@form[:email]} type={:email} label="Email" />
-    <.input field={@form[:password]} type={:password} label="Password" />
+  <div class="space-y-6">
+    <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm" data-webauthn-login>
+      <div class="space-y-2">
+        <h2 class="text-lg font-semibold text-zinc-900">Passkey or security key</h2>
+        <p class="text-sm text-zinc-600">Use a saved passkey or hardware key for passwordless sign-in.</p>
+      </div>
 
-    <.button class="w-full justify-center">Sign in</.button>
-  </.simple_form>
+      <form class="mt-4 space-y-4" data-webauthn-login-form>
+        <label class="block text-sm text-zinc-700">
+          <span class="mb-1 block font-medium">Email</span>
+          <input class="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm" type="email" name="email" autocomplete="username webauthn" required />
+        </label>
+
+        <button class="btn w-full justify-center" type="submit">Sign in with passkey</button>
+        <p class="text-sm text-zinc-500" data-webauthn-login-status></p>
+      </form>
+    </div>
+
+    <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <div class="space-y-2">
+        <h2 class="text-lg font-semibold text-zinc-900">Email sign-in link</h2>
+        <p class="text-sm text-zinc-600">Recommended. We will email you a one-time link that signs you in securely.</p>
+      </div>
+
+      <.simple_form for={@magic_link_form} action={~p"/login/magic"} method="post" class="mt-4 space-y-4">
+        <.input field={@magic_link_form[:email]} type={:email} label="Email" />
+
+        <.button class="w-full justify-center">Email me a sign-in link</.button>
+      </.simple_form>
+    </div>
+
+    <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <div class="space-y-2">
+        <h2 class="text-lg font-semibold text-zinc-900">Password sign-in</h2>
+        <p class="text-sm text-zinc-600">Temporary compatibility path while passkeys and hardware keys are being introduced.</p>
+      </div>
+
+      <.simple_form for={@form} action={~p"/login"} method="post" class="mt-4 space-y-4">
+        <.input field={@form[:email]} type={:email} label="Email" />
+        <.input field={@form[:password]} type={:password} label="Password" />
+
+        <.button class="w-full justify-center">Sign in with password</.button>
+      </.simple_form>
+    </div>
+  </div>
 
   <p class="text-center text-sm text-zinc-500">
     Don't have an account? Contact your administrator for an invitation.

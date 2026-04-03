@@ -1,1 +1,4 @@
+@config "../tailwind.config.cjs";
+@source "../../lib/**/*.{ex,heex,leex,sface}";
+@source "../js/**/*.{js,ts,jsx,tsx}";
 @import "@money-tree/ui/index.css";

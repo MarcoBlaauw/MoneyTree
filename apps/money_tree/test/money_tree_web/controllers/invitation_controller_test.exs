@@ -2,6 +2,7 @@ defmodule MoneyTreeWeb.InvitationControllerTest do
   use MoneyTreeWeb.ConnCase
 
   import MoneyTree.AccountsFixtures
+  import Swoosh.TestAssertions
 
   alias MoneyTree.Accounts
   alias MoneyTree.Accounts.AccountInvitation
@@ -9,12 +10,11 @@ defmodule MoneyTreeWeb.InvitationControllerTest do
   alias MoneyTree.Repo
   alias MoneyTree.Users.User
   alias MoneyTreeWeb.Auth
-  alias Swoosh.Adapters.Test, as: SwooshTestAdapter
 
   @session_cookie Auth.session_cookie_name()
 
   setup %{conn: conn} do
-    SwooshTestAdapter.reset()
+    flush_emails()
     inviter = user_fixture(%{password: "InviterPass123!"})
     account = account_fixture(inviter)
     %{token: token} = session_fixture(inviter)
@@ -34,8 +34,7 @@ defmodule MoneyTreeWeb.InvitationControllerTest do
       assert data["status"] == "pending"
       assert is_binary(token)
 
-      [sent] = SwooshTestAdapter.deliveries()
-      assert Enum.any?(sent.to, fn {_name, address} -> address == "controller@example.com" end)
+      assert_email_sent(to: "controller@example.com")
     end
 
     test "rejects duplicate invitations", %{conn: conn, account: account} do
@@ -64,7 +63,7 @@ defmodule MoneyTreeWeb.InvitationControllerTest do
     test "accepts invitation with existing user", %{account: account, inviter: inviter} do
       invitee = user_fixture(%{email: "accept-existing@example.com", password: "AcceptPass123!"})
 
-      {:ok, invitation, token} =
+      {:ok, _invitation, token} =
         Accounts.create_account_invitation(inviter, account, %{email: invitee.email})
 
       conn = build_conn()
@@ -82,7 +81,7 @@ defmodule MoneyTreeWeb.InvitationControllerTest do
     test "creates new user on acceptance", %{account: account, inviter: inviter} do
       email = "accept-new@example.com"
 
-      {:ok, invitation, token} =
+      {:ok, _invitation, token} =
         Accounts.create_account_invitation(inviter, account, %{email: email})
 
       conn = build_conn()
@@ -136,6 +135,15 @@ defmodule MoneyTreeWeb.InvitationControllerTest do
 
       updated = Repo.get!(AccountInvitation, invitation.id)
       assert updated.status == :revoked
+    end
+  end
+
+  defp flush_emails do
+    receive do
+      {:email, _email} -> flush_emails()
+      {:emails, _emails} -> flush_emails()
+    after
+      0 -> :ok
     end
   end
 end

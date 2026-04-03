@@ -63,16 +63,16 @@ defmodule MoneyTree.Transactions do
   def recent_with_color(user, opts \\ []) do
     limit = Keyword.get(opts, :limit, 10)
 
-    Accounts.accessible_accounts_query(user)
-    |> join(:inner, [account], transaction in Transaction,
+    from(transaction in Transaction,
+      join: account in subquery(Accounts.accessible_accounts_query(user)),
       on: transaction.account_id == account.id
     )
-    |> order_by([_account, transaction],
+    |> order_by([transaction, _account],
       desc: transaction.posted_at,
       desc: transaction.inserted_at
     )
     |> limit(^limit)
-    |> preload([_account, transaction], account: ^preload_account_fields())
+    |> preload([transaction, _account], account: ^preload_account_fields())
     |> Repo.all()
     |> Enum.map(&build_recent_entry(&1, opts))
   end
@@ -115,12 +115,12 @@ defmodule MoneyTree.Transactions do
       from(transaction in Transaction,
         join: account in subquery(Accounts.accessible_accounts_query(user)),
         on: transaction.account_id == account.id,
-        where: is_nil(^since) or is_nil(transaction.posted_at) or transaction.posted_at >= ^since,
         group_by: [transaction.category, transaction.currency],
         select:
           {transaction.currency, coalesce(transaction.category, "Uncategorized"),
            sum(fragment("ABS(?)", transaction.amount))}
       )
+      |> maybe_filter_since(since)
       |> Repo.all()
 
     totals
@@ -246,6 +246,7 @@ defmodule MoneyTree.Transactions do
       amount: Accounts.format_money(transaction.amount, transaction.currency, []),
       amount_masked: Accounts.mask_money(transaction.amount, transaction.currency, []),
       currency: transaction.currency,
+      category: transaction.category,
       status: transaction.status,
       account: %{
         id: account.id,
@@ -338,6 +339,16 @@ defmodule MoneyTree.Transactions do
     Date.utc_today()
     |> Date.beginning_of_month()
     |> DateTime.new!(~T[00:00:00], "Etc/UTC")
+  end
+
+  defp maybe_filter_since(query, nil), do: query
+
+  defp maybe_filter_since(query, since) do
+    where(
+      query,
+      [transaction, _account],
+      is_nil(transaction.posted_at) or transaction.posted_at >= ^since
+    )
   end
 
   defp cast_decimal(nil), do: Decimal.new("0")

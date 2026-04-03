@@ -27,7 +27,9 @@ defmodule MoneyTreeWeb.Owner.UserControllerTest do
 
       conn = get(conn, ~p"/api/owner/users", %{"q" => "target"})
 
-      assert %{"data" => [%{"id" => ^target.id}], "meta" => %{"total_entries" => 1}} =
+      target_id = target.id
+
+      assert %{"data" => [%{"id" => ^target_id}], "meta" => %{"total_entries" => 1}} =
                json_response(conn, 200)
     end
 
@@ -57,7 +59,9 @@ defmodule MoneyTreeWeb.Owner.UserControllerTest do
 
       conn = get(conn, ~p"/api/owner/users/#{target.id}")
 
-      assert %{"data" => %{"id" => ^target.id, "email" => "detail@example.com", "suspended" => false}} =
+      target_id = target.id
+
+      assert %{"data" => %{"id" => ^target_id, "email" => "detail@example.com", "suspended" => false}} =
                json_response(conn, 200)
     end
 
@@ -74,7 +78,9 @@ defmodule MoneyTreeWeb.Owner.UserControllerTest do
 
       conn = patch(conn, ~p"/api/owner/users/#{target.id}", %{"role" => "advisor"})
 
-      assert %{"data" => %{"id" => ^target.id, "role" => "advisor"}} = json_response(conn, 200)
+      target_id = target.id
+
+      assert %{"data" => %{"id" => ^target_id, "role" => "advisor"}} = json_response(conn, 200)
 
       assert {:ok, reloaded} = Accounts.fetch_user(target.id)
       assert reloaded.role == :advisor

@@ -12,7 +12,7 @@ defmodule MoneyTree.Accounts.AccountMembershipTest do
       refute changeset.valid?
       assert "can't be blank" in errors_on(changeset).account_id
       assert "can't be blank" in errors_on(changeset).user_id
-      assert "can't be blank" in errors_on(changeset).role
+      refute Map.has_key?(errors_on(changeset), :role)
     end
 
     test "validates timestamp fields" do
@@ -29,7 +29,7 @@ defmodule MoneyTree.Accounts.AccountMembershipTest do
       changeset = AccountMembership.changeset(%AccountMembership{}, attrs)
 
       refute changeset.valid?
-      assert "must be a DateTime" in errors_on(changeset).invited_at
+      assert "is invalid" in errors_on(changeset).invited_at
     end
 
     test "enforces unique account/user pair" do

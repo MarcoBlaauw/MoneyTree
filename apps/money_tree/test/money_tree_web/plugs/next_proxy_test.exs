@@ -71,7 +71,7 @@ defmodule MoneyTreeWeb.Plugs.NextProxyTest do
     assert [csrf_header] = Plug.Conn.get_resp_header(conn, "x-csrf-token")
     assert csrf_header != ""
 
-    assert_received {:proxy_request, "GET", "http://next.local:3100/app/react", headers, "",
+    assert_received {:proxy_request, "GET", "http://next.local:3100/app/react?", headers, "",
                      _opts}
 
     header_map = Map.new(headers)

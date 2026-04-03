@@ -64,7 +64,8 @@ defmodule MoneyTreeWeb.AuthControllerTest do
         conn
         |> post(~p"/api/login", %{"email" => user.email, "password" => "TwiceLoginPass1!"})
 
-      assert %{"data" => %{"email" => ^user.email}} = json_response(first_conn, 200)
+      user_email = user.email
+      assert %{"data" => %{"email" => ^user_email}} = json_response(first_conn, 200)
 
       first_token = first_conn.resp_cookies[@session_cookie].value
       assert {:ok, _user} = Accounts.get_user_by_session_token(first_token)
@@ -74,7 +75,7 @@ defmodule MoneyTreeWeb.AuthControllerTest do
         |> recycle()
         |> post(~p"/api/login", %{"email" => user.email, "password" => "TwiceLoginPass1!"})
 
-      assert %{"data" => %{"email" => ^user.email}} = json_response(second_conn, 200)
+      assert %{"data" => %{"email" => ^user_email}} = json_response(second_conn, 200)
 
       second_token = second_conn.resp_cookies[@session_cookie].value
       refute first_token == second_token

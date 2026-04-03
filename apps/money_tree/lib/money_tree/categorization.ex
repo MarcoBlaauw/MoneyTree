@@ -142,9 +142,12 @@ defmodule MoneyTree.Categorization do
 
   defp rules_query(user_id) do
     CategoryRule
-    |> where([rule], rule.user_id == ^user_id)
     |> order_by([rule], desc: rule.priority, desc: rule.inserted_at)
+    |> filter_rules_by_user(user_id)
   end
+
+  defp filter_rules_by_user(query, nil), do: where(query, [rule], is_nil(rule.user_id))
+  defp filter_rules_by_user(query, user_id), do: where(query, [rule], rule.user_id == ^user_id)
 
   defp match_rule?(%CategoryRule{} = rule, %Transaction{} = transaction) do
     merchant_matches?(rule, transaction) and

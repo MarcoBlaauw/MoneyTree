@@ -47,7 +47,9 @@ defmodule MoneyTreeWeb.TransfersLiveTest do
       form(view, "#transfer-form",
         transfer: %{
           "source_account_id" => source.id,
-          "destination_account_id" => destination.id,
+          "destination_account_id" => destination.id
+        },
+        transfer_request: %{
           "amount" => "1000.00"
         }
       )
@@ -69,7 +71,9 @@ defmodule MoneyTreeWeb.TransfersLiveTest do
       form(view, "#transfer-form",
         transfer: %{
           "source_account_id" => source.id,
-          "destination_account_id" => destination.id,
+          "destination_account_id" => destination.id
+        },
+        transfer_request: %{
           "amount" => "50.00"
         }
       )
@@ -85,8 +89,7 @@ defmodule MoneyTreeWeb.TransfersLiveTest do
   test "applies transfers and updates balances", %{
     conn: conn,
     source_account: source,
-    destination_account: destination,
-    user: user
+    destination_account: destination
   } do
     {:ok, view, _html} = live(conn, ~p"/app/transfers")
 
@@ -94,7 +97,9 @@ defmodule MoneyTreeWeb.TransfersLiveTest do
       form(view, "#transfer-form",
         transfer: %{
           "source_account_id" => source.id,
-          "destination_account_id" => destination.id,
+          "destination_account_id" => destination.id
+        },
+        transfer_request: %{
           "amount" => "75.50",
           "memo" => "Monthly savings"
         }
@@ -123,18 +128,29 @@ defmodule MoneyTreeWeb.TransfersLiveTest do
 
     view |> element("button", "Lock") |> render_click()
 
-    form =
+    _form =
       form(view, "#transfer-form",
-        transfer: %{
+        transfer_request: %{
           "source_account_id" => source.id,
           "destination_account_id" => destination.id,
           "amount" => "10.00"
         }
       )
 
-    assert render_submit(form) =~ "Unlock transfers before confirming a transfer."
+    assert render(view) =~ "Interface locked. Unlock to continue."
 
     view |> element("button", "Unlock") |> render_click()
+
+    form =
+      form(view, "#transfer-form",
+        transfer: %{
+          "source_account_id" => source.id,
+          "destination_account_id" => destination.id
+        },
+        transfer_request: %{
+          "amount" => "10.00"
+        }
+      )
 
     assert render_submit(form) =~ "Transfer scheduled successfully"
   end

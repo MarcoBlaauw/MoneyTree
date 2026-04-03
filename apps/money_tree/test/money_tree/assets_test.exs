@@ -17,16 +17,24 @@ defmodule MoneyTree.AssetsTest do
       other_user = user_fixture(%{email: "other@example.com"})
       other_account = account_fixture(other_user, %{currency: "USD"})
       _hidden_asset = asset_fixture(other_account, %{name: "Hidden"})
+      hidden_asset = Assets.list_assets(other_user) |> List.first()
 
       asset_id = asset.id
+      hidden_asset_id = hidden_asset.id
 
       assert [%Asset{id: ^asset_id}] = Assets.list_assets(owner)
-      assert [] = Assets.list_assets(other_user)
+      assert [%Asset{id: ^hidden_asset_id}] = Assets.list_assets(other_user)
 
       membership_fixture(account, other_user)
-      assert [%Asset{id: ^asset_id}] = Assets.list_assets(other_user)
+      other_user_asset_ids =
+        Assets.list_assets(other_user)
+        |> Enum.map(& &1.id)
+        |> Enum.sort()
+
+      assert other_user_asset_ids == Enum.sort([hidden_asset_id, asset_id])
       assert [%Asset{id: ^asset_id}] = Assets.list_assets(owner, preload: [])
-      assert [%Asset{id: ^asset_id}] = Assets.list_assets(other_user, preload: [])
+      assert Enum.sort(Enum.map(Assets.list_assets(other_user, preload: []), & &1.id)) ==
+               Enum.sort([hidden_asset_id, asset_id])
       assert [%Asset{id: ^asset_id}] = Assets.list_assets(owner, account_id: account.id)
     end
   end
@@ -93,7 +101,7 @@ defmodule MoneyTree.AssetsTest do
 
       assert "can't be blank" in errors_on(changeset).name
       assert "can't be blank" in errors_on(changeset).asset_type
-      assert "must be a valid decimal number" in errors_on(changeset).valuation_amount
+      assert "is invalid" in errors_on(changeset).valuation_amount
       assert "must be a valid ISO 4217 currency code" in errors_on(changeset).valuation_currency
       assert "can't be blank" in errors_on(changeset).ownership_type
     end
@@ -170,9 +178,9 @@ defmodule MoneyTree.AssetsTest do
       eur_total = Enum.find(summary.totals, &(&1.currency == "EUR"))
 
       assert usd_total.asset_count == 1
-      assert usd_total.valuation == MoneyTree.Accounts.format_money(Decimal.new("400000"), "USD")
+      assert usd_total.valuation == MoneyTree.Accounts.format_money(Decimal.new("400000"), "USD", [])
       assert eur_total.asset_count == 1
-      assert eur_total.valuation == MoneyTree.Accounts.format_money(Decimal.new("250000"), "EUR")
+      assert eur_total.valuation == MoneyTree.Accounts.format_money(Decimal.new("250000"), "EUR", [])
     end
   end
 end

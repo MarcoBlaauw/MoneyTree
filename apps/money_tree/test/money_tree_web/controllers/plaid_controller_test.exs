@@ -117,4 +117,7 @@ defmodule MoneyTreeWeb.PlaidControllerTest do
       assert connection.metadata["provider"] == "plaid"
     end
   end
+
+  defp restore_env(key, nil), do: Application.delete_env(:money_tree, key)
+  defp restore_env(key, value), do: Application.put_env(:money_tree, key, value)
 end

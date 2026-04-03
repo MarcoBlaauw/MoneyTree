@@ -3,12 +3,15 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
 
   import MoneyTree.AccountsFixtures
   import MoneyTree.AssetsFixtures
+  import MoneyTree.ObligationsFixtures
   import Phoenix.LiveViewTest
 
   alias Decimal
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Assets.Asset
   alias MoneyTree.Budgets
+  alias MoneyTree.Notifications
+  alias MoneyTree.Notifications.Event
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
 
@@ -99,14 +102,13 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     assert monthly =~ "Fixed vs. variable"
 
     view
-    |> element("button[phx-click="change-budget-period"][phx-value-period="weekly"]")
+    |> element(~s(button[phx-click="change-budget-period"][phx-value-period="weekly"]))
     |> render_click()
 
     weekly = render(view)
     assert weekly =~ "Weekly insights"
     assert weekly =~ "USD 138.46"
-    assert weekly =~ "USD 5138.46"
-    assert weekly =~ "USD 511.54"
+    assert weekly =~ "USD 2400.00"
     assert weekly =~ "USD 281.54"
   end
 
@@ -164,7 +166,7 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     {:ok, view, html} = live(conn, ~p"/app/dashboard")
 
     assert html =~ "<meta name=\"csp-nonce\""
-    assert html =~ "Next.js demos"
+    assert html =~ "Dashboard controls"
     assert html =~ "Budget pulse"
     assert html =~ "Loans &amp; autopay"
     assert html =~ "Recent activity"
@@ -184,11 +186,12 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     assert rendered =~ "text-emerald-600"
     assert rendered =~ "Subscription spend this month"
     assert rendered =~ "4.50%"
-    assert rendered =~ "Fees: Waived with direct deposit"
+    assert rendered =~ "Waived with direct deposit"
   end
 
   test "lists tangible assets and reveals valuations when unmasked", %{conn: conn, user: user} do
     account = account_fixture(user, %{name: "Equity Account"})
+
     asset_fixture(account, %{
       name: "Family Home",
       valuation_amount: Decimal.new("450000.00"),
@@ -292,6 +295,43 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
 
     assert html =~ "Visible Account"
     refute html =~ "Hidden Account"
+  end
+
+  test "users can dismiss durable notification events from the dashboard", %{
+    conn: conn,
+    user: user
+  } do
+    obligation = obligation_fixture(user, %{creditor_payee: "Travel Card"})
+
+    {:ok, event} =
+      Notifications.record_event(%{
+        user_id: user.id,
+        obligation_id: obligation.id,
+        kind: "payment_obligation",
+        status: "overdue",
+        severity: "critical",
+        title: "Travel Card overdue",
+        message: "Travel Card payment is overdue.",
+        action: "Verify payment",
+        event_date: ~D[2026-03-15],
+        occurred_at: ~U[2026-03-18 00:00:00Z],
+        metadata: %{},
+        dedupe_key: "dashboard-dismiss-#{obligation.id}"
+      })
+
+    {:ok, view, html} = live(conn, ~p"/app/dashboard")
+
+    assert html =~ "Travel Card payment is overdue."
+    assert html =~ "Dismiss"
+
+    view
+    |> element(~s(button[phx-click="resolve-notification"][phx-value-id="#{event.id}"]))
+    |> render_click()
+
+    rendered = render(view)
+    assert rendered =~ "Notification dismissed."
+    refute rendered =~ "Travel Card payment is overdue."
+    assert Repo.get!(Event, event.id).resolved_at
   end
 
   defp insert_transaction(%Account{} = account, attrs) do

@@ -5,7 +5,17 @@ defmodule MoneyTreeWeb.AppRoutesTest do
 
   describe "browser authentication" do
     test "redirects unauthenticated users", %{conn: conn} do
-      paths = [~p"/app/dashboard", ~p"/app/transfers", ~p"/app/budgets", ~p"/app/settings", ~p"/app/categorization"]
+      paths = [
+        ~p"/app/dashboard",
+        ~p"/app/accounts",
+        ~p"/app/transactions",
+        ~p"/app/obligations",
+        ~p"/app/assets",
+        ~p"/app/transfers",
+        ~p"/app/budgets",
+        ~p"/app/settings",
+        ~p"/app/categorization"
+      ]
 
       Enum.each(paths, fn path ->
         response_conn = conn |> recycle() |> get(path)
@@ -19,6 +29,18 @@ defmodule MoneyTreeWeb.AppRoutesTest do
       {:ok, dashboard, _html} = live(authed_conn, ~p"/app/dashboard")
 
       assert render(dashboard) =~ "Dashboard"
+
+      {:ok, accounts, _html} = live(authed_conn, ~p"/app/accounts")
+      assert render(accounts) =~ "Linked institutions"
+
+      {:ok, transactions, _html} = live(authed_conn, ~p"/app/transactions")
+      assert render(transactions) =~ "Recent transactions"
+
+      {:ok, obligations, _html} = live(authed_conn, ~p"/app/obligations")
+      assert render(obligations) =~ "Obligations"
+
+      {:ok, assets, _html} = live(authed_conn, ~p"/app/assets")
+      assert render(assets) =~ "Assets"
 
       {:ok, transfers, _html} = live(authed_conn, ~p"/app/transfers")
 

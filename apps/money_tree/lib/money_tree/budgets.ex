@@ -100,9 +100,10 @@ defmodule MoneyTree.Budgets do
   @spec create_budget(User.t() | binary(), map()) :: {:ok, Budget.t()} | {:error, Ecto.Changeset.t()}
   def create_budget(user, attrs) when is_map(attrs) do
     user_id = normalize_user_id(user)
+    attrs = stringify_keys(attrs)
 
     %Budget{}
-    |> Budget.changeset(Map.put(attrs, :user_id, user_id))
+    |> Budget.changeset(Map.put(attrs, "user_id", user_id))
     |> Repo.insert()
   end
 
@@ -619,7 +620,7 @@ defmodule MoneyTree.Budgets do
   end
 
   defp persisted_budgets_or_defaults(user, opts) do
-    case list_budgets(user, Keyword.take(opts, [:period, :entry_type, :variability])) do
+    case list_budgets(user, Keyword.take(opts, [:entry_type, :variability])) do
       [] -> @default_budgets
       budgets -> budgets
     end
@@ -659,6 +660,13 @@ defmodule MoneyTree.Budgets do
 
   defp normalize_user_id(%User{id: id}), do: id
   defp normalize_user_id(id) when is_binary(id), do: id
+
+  defp stringify_keys(attrs) do
+    Map.new(attrs, fn
+      {key, value} when is_atom(key) -> {Atom.to_string(key), value}
+      {key, value} -> {key, value}
+    end)
+  end
 
   defp create_revision(user_id, %Budget{} = budget, attrs) do
     %BudgetRevision{}

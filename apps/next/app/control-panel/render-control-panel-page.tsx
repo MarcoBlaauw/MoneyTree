@@ -1,7 +1,13 @@
 import React from "react";
 import Link from "next/link";
 
-import { NotificationToggle } from "./notification-toggle";
+import { ObligationManagerCard } from "./obligation-manager-card";
+import { NotificationPreferencesCard } from "./notification-preferences-card";
+import type { ControlPanelObligation, FundingAccountOption } from "../lib/obligations";
+import {
+  getControlPanelObligations,
+  getFundingAccountOptions,
+} from "../lib/obligations";
 import type { ControlPanelSettings } from "../lib/settings";
 import { getControlPanelSettings } from "../lib/settings";
 
@@ -51,10 +57,18 @@ function deriveLastLogin(sessions: ControlPanelSettings["sessions"]): string {
 }
 
 type ControlPanelContentProps = {
+  csrfToken: string;
+  fundingAccounts: FundingAccountOption[];
+  obligations: ControlPanelObligation[];
   settings: ControlPanelSettings | null;
 };
 
-function ControlPanelContent({ settings }: ControlPanelContentProps) {
+function ControlPanelContent({
+  csrfToken,
+  fundingAccounts,
+  obligations,
+  settings,
+}: ControlPanelContentProps) {
   if (!settings) {
     return (
       <main className="bg-background text-foreground min-h-screen">
@@ -131,32 +145,16 @@ function ControlPanelContent({ settings }: ControlPanelContentProps) {
             </dl>
           </article>
 
-          <article className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <div className="space-y-1">
-              <h2 className="text-lg font-semibold text-zinc-900">Notification preferences</h2>
-              <p className="text-sm text-zinc-500">
-                Choose which automated alerts MoneyTree should send you. Changes update instantly for this session.
-              </p>
-            </div>
-            <div className="space-y-3">
-              <NotificationToggle
-                label="Transfer alerts"
-                description="Notify me when a transfer is scheduled or requires approval."
-                initialValue={notifications.transferAlerts}
-                onToggle={async () => {
-                  // TODO: Connect to control panel notification update endpoint.
-                }}
-              />
-              <NotificationToggle
-                label="Security alerts"
-                description="Send alerts for suspicious logins and policy changes."
-                initialValue={notifications.securityAlerts}
-                onToggle={async () => {
-                  // TODO: Connect to control panel notification update endpoint.
-                }}
-              />
-            </div>
-          </article>
+          <NotificationPreferencesCard
+            csrfToken={csrfToken}
+            initialNotifications={notifications}
+          />
+
+          <ObligationManagerCard
+            csrfToken={csrfToken}
+            fundingAccounts={fundingAccounts}
+            initialObligations={obligations}
+          />
 
           <article className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm lg:col-span-2">
             <div className="space-y-1">
@@ -202,11 +200,29 @@ function ControlPanelContent({ settings }: ControlPanelContentProps) {
 }
 
 type SettingsFetcher = () => Promise<ControlPanelSettings | null>;
+type ObligationsFetcher = () => Promise<ControlPanelObligation[]>;
+type FundingAccountsFetcher = () => Promise<FundingAccountOption[]>;
 
 export async function renderControlPanelPage(
   fetchSettings: SettingsFetcher = getControlPanelSettings,
+  options: {
+    csrfToken?: string;
+    fetchFundingAccounts?: FundingAccountsFetcher;
+    fetchObligations?: ObligationsFetcher;
+  } = {},
 ) {
-  const settings = await fetchSettings();
-  return <ControlPanelContent settings={settings} />;
-}
+  const [settings, fundingAccounts, obligations] = await Promise.all([
+    fetchSettings(),
+    (options.fetchFundingAccounts ?? getFundingAccountOptions)(),
+    (options.fetchObligations ?? getControlPanelObligations)(),
+  ]);
 
+  return (
+    <ControlPanelContent
+      csrfToken={options.csrfToken ?? ""}
+      fundingAccounts={fundingAccounts}
+      obligations={obligations}
+      settings={settings}
+    />
+  );
+}

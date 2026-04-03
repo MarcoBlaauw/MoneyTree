@@ -8,17 +8,17 @@ defmodule MoneyTree.SyncWorker do
   alias MoneyTree.Synchronization
   alias Oban.Job
 
-  @max_snooze 300
-
   defmacro __using__(opts) do
     provider = Keyword.fetch!(opts, :provider)
     synchronizer = Keyword.fetch!(opts, :synchronizer)
+    max_snooze = 300
 
-    quote bind_quoted: [provider: provider, synchronizer: synchronizer] do
+    quote bind_quoted: [provider: provider, synchronizer: synchronizer, max_snooze: max_snooze] do
       use Oban.Worker, queue: :default, max_attempts: 5
 
       @provider to_string(provider)
       @synchronizer synchronizer
+      @max_snooze max_snooze
 
       @impl Oban.Worker
       def perform(%Job{args: %{"mode" => "dispatch"} = args}) do

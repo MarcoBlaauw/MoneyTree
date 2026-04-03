@@ -28,11 +28,24 @@ export type ControlPanelSettings = {
     role: string | null;
   };
   notifications: {
-    transferAlerts: boolean;
-    securityAlerts: boolean;
+    emailEnabled: boolean;
+    smsEnabled: boolean;
+    pushEnabled: boolean;
+    dashboardEnabled: boolean;
+    upcomingEnabled: boolean;
+    dueTodayEnabled: boolean;
+    overdueEnabled: boolean;
+    recoveredEnabled: boolean;
+    upcomingLeadDays: number;
+    resendIntervalHours: number;
+    maxResends: number;
   };
   sessions: ControlPanelSession[];
 };
+
+function toNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
 
 function resolveSessions(value: unknown): ControlPanelSession[] {
   if (!Array.isArray(value)) {
@@ -89,8 +102,17 @@ function resolveSettings(payload: unknown): ControlPanelSettings | null {
       role: toStringOrNull(profile.role),
     },
     notifications: {
-      transferAlerts: toBoolean(notifications.transfer_alerts, true),
-      securityAlerts: toBoolean(notifications.security_alerts, true),
+      emailEnabled: toBoolean(notifications.email_enabled, true),
+      smsEnabled: toBoolean(notifications.sms_enabled, false),
+      pushEnabled: toBoolean(notifications.push_enabled, false),
+      dashboardEnabled: toBoolean(notifications.dashboard_enabled, true),
+      upcomingEnabled: toBoolean(notifications.upcoming_enabled, true),
+      dueTodayEnabled: toBoolean(notifications.due_today_enabled, true),
+      overdueEnabled: toBoolean(notifications.overdue_enabled, true),
+      recoveredEnabled: toBoolean(notifications.recovered_enabled, true),
+      upcomingLeadDays: toNumber(notifications.upcoming_lead_days, 3),
+      resendIntervalHours: toNumber(notifications.resend_interval_hours, 24),
+      maxResends: toNumber(notifications.max_resends, 2),
     },
     sessions: resolveSessions(data.sessions),
   };

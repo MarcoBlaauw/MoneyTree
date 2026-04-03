@@ -2,6 +2,21 @@
   "name": "moneytree-monorepo",
   "private": true,
   "packageManager": "pnpm@10.20.0+sha512.cf9998222162dd85864d0a8102e7892e7ba4ceadebbf5a31f9c2fce48dfce317a9c53b9f6464d1ef9042cba2e02ae02a9f7c143a2b438cd93c91840f0192b9dd",
+  "pnpm": {
+    "overrides": {
+      "ajv@<6.14.0": "6.14.0",
+      "brace-expansion@<1.1.13": "1.1.13",
+      "brace-expansion@>=2.0.0 <2.0.3": "2.0.3",
+      "flatted@<3.4.2": "3.4.2",
+      "js-yaml@<4.1.1": "4.1.1",
+      "lodash@<4.17.23": "4.17.23",
+      "minimatch@<3.1.4": "3.1.4",
+      "minimatch@>=9.0.0 <9.0.7": "9.0.7",
+      "picomatch@<2.3.2": "2.3.2",
+      "picomatch@>=4.0.0 <4.0.4": "4.0.4",
+      "yaml@<2.8.3": "2.8.3"
+    }
+  },
   "scripts": {
     "lint": "pnpm -r --if-present run lint"
   }

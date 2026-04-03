@@ -21,7 +21,9 @@ defmodule MoneyTree.Observability do
   end
 
   defp attach_oban do
-    maybe_apply(OpentelemetryOban, :setup, [])
+    unless Application.get_env(:money_tree, :disable_oban_tracing, false) do
+      maybe_apply(OpentelemetryOban, :setup, [])
+    end
   end
 
   defp maybe_apply(module, function, args) do

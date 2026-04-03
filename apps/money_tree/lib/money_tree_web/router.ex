@@ -56,7 +56,32 @@ defmodule MoneyTreeWeb.Router do
       get "/mock-auth", MockAuthController, :show
       delete "/logout", AuthController, :logout
       get "/me", AuthController, :me
+      get "/accounts", AccountController, :index
       get "/settings", SettingsController, :show
+      put "/settings/profile", SettingsController, :update_profile
+      put "/settings/notifications", SettingsController, :update_notifications
+
+      post "/settings/security/webauthn/registration-options",
+           SettingsController,
+           :create_webauthn_registration_options
+
+      post "/settings/security/webauthn/authentication-options",
+           SettingsController,
+           :create_webauthn_authentication_options
+
+      post "/settings/security/webauthn/register",
+           SettingsController,
+           :complete_webauthn_registration
+
+      delete "/settings/security/webauthn/credentials/:id",
+             SettingsController,
+             :revoke_webauthn_credential
+
+      get "/obligations", ObligationController, :index
+      post "/obligations", ObligationController, :create
+      get "/obligations/:id", ObligationController, :show
+      put "/obligations/:id", ObligationController, :update
+      delete "/obligations/:id", ObligationController, :delete
       post "/accounts/:account_id/invitations", InvitationController, :create
       delete "/accounts/:account_id/invitations/:id", InvitationController, :revoke
       get "/categorization/rules", CategorizationController, :list_rules
@@ -96,6 +121,10 @@ defmodule MoneyTreeWeb.Router do
     get "/", SessionController, :new
     get "/login", SessionController, :new
     post "/login", SessionController, :create
+    post "/login/magic", SessionController, :request_magic_link
+    post "/login/webauthn/options", SessionController, :request_webauthn_options
+    post "/login/webauthn", SessionController, :consume_webauthn
+    get "/login/magic/:token", SessionController, :consume_magic_link
     delete "/logout", SessionController, :delete
   end
 
@@ -113,9 +142,14 @@ defmodule MoneyTreeWeb.Router do
     live_session :app,
       on_mount: [MoneyTreeWeb.Plugs.RequireAuthenticatedUser] do
       live "/app/dashboard", DashboardLive
+      live "/app/accounts", AccountsLive.Index
+      live "/app/transactions", TransactionsLive.Index
+      live "/app/obligations", ObligationsLive.Index
+      live "/app/assets", AssetsLive.Index
       live "/app/transfers", TransfersLive
       live "/app/budgets", BudgetLive.Index
-      live "/app/settings", SettingsLive
+      live "/app/settings", SettingsLive, :index
+      live "/app/settings/:section", SettingsLive, :section
       live "/app/categorization", CategorizationLive.Index
     end
   end

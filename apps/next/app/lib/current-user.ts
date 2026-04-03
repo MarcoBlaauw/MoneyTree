@@ -17,9 +17,11 @@ type SettingsResponse = {
   user?: {
     email?: string | null;
     name?: string | null;
+    role?: string | null;
   } | null;
   email?: string | null;
   name?: string | null;
+  role?: string | null;
 };
 
 function resolveProfile(data: unknown): CurrentUserProfile | null {

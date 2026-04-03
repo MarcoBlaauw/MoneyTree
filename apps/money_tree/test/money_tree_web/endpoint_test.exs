@@ -7,19 +7,20 @@ defmodule MoneyTreeWeb.EndpointTest do
   alias MoneyTreeWeb.Auth
 
   describe "session configuration" do
-    test "uses shared cookie name with strict same-site and secure flags" do
+    test "uses a dedicated browser session cookie with strict same-site and secure flags" do
       opts = Plug.Session.init(Auth.session_plug_options())
 
       conn =
         :get
         |> Plug.Test.conn("/", %{})
+        |> Map.put(:secret_key_base, String.duplicate("a", 64))
         |> Plug.Conn.fetch_cookies()
         |> Plug.Session.call(opts)
         |> Plug.Conn.fetch_session()
         |> Plug.Conn.put_session(:test_value, "ok")
         |> Plug.Conn.send_resp(200, "ok")
 
-      cookie = conn.resp_cookies[Auth.session_cookie_name()]
+      cookie = conn.resp_cookies[Auth.browser_session_cookie_name()]
 
       assert cookie
       assert cookie.same_site == "Strict"

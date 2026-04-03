@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { renderOwnerUsersPage } from "./render-owner-users-page";
 
 type OwnerUsersPageProps = {
-  searchParams?: Record<string, string | string[] | undefined>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 async function readHeaders() {
@@ -14,7 +14,11 @@ async function readHeaders() {
   }
 }
 
-function resolveQuery(searchParams: OwnerUsersPageProps["searchParams"]): string | null {
+async function resolveQuery(
+  searchParamsInput: OwnerUsersPageProps["searchParams"],
+): Promise<string | null> {
+  const searchParams = await searchParamsInput;
+
   if (!searchParams) {
     return null;
   }
@@ -35,7 +39,7 @@ function resolveQuery(searchParams: OwnerUsersPageProps["searchParams"]): string
 export default async function OwnerUsersPage({ searchParams }: OwnerUsersPageProps) {
   const headerList = await readHeaders();
   const csrfToken = headerList?.get("x-csrf-token") ?? "";
-  const query = resolveQuery(searchParams);
+  const query = await resolveQuery(searchParams);
 
   return renderOwnerUsersPage({ query, csrfToken });
 }

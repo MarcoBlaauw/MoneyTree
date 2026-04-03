@@ -92,6 +92,22 @@ defmodule MoneyTree.AccountsFixtures do
     %{session: session, token: token}
   end
 
+  def webauthn_credential_fixture(user, attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    params =
+      attrs
+      |> Map.put_new(:credential_id, :crypto.strong_rand_bytes(32))
+      |> Map.put_new(:public_key, :erlang.term_to_binary(%{1 => 2, 3 => -7, -1 => 1}))
+      |> Map.put_new(:kind, "passkey")
+      |> Map.put_new(:label, "Fixture credential")
+      |> Map.put_new(:transports, ["internal"])
+      |> Map.put_new(:sign_count, 0)
+
+    {:ok, credential} = Accounts.register_webauthn_credential(user, params)
+    credential
+  end
+
   def invitation_fixture(account, inviter, attrs \\ %{}) do
     attrs = Map.new(attrs)
     email = Map.get(attrs, :email) || Map.get(attrs, "email") || unique_user_email()

@@ -68,7 +68,7 @@ defmodule MoneyTree.RecurringTest do
 
       series = Repo.one!(Series)
       assert series.cadence == "monthly"
-      assert series.last_seen_at == ~U[2026-03-03 08:00:00Z]
+      assert DateTime.truncate(series.last_seen_at, :second) == ~U[2026-03-03 08:00:00Z]
     end
 
     test "records missing-cycle and unusual-amount anomalies" do

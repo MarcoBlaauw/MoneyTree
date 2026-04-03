@@ -7,8 +7,6 @@ defmodule MoneyTree.AssetsFixtures do
   alias MoneyTree.Assets.Asset
   alias MoneyTree.Repo
 
-  import MoneyTree.AccountsFixtures
-
   def unique_asset_name do
     "Asset-#{System.unique_integer([:positive])}"
   end

@@ -2,16 +2,16 @@ defmodule MoneyTree.Accounts.AccountInvitationTest do
   use MoneyTree.DataCase
 
   import MoneyTree.AccountsFixtures
+  import Swoosh.TestAssertions
 
   alias MoneyTree.Accounts
   alias MoneyTree.Accounts.AccountInvitation
   alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Repo
   alias MoneyTree.Users.User
-  alias Swoosh.Adapters.Test, as: SwooshTestAdapter
 
   setup do
-    SwooshTestAdapter.reset()
+    flush_emails()
     inviter = user_fixture()
     account = account_fixture(inviter)
     {:ok, inviter: inviter, account: account}
@@ -28,9 +28,10 @@ defmodule MoneyTree.Accounts.AccountInvitationTest do
       assert invitation.status == :pending
       assert is_binary(token)
 
-      [sent] = SwooshTestAdapter.deliveries()
-      assert Enum.any?(sent.to, fn {_name, address} -> address == email end)
-      assert String.contains?(sent.text_body, token)
+      assert_email_sent(
+        to: email,
+        text_body: ~r/#{Regex.escape(token)}/
+      )
     end
 
     test "prevents duplicate pending invitations", %{inviter: inviter, account: account} do
@@ -69,7 +70,7 @@ defmodule MoneyTree.Accounts.AccountInvitationTest do
     test "accepts with existing user credentials", %{inviter: inviter, account: account} do
       invitee = user_fixture(%{email: "existing@example.com", password: "ExistingPass123!"})
 
-      {:ok, invitation, token} =
+      {:ok, _invitation, token} =
         Accounts.create_account_invitation(inviter, account, %{email: invitee.email})
 
       assert {:ok, %AccountInvitation{} = accepted, %AccountMembership{} = membership} =
@@ -84,7 +85,7 @@ defmodule MoneyTree.Accounts.AccountInvitationTest do
     test "creates a new user when accepting", %{inviter: inviter, account: account} do
       email = "new-user@example.com"
 
-      {:ok, invitation, token} =
+      {:ok, _invitation, token} =
         Accounts.create_account_invitation(inviter, account, %{email: email})
 
       params = %{password: "BrandNewPass123!", encrypted_full_name: "New User"}
@@ -118,6 +119,15 @@ defmodule MoneyTree.Accounts.AccountInvitationTest do
 
       refreshed = Repo.get!(AccountInvitation, invitation.id)
       assert refreshed.status == :expired
+    end
+  end
+
+  defp flush_emails do
+    receive do
+      {:email, _email} -> flush_emails()
+      {:emails, _emails} -> flush_emails()
+    after
+      0 -> :ok
     end
   end
 end

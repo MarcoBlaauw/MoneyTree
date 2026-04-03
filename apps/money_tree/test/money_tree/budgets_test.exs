@@ -124,7 +124,7 @@ defmodule MoneyTree.BudgetsTest do
       })
 
     anchor_date = ~D[2024-11-20]
-    year_start = Date.beginning_of_year(anchor_date)
+    year_start = Date.new!(anchor_date.year, 1, 1)
 
     insert_transaction(account, %{
       amount: Decimal.new("-1200.00"),

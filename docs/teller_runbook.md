@@ -5,13 +5,14 @@ This runbook captures the day-two operations required to keep the Teller integra
 ## Secret rotation
 
 1. Generate a replacement secret in the Teller Console:
-   - API keys: Console → Developers → API Keys → "Create API key".
    - Connect application ID: Console → Connect → duplicate or create a new application.
    - Webhook secret: Console → Webhooks → Signing keys → "Create signing key".
-2. Store the new secrets in your secret manager and update the runtime environment variables (`TELLER_API_KEY`,
-   `TELLER_CONNECT_APPLICATION_ID`, `TELLER_WEBHOOK_SECRET`).
+   - mTLS certificate/key: Console → Certificates → issue a replacement client certificate and private key.
+2. Store the new secrets in your secret manager and update the runtime environment variables (`TELLER_CONNECT_APPLICATION_ID`,
+   `TELLER_WEBHOOK_SECRET`, plus either the `TELLER_CERT_PEM`/`TELLER_KEY_PEM`
+   pair or the `TELLER_CERT_FILE`/`TELLER_KEY_FILE` pair).
 3. Redeploy or restart each application instance so the updated values are loaded.
-4. Deactivate or delete the previous secrets in the Teller Console once the new values are confirmed working.
+4. Deactivate or delete the previous signing key or certificate material in the Teller Console once the new values are confirmed working.
 
 ## Retriggering syncs
 

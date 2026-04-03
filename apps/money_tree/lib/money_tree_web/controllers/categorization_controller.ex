@@ -49,6 +49,7 @@ defmodule MoneyTreeWeb.CategorizationController do
     |> put_status(:bad_request)
     |> json(%{error: "transaction_id and category are required"})
   end
+
   defp serialize_rule(rule) do
     %{
       id: rule.id,
@@ -72,4 +73,10 @@ defmodule MoneyTreeWeb.CategorizationController do
       categorization_confidence: transaction.categorization_confidence
     }
   end
+
+  defp translate_error({msg, opts}) do
+    Gettext.dgettext(MoneyTreeWeb.Gettext, "errors", msg, opts)
+  end
+
+  defp translate_error(msg) when is_binary(msg), do: msg
 end

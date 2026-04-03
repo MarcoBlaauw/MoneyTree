@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "UNLICENSED",
-  "packageManager": "pnpm@10.18.3",
+  "packageManager": "pnpm@10.20.0",
   "engines": {
     "node": ">=18"
   },
@@ -18,14 +18,14 @@
   },
   "dependencies": {
     "@graphql-typed-document-node/core": "^3.2.0",
-    "graphql": "^16.9.0"
+    "graphql": "^16.13.2"
   },
   "devDependencies": {
-    "@graphql-codegen/cli": "^5.0.4",
-    "@graphql-codegen/typescript": "^4.1.0",
-    "@graphql-codegen/typescript-operations": "^4.2.0",
-    "@graphql-codegen/typed-document-node": "^5.0.2",
-    "openapi-typescript": "^7.5.1",
+    "@graphql-codegen/cli": "^6.2.1",
+    "@graphql-codegen/typescript": "^5.0.9",
+    "@graphql-codegen/typescript-operations": "^5.0.9",
+    "@graphql-codegen/typed-document-node": "^6.1.7",
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.5.4"
   }
 }
