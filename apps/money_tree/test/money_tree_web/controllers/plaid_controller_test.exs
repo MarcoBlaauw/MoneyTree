@@ -1,6 +1,7 @@
 defmodule MoneyTreeWeb.PlaidClientStub do
   @moduledoc false
 
+  def create_link_token(params), do: dispatch(:create_link_token, params)
   def exchange_public_token(token), do: dispatch(:exchange_public_token, token)
 
   defp dispatch(key, arg) do
@@ -11,7 +12,6 @@ defmodule MoneyTreeWeb.PlaidClientStub do
     end
   end
 end
-
 
 defmodule MoneyTreeWeb.PlaidSyncStub do
   @moduledoc false
@@ -47,6 +47,7 @@ defmodule MoneyTreeWeb.PlaidControllerTest do
     Application.put_env(:money_tree, :synchronization, MoneyTreeWeb.PlaidSyncStub)
 
     on_exit(fn ->
+      Process.delete({MoneyTreeWeb.PlaidClientStub, :create_link_token})
       Process.delete({MoneyTreeWeb.PlaidClientStub, :exchange_public_token})
       restore_env(:plaid_client, original_client)
       restore_env(:synchronization, original_sync)
@@ -67,12 +68,21 @@ defmodule MoneyTreeWeb.PlaidControllerTest do
 
   describe "POST /api/plaid/link_token" do
     test "returns a link token payload", %{conn: conn} do
+      Process.put({MoneyTreeWeb.PlaidClientStub, :create_link_token}, fn payload ->
+        assert payload["language"] == "en"
+        assert payload["client_name"] == "MoneyTree"
+        assert payload["products"] == ["auth"]
+        assert payload["country_codes"] == nil
+        assert is_binary(get_in(payload, ["user", "client_user_id"]))
+
+        {:ok, %{"link_token" => "link-sandbox-123", "expiration" => "2026-04-04T12:00:00Z"}}
+      end)
+
       response = post(conn, ~p"/api/plaid/link_token", %{products: ["auth"]})
 
       assert %{"data" => data} = json_response(response, 200)
-      assert is_binary(data["link_token"])
-      assert is_binary(data["expiration"])
-      assert data["metadata"] == %{"products" => ["auth"]}
+      assert data["link_token"] == "link-sandbox-123"
+      assert data["expiration"] == "2026-04-04T12:00:00Z"
     end
   end
 

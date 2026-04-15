@@ -1,5 +1,5 @@
 defmodule MoneyTreeWeb.PlaidWebhookControllerTest do
-  use MoneyTreeWeb.ConnCase, async: true
+  use MoneyTreeWeb.ConnCase
 
   alias MoneyTree.AccountsFixtures
   alias MoneyTree.InstitutionsFixtures
@@ -23,8 +23,9 @@ defmodule MoneyTreeWeb.PlaidWebhookControllerTest do
        }}
     end
 
-    def list_transactions("plaid-acct-1", _params) do
-      {:ok, %{"data" => [], "next_cursor" => nil}}
+    def list_transactions(params) do
+      assert params["access_token"] == "plaid-token-1"
+      {:ok, %{"data" => [], "next_cursor" => nil, "has_more" => false}}
     end
   end
 
@@ -53,9 +54,18 @@ defmodule MoneyTreeWeb.PlaidWebhookControllerTest do
     user = AccountsFixtures.user_fixture()
 
     connection =
-      InstitutionsFixtures.connection_fixture(user, %{provider: "plaid", metadata: %{"status" => "active", "provider" => "plaid"}})
+      InstitutionsFixtures.connection_fixture(user, %{
+        provider: "plaid",
+        metadata: %{"status" => "active", "provider" => "plaid"},
+        encrypted_credentials: Jason.encode!(%{"access_token" => "plaid-token-1"})
+      })
 
-    payload = %{"connection_id" => connection.id, "event" => "SYNC_UPDATES_AVAILABLE", "nonce" => "nonce-1"}
+    payload = %{
+      "connection_id" => connection.id,
+      "event" => "SYNC_UPDATES_AVAILABLE",
+      "nonce" => "nonce-1"
+    }
+
     body = Jason.encode!(payload)
     timestamp = System.system_time(:second)
     sig = sign(timestamp, body)
@@ -69,7 +79,7 @@ defmodule MoneyTreeWeb.PlaidWebhookControllerTest do
 
     assert json_response(response, 200) == %{"status" => "ok"}
     refreshed = Repo.get!(MoneyTree.Institutions.Connection, connection.id)
-    assert get_in(refreshed.metadata, ["teller_webhook", "last_event"]) == "SYNC_UPDATES_AVAILABLE"
+    assert get_in(refreshed.metadata, ["plaid_webhook", "last_event"]) == "SYNC_UPDATES_AVAILABLE"
   end
 
   defp sign(timestamp, body) do

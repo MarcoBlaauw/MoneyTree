@@ -142,6 +142,41 @@ defmodule MoneyTree.Notifications do
   end
 
   @doc """
+  Lists durable notification events for history and inspect views.
+  """
+  @spec list_event_history(User.t() | binary(), keyword()) :: [Event.t()]
+  def list_event_history(user, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 20)
+    include_resolved? = Keyword.get(opts, :include_resolved?, true)
+    preload = Keyword.get(opts, :preload, [:obligation])
+
+    Event
+    |> where([event], event.user_id == ^resolve_user_id(user))
+    |> maybe_filter_resolved(include_resolved?)
+    |> order_by([event], desc: event.occurred_at, desc: event.inserted_at)
+    |> limit(^limit)
+    |> Repo.all()
+    |> Repo.preload(preload)
+  end
+
+  @doc """
+  Fetches a single durable event for a user.
+  """
+  @spec get_event(User.t() | binary(), binary(), keyword()) ::
+          {:ok, Event.t()} | {:error, :not_found}
+  def get_event(user, event_id, opts \\ []) when is_binary(event_id) do
+    preload = Keyword.get(opts, :preload, [:obligation])
+
+    with {:ok, cast_event_id} <- Ecto.UUID.cast(event_id),
+         event when not is_nil(event) <-
+           Repo.get_by(Event, id: cast_event_id, user_id: resolve_user_id(user)) do
+      {:ok, Repo.preload(event, preload)}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  @doc """
   Computes pending notification items for the given user.
   """
   @spec pending(User.t() | binary(), keyword()) :: [notification()]
@@ -258,6 +293,9 @@ defmodule MoneyTree.Notifications do
     |> order_by([event], asc: event.event_date, asc: event.inserted_at)
     |> Repo.all()
   end
+
+  defp maybe_filter_resolved(query, true), do: query
+  defp maybe_filter_resolved(query, false), do: where(query, [event], is_nil(event.resolved_at))
 
   @doc """
   Delivers an event immediately if it is due and allowed by preferences.

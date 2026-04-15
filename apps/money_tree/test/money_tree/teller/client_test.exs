@@ -84,6 +84,8 @@ defmodule MoneyTree.Teller.ClientTest do
 
     assert transport_opts[:certfile] == "/tmp/client.pem"
     assert transport_opts[:keyfile] == "/tmp/client.key"
+    assert client.api_request.options[:finch] == nil
+    assert client.connect_request.options[:finch] == nil
     refute Keyword.has_key?(transport_opts, :cert)
     refute Keyword.has_key?(transport_opts, :key)
   end

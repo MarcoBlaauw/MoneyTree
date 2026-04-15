@@ -19,7 +19,9 @@ defmodule MoneyTree.Repo.Migrations.CreateBudgets do
     create index(:budgets, [:user_id, :period])
     create index(:budgets, [:user_id, :entry_type])
     create index(:budgets, [:user_id, :variability])
-    create unique_index(:budgets, [:user_id, :period, :name], name: :budgets_user_id_period_name_index)
+
+    create unique_index(:budgets, [:user_id, :period, :name],
+             name: :budgets_user_id_period_name_index
+           )
   end
 end
-

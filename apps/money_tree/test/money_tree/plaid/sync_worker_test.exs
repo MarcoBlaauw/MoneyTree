@@ -28,19 +28,23 @@ defmodule MoneyTree.Plaid.SyncWorkerTest do
        }}
     end
 
-    def list_transactions("plaid-acct", _params) do
+    def list_transactions(params) do
+      assert params["access_token"] == "plaid-token-1"
+
       {:ok,
        %{
          "data" => [
            %{
-             "id" => "plaid-txn",
+             "transaction_id" => "plaid-txn",
+             "account_id" => "plaid-acct",
              "amount" => "-3.50",
-             "currency" => "USD",
-             "posted_at" => "2024-02-01T00:00:00Z",
-             "description" => "Plaid txn"
+             "iso_currency_code" => "USD",
+             "datetime" => "2024-02-01T00:00:00Z",
+             "name" => "Plaid txn"
            }
          ],
-         "next_cursor" => nil
+         "next_cursor" => "plaid-cursor-1",
+         "has_more" => false
        }}
     end
   end
@@ -49,14 +53,22 @@ defmodule MoneyTree.Plaid.SyncWorkerTest do
     user = AccountsFixtures.user_fixture()
 
     connection =
-      InstitutionsFixtures.connection_fixture(user, %{provider: "plaid", metadata: %{"status" => "active", "provider" => "plaid"}})
+      InstitutionsFixtures.connection_fixture(user, %{
+        provider: "plaid",
+        metadata: %{"status" => "active", "provider" => "plaid"},
+        encrypted_credentials: Jason.encode!(%{"access_token" => "plaid-token-1"})
+      })
 
-    args = %{"connection_id" => connection.id, "client" => Atom.to_string(__MODULE__.SuccessClient)}
+    args = %{
+      "connection_id" => connection.id,
+      "client" => Atom.to_string(__MODULE__.SuccessClient)
+    }
 
     assert :ok = SyncWorker.perform(%Job{args: args, attempt: 1})
 
     refreshed = Repo.get!(Connection, connection.id)
     assert refreshed.last_synced_at
+    assert refreshed.transactions_cursor == "plaid-cursor-1"
 
     account = Repo.get_by!(Account, external_id: "plaid-acct")
     assert Decimal.eq?(account.current_balance, Decimal.new("52.00"))

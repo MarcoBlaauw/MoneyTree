@@ -13,6 +13,15 @@ defmodule MoneyTreeWeb.Router do
     plug MoneyTreeWeb.Plugs.FetchCurrentUser
   end
 
+  pipeline :browser_proxy do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :fetch_live_flash
+    plug :put_root_layout, {MoneyTreeWeb.Layouts, :root}
+    plug :put_secure_browser_headers
+    plug MoneyTreeWeb.Plugs.FetchCurrentUser
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -101,6 +110,12 @@ defmodule MoneyTreeWeb.Router do
       end
     end
 
+    scope "/stripe" do
+      pipe_through :api_auth
+
+      post "/session", StripeController, :session
+    end
+
     scope "/kyc" do
       pipe_through :api_auth
 
@@ -129,7 +144,7 @@ defmodule MoneyTreeWeb.Router do
   end
 
   scope "/app/react" do
-    pipe_through [:browser, :require_authenticated_user]
+    pipe_through [:browser_proxy, :require_authenticated_user]
 
     forward "/", MoneyTreeWeb.Plugs.NextProxy
   end
@@ -138,19 +153,22 @@ defmodule MoneyTreeWeb.Router do
     pipe_through [:browser, :require_authenticated_user]
 
     get "/app", AppController, :index
+    get "/app/accounts/connect", AppController, :accounts
+    get "/app/categorization", AppController, :categorization
 
     live_session :app,
       on_mount: [MoneyTreeWeb.Plugs.RequireAuthenticatedUser] do
       live "/app/dashboard", DashboardLive
       live "/app/accounts", AccountsLive.Index
       live "/app/transactions", TransactionsLive.Index
+      live "/app/transactions/categorization", CategorizationLive.Index
       live "/app/obligations", ObligationsLive.Index
       live "/app/assets", AssetsLive.Index
       live "/app/transfers", TransfersLive
       live "/app/budgets", BudgetLive.Index
+      live "/app/import-export", ImportExportLive.Index
       live "/app/settings", SettingsLive, :index
       live "/app/settings/:section", SettingsLive, :section
-      live "/app/categorization", CategorizationLive.Index
     end
   end
 

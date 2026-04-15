@@ -153,7 +153,11 @@ defmodule MoneyTree.Accounts.Account do
     max_balance = get_field(changeset, :maximum_balance)
 
     if min_balance && max_balance && Decimal.compare(max_balance, min_balance) == :lt do
-      add_error(changeset, :maximum_balance, "must be greater than or equal to the minimum balance")
+      add_error(
+        changeset,
+        :maximum_balance,
+        "must be greater than or equal to the minimum balance"
+      )
     else
       changeset
     end
@@ -194,7 +198,8 @@ defmodule MoneyTree.Accounts.Account do
 
     case Decimal.compare(decimal, limit_decimal) do
       :lt ->
-        errors ++ [{field, "must be greater than or equal to #{Decimal.to_string(limit_decimal)}"}]
+        errors ++
+          [{field, "must be greater than or equal to #{Decimal.to_string(limit_decimal)}"}]
 
       _other ->
         errors

@@ -156,7 +156,9 @@ defmodule MoneyTree.Assets do
         total =
           Enum.reduce(items, Decimal.new("0"), fn item, acc ->
             cond do
-              is_nil(item.asset.valuation_amount) -> acc
+              is_nil(item.asset.valuation_amount) ->
+                acc
+
               match?(%Decimal{}, item.asset.valuation_amount) ->
                 Decimal.add(acc, item.asset.valuation_amount)
 
@@ -252,7 +254,8 @@ defmodule MoneyTree.Assets do
     %{
       asset: asset,
       valuation: Accounts.format_money(asset.valuation_amount, asset.valuation_currency, opts),
-      valuation_masked: Accounts.mask_money(asset.valuation_amount, asset.valuation_currency, opts)
+      valuation_masked:
+        Accounts.mask_money(asset.valuation_amount, asset.valuation_currency, opts)
     }
   end
 end

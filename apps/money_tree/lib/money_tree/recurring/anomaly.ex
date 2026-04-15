@@ -43,7 +43,14 @@ defmodule MoneyTree.Recurring.Anomaly do
       :detected_at,
       :resolved_at
     ])
-    |> validate_required([:series_id, :anomaly_type, :status, :severity, :occurred_on, :detected_at])
+    |> validate_required([
+      :series_id,
+      :anomaly_type,
+      :status,
+      :severity,
+      :occurred_on,
+      :detected_at
+    ])
     |> validate_inclusion(:anomaly_type, @anomaly_types)
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:severity, @severities)

@@ -7,6 +7,7 @@ defmodule MoneyTreeWeb.TellerController do
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Repo
   alias MoneyTreeWeb.RateLimiter
+  require Logger
 
   @connect_token_limit 5
   @connect_token_period_seconds 60
@@ -65,10 +66,40 @@ defmodule MoneyTreeWeb.TellerController do
     end
   end
 
+  def exchange(conn, %{"access_token" => access_token} = params) when is_binary(access_token) do
+    user = conn.assigns.current_user
+
+    with {:ok, institution_id} <- fetch_or_create_institution_id(params),
+         {:ok, connection} <-
+           persist_connection_with_access_token(user, institution_id, access_token, params),
+         :ok <- schedule_initial_sync(connection) do
+      connection = Repo.preload(connection, :institution)
+      json(conn, %{data: serialize_connection(connection)})
+    else
+      {:error, :missing_institution} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "institution_id or institution_name is required"})
+
+      {:error, :institution_not_found} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "institution not found"})
+
+      {:error, %Changeset{} = changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{errors: Changeset.traverse_errors(changeset, &translate_error/1)})
+
+      {:error, error} ->
+        render_teller_error(conn, error)
+    end
+  end
+
   def exchange(conn, _params) do
     conn
     |> put_status(:bad_request)
-    |> json(%{error: "public_token is required"})
+    |> json(%{error: "public_token or access_token is required"})
   end
 
   def revoke(conn, %{"connection_id" => connection_id}) do
@@ -163,6 +194,70 @@ defmodule MoneyTreeWeb.TellerController do
     end
   end
 
+  defp fetch_or_create_institution_id(params) do
+    case Map.get(params, "institution_id") || Map.get(params, :institution_id) do
+      nil ->
+        ensure_institution_id_by_name(
+          Map.get(params, "institution_name") || Map.get(params, :institution_name)
+        )
+
+      id ->
+        {:ok, id}
+    end
+  end
+
+  defp ensure_institution_id_by_name(name) when is_binary(name) do
+    trimmed = String.trim(name)
+
+    if trimmed == "" do
+      {:error, :missing_institution}
+    else
+      slug = normalize_slug(trimmed)
+      external_id = "teller:#{slug}"
+
+      case Repo.get_by(MoneyTree.Institutions.Institution, external_id: external_id) do
+        %MoneyTree.Institutions.Institution{id: id} ->
+          {:ok, id}
+
+        nil ->
+          attrs = %{
+            name: trimmed,
+            slug: slug,
+            external_id: external_id,
+            metadata: %{"provider" => "teller"}
+          }
+
+          %MoneyTree.Institutions.Institution{}
+          |> MoneyTree.Institutions.Institution.changeset(attrs)
+          |> Repo.insert()
+          |> case do
+            {:ok, institution} -> {:ok, institution.id}
+            {:error, %Changeset{} = changeset} -> {:error, changeset}
+          end
+      end
+    end
+  end
+
+  defp ensure_institution_id_by_name(_), do: {:error, :missing_institution}
+
+  defp normalize_slug(name) do
+    name
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9-]+/, "-")
+    |> String.replace(~r/-+/, "-")
+    |> String.trim("-")
+  end
+
+  defp persist_connection_with_access_token(user, institution_id, access_token, params) do
+    payload = %{
+      "access_token" => access_token,
+      "user_id" => Map.get(params, "user_id") || Map.get(params, :user_id),
+      "enrollment_id" => Map.get(params, "enrollment_id") || Map.get(params, :enrollment_id)
+    }
+
+    persist_connection(user, institution_id, payload, params)
+  end
+
   defp teller_client do
     Application.get_env(:money_tree, :teller_client, MoneyTree.Teller.Client)
   end
@@ -180,10 +275,12 @@ defmodule MoneyTreeWeb.TellerController do
     |> json(%{error: message})
   end
 
-  defp render_teller_error(conn, %{type: :transport}) do
+  defp render_teller_error(conn, %{type: :transport} = error) do
+    Logger.warning("[teller] transport error during request: #{inspect(error)}")
+
     conn
     |> put_status(:bad_gateway)
-    |> json(%{error: "teller service unavailable"})
+    |> json(%{error: transport_error_message(error)})
   end
 
   defp render_teller_error(conn, %{type: :unexpected}) do
@@ -226,6 +323,19 @@ defmodule MoneyTreeWeb.TellerController do
 
   defp default_error_message(nil, fallback), do: fallback
   defp default_error_message(message, _fallback), do: message
+
+  defp transport_error_message(error) do
+    base = "teller service unavailable"
+
+    if Application.get_env(:money_tree, :dev_routes) == true do
+      case Map.get(error, :reason) do
+        nil -> base
+        reason -> "#{base} (#{inspect(reason)})"
+      end
+    else
+      base
+    end
+  end
 
   defp maybe_client_ip(%Plug.Conn{remote_ip: nil}), do: nil
 

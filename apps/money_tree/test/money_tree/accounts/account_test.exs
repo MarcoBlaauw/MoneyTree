@@ -12,12 +12,13 @@ defmodule MoneyTree.Accounts.AccountTest do
     end
 
     test "accepts optional APR, fee schedule, and balance thresholds", %{user: user} do
-      attrs = valid_account_attrs(user, %{
-        apr: Decimal.new("4.25"),
-        fee_schedule: "No monthly fee when balance stays above $500",
-        minimum_balance: Decimal.new("500.00"),
-        maximum_balance: Decimal.new("50000.00")
-      })
+      attrs =
+        valid_account_attrs(user, %{
+          apr: Decimal.new("4.25"),
+          fee_schedule: "No monthly fee when balance stays above $500",
+          minimum_balance: Decimal.new("500.00"),
+          maximum_balance: Decimal.new("50000.00")
+        })
 
       changeset = Account.changeset(%Account{}, attrs)
 
@@ -27,14 +28,18 @@ defmodule MoneyTree.Accounts.AccountTest do
     end
 
     test "rejects APR greater than 100", %{user: user} do
-      changeset = Account.changeset(%Account{}, valid_account_attrs(user, %{apr: Decimal.new("120")}))
+      changeset =
+        Account.changeset(%Account{}, valid_account_attrs(user, %{apr: Decimal.new("120")}))
 
       assert "must be less than or equal to 100" in errors_on(changeset).apr
     end
 
     test "rejects negative minimum balance", %{user: user} do
       changeset =
-        Account.changeset(%Account{}, valid_account_attrs(user, %{minimum_balance: Decimal.new("-1")}))
+        Account.changeset(
+          %Account{},
+          valid_account_attrs(user, %{minimum_balance: Decimal.new("-1")})
+        )
 
       assert "must be greater than or equal to 0" in errors_on(changeset).minimum_balance
     end

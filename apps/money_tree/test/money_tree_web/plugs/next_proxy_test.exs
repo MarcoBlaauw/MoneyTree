@@ -31,6 +31,10 @@ defmodule MoneyTreeWeb.Plugs.NextProxyTest do
   end
 
   setup %{conn: conn} do
+    original_dev_routes = Application.get_env(:money_tree, :dev_routes)
+    Application.put_env(:money_tree, :dev_routes, true)
+    on_exit(fn -> Application.put_env(:money_tree, :dev_routes, original_dev_routes) end)
+
     conn =
       conn
       |> Map.put(:secret_key_base, String.duplicate("a", 64))
@@ -67,7 +71,7 @@ defmodule MoneyTreeWeb.Plugs.NextProxyTest do
     assert Plug.Conn.get_resp_header(conn, "content-type") == ["text/html"]
     assert Plug.Conn.get_resp_header(conn, "cache-control") == ["no-store"]
     assert Plug.Conn.get_resp_header(conn, "set-cookie") == []
-    assert Plug.Conn.get_resp_header(conn, "x-csp-nonce") == ["nonce-123"]
+    assert Plug.Conn.get_resp_header(conn, "x-csp-nonce") == []
     assert [csrf_header] = Plug.Conn.get_resp_header(conn, "x-csrf-token")
     assert csrf_header != ""
 
@@ -77,7 +81,7 @@ defmodule MoneyTreeWeb.Plugs.NextProxyTest do
     header_map = Map.new(headers)
     assert header_map["host"] == "next.local:3100"
     assert header_map["cookie"] =~ "_money_tree_session=test"
-    assert header_map["x-csp-nonce"] == "nonce-123"
+    refute Map.has_key?(header_map, "x-csp-nonce")
     assert header_map["x-csrf-token"] == csrf_header
     assert header_map["x-forwarded-for"] =~ "192.168.0.2"
   end

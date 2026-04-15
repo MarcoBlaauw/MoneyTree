@@ -117,7 +117,6 @@ defmodule MoneyTree.Institutions.Connection do
     end)
   end
 
-
   defp validate_provider_metadata_is_map(changeset) do
     validate_change(changeset, :provider_metadata, fn :provider_metadata, value ->
       cond do
@@ -128,8 +127,12 @@ defmodule MoneyTree.Institutions.Connection do
     end)
   end
 
-  defp normalize_provider(provider) when is_binary(provider), do: provider |> String.trim() |> String.downcase()
-  defp normalize_provider(provider) when is_atom(provider), do: provider |> Atom.to_string() |> normalize_provider()
+  defp normalize_provider(provider) when is_binary(provider),
+    do: provider |> String.trim() |> String.downcase()
+
+  defp normalize_provider(provider) when is_atom(provider),
+    do: provider |> Atom.to_string() |> normalize_provider()
+
   defp normalize_provider(provider), do: provider
 
   defp validate_webhook_secret(changeset) do

@@ -61,7 +61,13 @@ defmodule MoneyTreeWeb.Owner.UserControllerTest do
 
       target_id = target.id
 
-      assert %{"data" => %{"id" => ^target_id, "email" => "detail@example.com", "suspended" => false}} =
+      assert %{
+               "data" => %{
+                 "id" => ^target_id,
+                 "email" => "detail@example.com",
+                 "suspended" => false
+               }
+             } =
                json_response(conn, 200)
     end
 

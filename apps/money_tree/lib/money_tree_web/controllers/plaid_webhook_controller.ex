@@ -29,12 +29,18 @@ defmodule MoneyTreeWeb.PlaidWebhookController do
     with {:ok, %Connection{} = connection} <- Institutions.get_active_connection(connection_id),
          false <- Webhooks.nonce_processed?(connection, nonce),
          {:ok, _connection} <-
-           Webhooks.record_event(connection, nonce, DateTime.from_unix!(timestamp), %{event: event, payload: payload},
-             retention: @nonce_retention
-           ),
+           Webhooks.record_event(
+             connection,
+             nonce,
+             DateTime.from_unix!(timestamp),
+             %{event: event, payload: payload}, retention: @nonce_retention),
          :ok <-
            Synchronization.schedule_incremental_sync(connection,
-             telemetry_metadata: %{source: "plaid_webhook", event: event, connection_id: connection.id},
+             telemetry_metadata: %{
+               source: "plaid_webhook",
+               event: event,
+               connection_id: connection.id
+             },
              unique_period: 60
            ) do
       {:ok, :enqueued}
@@ -74,7 +80,9 @@ defmodule MoneyTreeWeb.PlaidWebhookController do
     end
   end
 
-  defp fetch_raw_body(%Plug.Conn{assigns: %{raw_body: body}}) when is_binary(body), do: {:ok, body}
+  defp fetch_raw_body(%Plug.Conn{assigns: %{raw_body: body}}) when is_binary(body),
+    do: {:ok, body}
+
   defp fetch_raw_body(_conn), do: {:error, :missing_body}
 
   defp decode_payload(raw_body) do

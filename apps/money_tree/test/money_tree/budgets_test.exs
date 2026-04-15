@@ -279,7 +279,10 @@ defmodule MoneyTree.BudgetsTest do
       assert "must be greater than zero" in errors_on(changeset).allocation_amount
 
       {:ok, budget} = Budgets.create_budget(user, valid_budget_attrs())
-      assert {:error, update_changeset} = Budgets.update_budget(budget, %{allocation_amount: "-10"})
+
+      assert {:error, update_changeset} =
+               Budgets.update_budget(budget, %{allocation_amount: "-10"})
+
       assert "must be greater than zero" in errors_on(update_changeset).allocation_amount
     end
 

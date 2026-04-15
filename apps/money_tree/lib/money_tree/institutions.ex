@@ -508,7 +508,6 @@ defmodule MoneyTree.Institutions do
     end
   end
 
-
   defp maybe_filter_provider(query, nil), do: query
 
   defp maybe_filter_provider(query, provider) when is_atom(provider) do

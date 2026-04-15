@@ -16,12 +16,13 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
   def call(conn, opts) do
     nonce = generate_nonce()
     assign_key = Keyword.fetch!(opts, :assign_key)
+    next_dev_request? = next_dev_request?(conn)
 
     conn
     |> assign(assign_key, nonce)
     |> put_private(assign_key, nonce)
-    |> put_resp_header("content-security-policy", build_csp_header(nonce))
-    |> put_resp_header("x-csp-nonce", nonce)
+    |> put_resp_header("content-security-policy", build_csp_header(conn, nonce))
+    |> maybe_put_nonce_header(nonce, next_dev_request?)
   end
 
   defp generate_nonce do
@@ -37,6 +38,7 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
   ]
 
   @vendor_frame_sources [
+    "https://teller.io",
     "https://cdn.plaid.com",
     "https://link.plaid.com",
     "https://connect.teller.io",
@@ -53,7 +55,22 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
     "https://api.withpersona.com"
   ]
 
-  defp build_csp_header(nonce) do
+  defp build_csp_header(conn, nonce) do
+    {style_src, script_src, connect_src} =
+      if next_dev_request?(conn) do
+        {
+          ["'self'", "'unsafe-inline'"],
+          ["'self'", "'unsafe-inline'", "'unsafe-eval'" | @vendor_script_sources],
+          ["'self'", "ws://127.0.0.1:3100", "ws://localhost:3100" | @vendor_connect_sources]
+        }
+      else
+        {
+          ["'self'", "'nonce-#{nonce}'"],
+          ["'self'", "'nonce-#{nonce}'" | @vendor_script_sources],
+          ["'self'" | @vendor_connect_sources]
+        }
+      end
+
     [
       "default-src 'self'",
       "frame-ancestors 'none'",
@@ -62,11 +79,19 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
       "object-src 'none'",
       "img-src 'self' data:",
       "font-src 'self'",
-      "style-src 'self' 'nonce-#{nonce}'",
-      "script-src 'self' 'nonce-#{nonce}' #{Enum.join(@vendor_script_sources, " ")}",
+      "style-src #{Enum.join(style_src, " ")}",
+      "script-src #{Enum.join(script_src, " ")}",
       "frame-src 'self' #{Enum.join(@vendor_frame_sources, " ")}",
-      "connect-src 'self' #{Enum.join(@vendor_connect_sources, " ")}"
+      "connect-src #{Enum.join(connect_src, " ")}"
     ]
     |> Enum.join("; ")
   end
+
+  defp next_dev_request?(conn) do
+    Application.get_env(:money_tree, :dev_routes) == true and
+      String.starts_with?(conn.request_path || "", "/app/react")
+  end
+
+  defp maybe_put_nonce_header(conn, _nonce, true), do: conn
+  defp maybe_put_nonce_header(conn, nonce, false), do: put_resp_header(conn, "x-csp-nonce", nonce)
 end

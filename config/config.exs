@@ -47,6 +47,17 @@ config :money_tree, MoneyTree.Teller,
   client_cert_file: nil,
   client_key_file: nil
 
+config :money_tree, MoneyTree.Plaid,
+  environment: "sandbox",
+  api_host: "https://sandbox.plaid.com",
+  client_name: "MoneyTree",
+  language: "en",
+  products: ["transactions"],
+  country_codes: ["US"],
+  timeout: :timer.seconds(10),
+  finch: MoneyTree.Finch,
+  telemetry_metadata: %{service: "money_tree", integration: "plaid"}
+
 config :money_tree, Oban,
   repo: MoneyTree.Repo,
   queues: [

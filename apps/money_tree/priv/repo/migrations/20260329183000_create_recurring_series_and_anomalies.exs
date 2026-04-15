@@ -5,7 +5,10 @@ defmodule MoneyTree.Repo.Migrations.CreateRecurringSeriesAndAnomalies do
     create table(:recurring_series, primary_key: false) do
       add :id, :binary_id, primary_key: true
       add :user_id, references(:users, type: :binary_id, on_delete: :delete_all), null: false
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :fingerprint, :string, null: false
       add :series_key, :string, null: false
       add :cadence, :string, null: false, default: "custom"
@@ -17,7 +20,9 @@ defmodule MoneyTree.Repo.Migrations.CreateRecurringSeriesAndAnomalies do
       add :status, :string, null: false, default: "active"
       add :last_seen_at, :utc_datetime_usec
       add :next_expected_at, :utc_datetime_usec
-      add :last_transaction_id, references(:transactions, type: :binary_id, on_delete: :nilify_all)
+
+      add :last_transaction_id,
+          references(:transactions, type: :binary_id, on_delete: :nilify_all)
 
       timestamps(type: :utc_datetime_usec)
     end
@@ -29,7 +34,10 @@ defmodule MoneyTree.Repo.Migrations.CreateRecurringSeriesAndAnomalies do
 
     create table(:recurring_anomalies, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :series_id, references(:recurring_series, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :series_id, references(:recurring_series, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :anomaly_type, :string, null: false
       add :status, :string, null: false, default: "open"
       add :severity, :string, null: false, default: "warning"

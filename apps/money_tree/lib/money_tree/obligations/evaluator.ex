@@ -31,12 +31,23 @@ defmodule MoneyTree.Obligations.Evaluator do
 
     state =
       cond do
-        recovered? and enabled?(preferences, :recovered_enabled) -> :recovered
-        payment -> :clear
-        Date.compare(today, due_date) == :eq and enabled?(preferences, :due_today_enabled) -> :due_today
-        overdue?(today, due_date, obligation) and enabled?(preferences, :overdue_enabled) -> :overdue
-        upcoming?(today, due_date, preferences) and enabled?(preferences, :upcoming_enabled) -> :upcoming
-        true -> :clear
+        recovered? and enabled?(preferences, :recovered_enabled) ->
+          :recovered
+
+        payment ->
+          :clear
+
+        Date.compare(today, due_date) == :eq and enabled?(preferences, :due_today_enabled) ->
+          :due_today
+
+        overdue?(today, due_date, obligation) and enabled?(preferences, :overdue_enabled) ->
+          :overdue
+
+        upcoming?(today, due_date, preferences) and enabled?(preferences, :upcoming_enabled) ->
+          :upcoming
+
+        true ->
+          :clear
       end
 
     emit_state(obligation, state, due_date, payment, preferences, today)
@@ -57,13 +68,24 @@ defmodule MoneyTree.Obligations.Evaluator do
 
   defp emit_state(_obligation, :clear, due_date, payment, _preferences, _today) do
     if payment do
-      Notifications.resolve_cycle_events(payment.obligation_id, due_date, ~w(upcoming due_today overdue))
+      Notifications.resolve_cycle_events(
+        payment.obligation_id,
+        due_date,
+        ~w(upcoming due_today overdue)
+      )
     end
 
     :ok
   end
 
-  defp emit_state(%Obligation{} = obligation, :recovered, _due_date, _payment, _preferences, today) do
+  defp emit_state(
+         %Obligation{} = obligation,
+         :recovered,
+         _due_date,
+         _payment,
+         _preferences,
+         today
+       ) do
     recover_overdue_events(obligation, today)
   end
 
@@ -120,8 +142,13 @@ defmodule MoneyTree.Obligations.Evaluator do
 
   defp event_metadata(%Obligation{} = obligation, due_date, preferences) do
     funding_account = obligation.linked_funding_account
-    available_balance = funding_account && (funding_account.available_balance || funding_account.current_balance)
-    shortfall? = available_balance && Decimal.compare(available_balance, obligation.minimum_due_amount) == :lt
+
+    available_balance =
+      funding_account && (funding_account.available_balance || funding_account.current_balance)
+
+    shortfall? =
+      available_balance &&
+        Decimal.compare(available_balance, obligation.minimum_due_amount) == :lt
 
     %{
       "payee" => obligation.creditor_payee,
@@ -130,7 +157,8 @@ defmodule MoneyTree.Obligations.Evaluator do
       "currency" => obligation.currency,
       "funding_account_id" => obligation.linked_funding_account_id,
       "funding_account_name" => funding_account && funding_account.name,
-      "funding_balance" => if(available_balance, do: Decimal.to_string(available_balance, :normal), else: nil),
+      "funding_balance" =>
+        if(available_balance, do: Decimal.to_string(available_balance, :normal), else: nil),
       "funding_shortfall" => shortfall? || false,
       "upcoming_lead_days" => preferences.upcoming_lead_days
     }

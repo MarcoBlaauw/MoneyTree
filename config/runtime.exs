@@ -147,6 +147,72 @@ teller_runtime_config =
 
 config :money_tree, MoneyTree.Teller, Keyword.merge(base_teller_config, teller_runtime_config)
 
+base_plaid_config = Application.get_env(:money_tree, MoneyTree.Plaid, [])
+
+parse_csv_env = fn value ->
+  value
+  |> String.split(",")
+  |> Enum.map(&String.trim/1)
+  |> Enum.reject(&(&1 == ""))
+end
+
+plaid_products =
+  case teller_env.("PLAID_PRODUCTS") do
+    nil -> nil
+    csv -> parse_csv_env.(csv)
+  end
+
+plaid_country_codes =
+  case teller_env.("PLAID_COUNTRY_CODES") do
+    nil -> nil
+    csv -> parse_csv_env.(csv)
+  end
+
+plaid_api_host =
+  case teller_env.("PLAID_API_HOST") do
+    nil ->
+      case teller_env.("PLAID_ENV") do
+        "production" -> "https://production.plaid.com"
+        "development" -> "https://development.plaid.com"
+        _ -> "https://sandbox.plaid.com"
+      end
+
+    host ->
+      host
+  end
+
+plaid_runtime_config =
+  [
+    client_id: teller_env.("PLAID_CLIENT_ID"),
+    secret: teller_env.("PLAID_SECRET"),
+    environment: teller_env.("PLAID_ENV"),
+    products: plaid_products,
+    country_codes: plaid_country_codes,
+    redirect_uri: teller_env.("PLAID_REDIRECT_URI"),
+    webhook_secret: teller_env.("PLAID_WEBHOOK_SECRET"),
+    client_name: teller_env.("PLAID_CLIENT_NAME"),
+    language: teller_env.("PLAID_LANGUAGE"),
+    api_host: plaid_api_host
+  ]
+  |> Enum.reject(fn
+    {_key, nil} -> true
+    {_key, []} -> true
+    _ -> false
+  end)
+
+config :money_tree, MoneyTree.Plaid, Keyword.merge(base_plaid_config, plaid_runtime_config)
+
+stripe_runtime_config =
+  [
+    connect_client_id: teller_env.("STRIPE_CONNECT_CLIENT_ID"),
+    connect_redirect_uri: teller_env.("STRIPE_CONNECT_REDIRECT_URI"),
+    authorize_host: teller_env.("STRIPE_CONNECT_HOST"),
+    connect_scope: teller_env.("STRIPE_CONNECT_SCOPE")
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+config :money_tree, MoneyTree.Stripe, stripe_runtime_config
+
 mailer_env = fn key ->
   case System.get_env(key) do
     nil -> nil

@@ -133,8 +133,12 @@ defmodule MoneyTree.Budgets.Planner do
     |> Decimal.add(Decimal.mult(twelve, Decimal.new("0.2")))
   end
 
-  defp apply_target_mode(base, :strict, volatility), do: Decimal.add(base, Decimal.mult(volatility, Decimal.new("0.35")))
-  defp apply_target_mode(base, :flexible, volatility), do: Decimal.add(base, Decimal.mult(volatility, Decimal.new("0.15")))
+  defp apply_target_mode(base, :strict, volatility),
+    do: Decimal.add(base, Decimal.mult(volatility, Decimal.new("0.35")))
+
+  defp apply_target_mode(base, :flexible, volatility),
+    do: Decimal.add(base, Decimal.mult(volatility, Decimal.new("0.15")))
+
   defp apply_target_mode(base, _, _), do: base
 
   defp apply_bounds(value, nil, nil), do: value
@@ -164,7 +168,8 @@ defmodule MoneyTree.Budgets.Planner do
   defp volatility([], _baseline), do: Decimal.new("0")
 
   defp volatility(history, baseline) do
-    baseline = if Decimal.compare(baseline, Decimal.new("0")) == :eq, do: Decimal.new("1"), else: baseline
+    baseline =
+      if Decimal.compare(baseline, Decimal.new("0")) == :eq, do: Decimal.new("1"), else: baseline
 
     history
     |> Enum.map(fn value -> Decimal.abs(Decimal.sub(value, baseline)) end)

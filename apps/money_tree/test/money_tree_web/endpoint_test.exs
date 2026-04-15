@@ -44,12 +44,29 @@ defmodule MoneyTreeWeb.EndpointTest do
       assert header =~ "style-src 'self' 'nonce-#{nonce}'"
 
       assert header =~
-               "frame-src 'self' https://cdn.plaid.com https://link.plaid.com https://connect.teller.io https://withpersona.com https://app.withpersona.com"
+               "frame-src 'self' https://teller.io https://cdn.plaid.com https://link.plaid.com https://connect.teller.io https://withpersona.com https://app.withpersona.com"
 
       assert header =~
                "connect-src 'self' https://api.plaid.com https://cdn.plaid.com https://connect.teller.io https://api.teller.io https://withpersona.com https://api.withpersona.com"
 
       assert is_binary(conn.private[:csp_nonce])
+    end
+
+    test "uses relaxed CSP for proxied Next dev routes", %{conn: conn} do
+      original_dev_routes = Application.get_env(:money_tree, :dev_routes)
+      Application.put_env(:money_tree, :dev_routes, true)
+      on_exit(fn -> Application.put_env(:money_tree, :dev_routes, original_dev_routes) end)
+
+      conn = get(conn, "/app/react/link-bank")
+
+      [header] = get_resp_header(conn, "content-security-policy")
+
+      assert header =~ "style-src 'self' 'unsafe-inline'"
+
+      assert header =~
+               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.plaid.com https://cdn.teller.io https://withpersona.com"
+
+      assert get_resp_header(conn, "x-csp-nonce") == []
     end
   end
 

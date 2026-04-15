@@ -31,7 +31,8 @@ defmodule MoneyTree.Categorization do
     |> Repo.all()
   end
 
-  @spec create_rule(User.t() | binary(), map()) :: {:ok, CategoryRule.t()} | {:error, Ecto.Changeset.t()}
+  @spec create_rule(User.t() | binary(), map()) ::
+          {:ok, CategoryRule.t()} | {:error, Ecto.Changeset.t()}
   def create_rule(user, attrs) do
     attrs =
       attrs
@@ -43,7 +44,8 @@ defmodule MoneyTree.Categorization do
     |> Repo.insert()
   end
 
-  @spec delete_rule(User.t() | binary(), binary()) :: {:ok, CategoryRule.t()} | {:error, :not_found}
+  @spec delete_rule(User.t() | binary(), binary()) ::
+          {:ok, CategoryRule.t()} | {:error, :not_found}
   def delete_rule(user, rule_id) do
     case Repo.get_by(CategoryRule, id: rule_id, user_id: user_id(user)) do
       nil -> {:error, :not_found}
@@ -51,7 +53,8 @@ defmodule MoneyTree.Categorization do
     end
   end
 
-  @spec apply_to_transaction(Transaction.t()) :: {:ok, Transaction.t()} | {:error, Ecto.Changeset.t()}
+  @spec apply_to_transaction(Transaction.t()) ::
+          {:ok, Transaction.t()} | {:error, Ecto.Changeset.t()}
   def apply_to_transaction(%Transaction{} = transaction) do
     transaction = Repo.preload(transaction, :account)
     decision = categorize(transaction)
@@ -101,24 +104,29 @@ defmodule MoneyTree.Categorization do
          nil <- first_matching_deterministic_rule(transaction) do
       provider_decision(transaction)
     else
-      %UserOverride{} = override -> %{
-        category: override.category,
-        source: "manual",
-        confidence: override.confidence || Decimal.new("1.0")
-      }
+      %UserOverride{} = override ->
+        %{
+          category: override.category,
+          source: "manual",
+          confidence: override.confidence || Decimal.new("1.0")
+        }
 
-      %CategoryRule{} = rule -> %{
-        category: rule.category,
-        source: "rule",
-        confidence: rule.confidence
-      }
+      %CategoryRule{} = rule ->
+        %{
+          category: rule.category,
+          source: "rule",
+          confidence: rule.confidence
+        }
     end
   end
 
   defp fetch_user_transaction(user_id, transaction_id) do
     Transaction
     |> join(:inner, [transaction], account in assoc(transaction, :account))
-    |> where([transaction, account], transaction.id == ^transaction_id and account.user_id == ^user_id)
+    |> where(
+      [transaction, account],
+      transaction.id == ^transaction_id and account.user_id == ^user_id
+    )
     |> preload([transaction, account], account: account)
     |> Repo.one()
   end
@@ -171,8 +179,15 @@ defmodule MoneyTree.Categorization do
        when not is_list(keywords) or keywords == [],
        do: true
 
-  defp keyword_matches?(%CategoryRule{description_keywords: keywords}, %Transaction{} = transaction) do
-    text = [transaction.description, transaction.merchant_name] |> Enum.reject(&is_nil/1) |> Enum.join(" ") |> String.downcase()
+  defp keyword_matches?(
+         %CategoryRule{description_keywords: keywords},
+         %Transaction{} = transaction
+       ) do
+    text =
+      [transaction.description, transaction.merchant_name]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" ")
+      |> String.downcase()
 
     Enum.any?(keywords, fn keyword ->
       keyword = keyword |> to_string() |> String.trim() |> String.downcase()
@@ -254,8 +269,11 @@ defmodule MoneyTree.Categorization do
   defp ensure_manual_rule(user_id, %Transaction{} = transaction, category) do
     regex =
       case transaction.merchant_name do
-        merchant when is_binary(merchant) and merchant != "" -> "^" <> Regex.escape(merchant) <> "$"
-        _ -> nil
+        merchant when is_binary(merchant) and merchant != "" ->
+          "^" <> Regex.escape(merchant) <> "$"
+
+        _ ->
+          nil
       end
 
     keywords =
@@ -304,7 +322,9 @@ defmodule MoneyTree.Categorization do
   def recategorize_all(user) do
     user
     |> Accounts.accessible_accounts_query()
-    |> join(:inner, [account], transaction in Transaction, on: transaction.account_id == account.id)
+    |> join(:inner, [account], transaction in Transaction,
+      on: transaction.account_id == account.id
+    )
     |> select([_account, transaction], transaction)
     |> Repo.all()
     |> Enum.reduce(0, fn transaction, acc ->

@@ -35,8 +35,12 @@ defmodule MoneyTreeWeb.CategorizationController do
         "category" => category
       }) do
     case Categorization.recategorize_transaction(current_user, transaction_id, category) do
-      {:ok, transaction} -> json(conn, %{data: serialize_transaction(transaction)})
-      {:error, :not_found} -> conn |> put_status(:not_found) |> json(%{error: "transaction not found"})
+      {:ok, transaction} ->
+        json(conn, %{data: serialize_transaction(transaction)})
+
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "transaction not found"})
+
       {:error, %Changeset{} = changeset} ->
         conn
         |> put_status(:unprocessable_entity)

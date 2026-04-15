@@ -100,7 +100,10 @@ defmodule MoneyTree.Transactions.Transaction do
        do: []
 
   defp validate_categorization_source(:categorization_source, _source),
-    do: [categorization_source: "must be one of #{Enum.join(@supported_categorization_sources, ", ")}"]
+    do: [
+      categorization_source:
+        "must be one of #{Enum.join(@supported_categorization_sources, ", ")}"
+    ]
 
   defp validate_decimal(changeset, field) do
     validate_change(changeset, field, fn ^field, value ->

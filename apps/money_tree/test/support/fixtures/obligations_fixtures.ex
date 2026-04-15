@@ -15,7 +15,11 @@ defmodule MoneyTree.ObligationsFixtures do
 
     account =
       Map.get_lazy(attrs, :linked_funding_account, fn ->
-        account_fixture(user, %{name: "Household Checking", type: "depository", subtype: "checking"})
+        account_fixture(user, %{
+          name: "Household Checking",
+          type: "depository",
+          subtype: "checking"
+        })
       end)
 
     params =
@@ -43,8 +47,7 @@ defmodule MoneyTree.ObligationsFixtures do
       amount: Map.get(attrs, :amount, Decimal.new("-80.00")),
       currency: Map.get(attrs, :currency, account.currency || "USD"),
       type: Map.get(attrs, :type, "ach"),
-      posted_at:
-        Map.get(attrs, :posted_at, DateTime.utc_now() |> DateTime.truncate(:second)),
+      posted_at: Map.get(attrs, :posted_at, DateTime.utc_now() |> DateTime.truncate(:second)),
       description: Map.get(attrs, :description, "Payment to Example Card"),
       merchant_name: Map.get(attrs, :merchant_name, "Example Card"),
       status: Map.get(attrs, :status, "posted"),

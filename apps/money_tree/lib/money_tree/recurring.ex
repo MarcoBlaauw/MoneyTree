@@ -121,7 +121,9 @@ defmodule MoneyTree.Recurring do
   defp pending_without_matches(posted, pending) do
     Enum.reject(pending, fn pending_tx ->
       Enum.any?(posted, fn posted_tx ->
-        abs(Date.diff(DateTime.to_date(posted_tx.posted_at), DateTime.to_date(pending_tx.posted_at))) <= 3
+        abs(
+          Date.diff(DateTime.to_date(posted_tx.posted_at), DateTime.to_date(pending_tx.posted_at))
+        ) <= 3
       end)
     end)
   end
@@ -135,7 +137,9 @@ defmodule MoneyTree.Recurring do
     intervals =
       txns
       |> Enum.chunk_every(2, 1, :discard)
-      |> Enum.map(fn [left, right] -> Date.diff(DateTime.to_date(right.posted_at), DateTime.to_date(left.posted_at)) end)
+      |> Enum.map(fn [left, right] ->
+        Date.diff(DateTime.to_date(right.posted_at), DateTime.to_date(left.posted_at))
+      end)
       |> Enum.filter(&(&1 > 0))
 
     {cadence, cadence_days, window_days, interval_confidence} = infer_cadence(intervals)
@@ -156,7 +160,8 @@ defmodule MoneyTree.Recurring do
       |> D.div(D.new("2"))
       |> D.round(4)
 
-    status = if D.compare(confidence, D.new("0.55")) in [:gt, :eq], do: "active", else: "tentative"
+    status =
+      if D.compare(confidence, D.new("0.55")) in [:gt, :eq], do: "active", else: "tentative"
 
     attrs = %{
       user_id: user_id,
@@ -201,7 +206,10 @@ defmodule MoneyTree.Recurring do
 
   defp process_anomalies(%Series{} = series, txns) do
     now = DateTime.utc_now()
-    window_end = DateTime.add(series.next_expected_at, series.expected_window_days * 86_400, :second)
+
+    window_end =
+      DateTime.add(series.next_expected_at, series.expected_window_days * 86_400, :second)
+
     expense_series? =
       case List.last(txns) do
         %{amount: %D{} = amount} -> D.compare(amount, D.new("0")) == :lt
@@ -212,7 +220,10 @@ defmodule MoneyTree.Recurring do
 
     active_types =
       if expense_series? and DateTime.compare(now, window_end) == :gt do
-        record_anomaly(series, "missing_cycle", DateTime.to_date(series.next_expected_at), %{now: now})
+        record_anomaly(series, "missing_cycle", DateTime.to_date(series.next_expected_at), %{
+          now: now
+        })
+
         ["missing_cycle" | active_types]
       else
         active_types
@@ -222,7 +233,10 @@ defmodule MoneyTree.Recurring do
       if expense_series? and
            DateTime.compare(now, series.next_expected_at) == :gt and
            DateTime.compare(now, window_end) != :gt do
-        record_anomaly(series, "late_cycle", DateTime.to_date(series.next_expected_at), %{now: now})
+        record_anomaly(series, "late_cycle", DateTime.to_date(series.next_expected_at), %{
+          now: now
+        })
+
         ["late_cycle" | active_types]
       else
         active_types
@@ -234,6 +248,7 @@ defmodule MoneyTree.Recurring do
 
       latest ->
         latest_abs = D.abs(latest.amount)
+
         historical_amounts =
           txns
           |> Enum.drop(-1)
@@ -299,9 +314,12 @@ defmodule MoneyTree.Recurring do
 
   defp resolve_stale_anomalies(series_id, active_types) do
     from(a in Anomaly,
-      where: a.series_id == ^series_id and a.status == "open" and a.anomaly_type not in ^active_types
+      where:
+        a.series_id == ^series_id and a.status == "open" and a.anomaly_type not in ^active_types
     )
-    |> Repo.update_all(set: [status: "resolved", resolved_at: DateTime.utc_now(), updated_at: DateTime.utc_now()])
+    |> Repo.update_all(
+      set: [status: "resolved", resolved_at: DateTime.utc_now(), updated_at: DateTime.utc_now()]
+    )
   end
 
   defp mark_unseen_series_inactive(user_id, touched_series_ids) do

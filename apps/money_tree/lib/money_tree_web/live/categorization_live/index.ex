@@ -10,10 +10,17 @@ defmodule MoneyTreeWeb.CategorizationLive.Index do
   end
 
   @impl true
-  def handle_event("recategorize", %{"transaction_id" => transaction_id, "category" => category}, %{assigns: %{current_user: user}} = socket) do
+  def handle_event(
+        "recategorize",
+        %{"transaction_id" => transaction_id, "category" => category},
+        %{assigns: %{current_user: user}} = socket
+      ) do
     case Categorization.recategorize_transaction(user, transaction_id, category) do
-      {:ok, _} -> {:noreply, socket |> load(user) |> put_flash(:info, "Transaction recategorized")}
-      {:error, _} -> {:noreply, put_flash(socket, :error, "Unable to recategorize transaction")}
+      {:ok, _} ->
+        {:noreply, socket |> load(user) |> put_flash(:info, "Transaction recategorized")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Unable to recategorize transaction")}
     end
   end
 
@@ -45,7 +52,7 @@ defmodule MoneyTreeWeb.CategorizationLive.Index do
     txns = Transactions.paginate_for_user(user, page: 1, per_page: 20).entries
 
     assign(socket,
-      page_title: "Categorization",
+      page_title: "Transactions",
       transactions: txns,
       rules: Categorization.list_rules(user)
     )
@@ -55,7 +62,11 @@ defmodule MoneyTreeWeb.CategorizationLive.Index do
   def render(assigns) do
     ~H"""
     <section class="space-y-6">
-      <.header title="Categorization" subtitle="Recategorize transactions and manage rules." />
+      <.header title="Categorization rules" subtitle="Manage transaction categorization rules under Transactions.">
+        <:actions>
+          <.link navigate={~p"/app/transactions"} class="btn btn-outline">Back to transactions</.link>
+        </:actions>
+      </.header>
 
       <div class="rounded-xl border border-zinc-200 bg-white p-4">
         <h2 class="text-sm font-semibold text-zinc-800">Recent transactions</h2>

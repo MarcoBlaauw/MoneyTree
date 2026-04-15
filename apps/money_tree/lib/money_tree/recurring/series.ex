@@ -59,7 +59,10 @@ defmodule MoneyTree.Recurring.Series do
     |> validate_required([:user_id, :account_id, :fingerprint, :series_key, :cadence, :status])
     |> validate_inclusion(:cadence, @cadences)
     |> validate_inclusion(:status, @statuses)
-    |> validate_number(:expected_window_days, greater_than_or_equal_to: 1, less_than_or_equal_to: 14)
+    |> validate_number(:expected_window_days,
+      greater_than_or_equal_to: 1,
+      less_than_or_equal_to: 14
+    )
     |> validate_number(:cadence_days, greater_than_or_equal_to: 1, less_than_or_equal_to: 180)
     |> validate_length(:fingerprint, max: 255)
     |> validate_length(:series_key, max: 400)

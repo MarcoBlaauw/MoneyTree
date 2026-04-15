@@ -77,7 +77,8 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
   def handle_event(
         "accept-suggestion",
         %{"id" => budget_id},
-        %{assigns: %{current_user: current_user, planner_recommendations: recommendations}} = socket
+        %{assigns: %{current_user: current_user, planner_recommendations: recommendations}} =
+          socket
       ) do
     with recommendation when not is_nil(recommendation) <-
            Enum.find(recommendations, &(&1.budget_id == budget_id)),
@@ -100,7 +101,8 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
   def handle_event(
         "reject-suggestion",
         %{"id" => budget_id},
-        %{assigns: %{current_user: current_user, planner_recommendations: recommendations}} = socket
+        %{assigns: %{current_user: current_user, planner_recommendations: recommendations}} =
+          socket
       ) do
     with recommendation when not is_nil(recommendation) <-
            Enum.find(recommendations, &(&1.budget_id == budget_id)),
@@ -156,7 +158,13 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
   def handle_event(
         "save-budget",
         %{"budget" => params},
-        %{assigns: %{current_user: current_user, budget_form_mode: :edit, budget_editing: %Budget{} = budget}} =
+        %{
+          assigns: %{
+            current_user: current_user,
+            budget_form_mode: :edit,
+            budget_editing: %Budget{} = budget
+          }
+        } =
           socket
       ) do
     case Budgets.update_budget(budget, params) do
@@ -417,5 +425,4 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
 
   defp select_value(value) when is_atom(value), do: Atom.to_string(value)
   defp select_value(value), do: value
-
 end

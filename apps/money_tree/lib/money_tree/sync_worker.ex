@@ -65,7 +65,9 @@ defmodule MoneyTree.SyncWorker do
 
       defp resolve_client(%{"client" => client}) when is_binary(client) do
         case String.split(client, ".") do
-          [] -> nil
+          [] ->
+            nil
+
           parts ->
             client_module = Module.concat(parts)
             if Code.ensure_loaded?(client_module), do: client_module, else: nil

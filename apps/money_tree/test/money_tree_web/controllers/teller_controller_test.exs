@@ -134,7 +134,7 @@ defmodule MoneyTreeWeb.TellerControllerTest do
         |> post(~p"/api/teller/connect_token", %{})
         |> json_response(502)
 
-      assert response == %{"error" => "teller service unavailable"}
+      assert String.starts_with?(response["error"], "teller service unavailable")
     end
   end
 
@@ -253,7 +253,7 @@ defmodule MoneyTreeWeb.TellerControllerTest do
         |> post(~p"/api/teller/exchange", %{"institution_id" => "inst"})
         |> json_response(400)
 
-      assert response == %{"error" => "public_token is required"}
+      assert response == %{"error" => "public_token or access_token is required"}
     end
 
     test "requires institution id", %{conn: conn} do
@@ -267,6 +267,30 @@ defmodule MoneyTreeWeb.TellerControllerTest do
         |> json_response(400)
 
       assert response == %{"error" => "institution_id is required"}
+    end
+
+    test "accepts access token payload and auto-creates institution by name", %{conn: conn} do
+      response =
+        conn
+        |> post(~p"/api/teller/exchange", %{
+          "access_token" => "token-access-123",
+          "user_id" => "usr_123",
+          "enrollment_id" => "enr_123",
+          "institution_name" => "Example Credit Union"
+        })
+        |> json_response(200)
+
+      %{"data" => %{"connection_id" => connection_id, "institution_name" => institution_name}} =
+        response
+
+      assert institution_name == "Example Credit Union"
+
+      connection = Repo.get!(Connection, connection_id)
+      assert connection.teller_user_id == "usr_123"
+      assert connection.teller_enrollment_id == "enr_123"
+      assert connection.metadata["provider"] == "teller"
+      assert connection.metadata["institution_name"] == "Example Credit Union"
+      assert is_binary(connection.encrypted_credentials)
     end
 
     test "maps teller upstream errors", %{conn: conn, institution: institution} do

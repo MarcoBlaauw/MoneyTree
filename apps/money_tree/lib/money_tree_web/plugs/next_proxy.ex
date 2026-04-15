@@ -69,19 +69,20 @@ defmodule MoneyTreeWeb.Plugs.NextProxy do
 
     nonce = csp_nonce(conn)
     csrf_token = Plug.CSRFProtection.get_csrf_token()
+    next_dev_request? = next_dev_request?(conn)
 
     with {:ok, body, conn} <- read_full_body(conn),
          {:ok, %Response{} = response} <-
            client.request(
              conn.method,
              build_upstream_url(conn, upstream),
-             build_request_headers(conn, upstream, nonce, csrf_token),
+             build_request_headers(conn, upstream, nonce, csrf_token, next_dev_request?),
              body,
              client_opts
            ) do
       conn
       |> put_resp_header("x-csrf-token", csrf_token)
-      |> maybe_put_nonce_header(nonce)
+      |> maybe_put_nonce_header(nonce, next_dev_request?)
       |> relay_response(response)
     else
       {:error, reason} ->
@@ -177,13 +178,13 @@ defmodule MoneyTreeWeb.Plugs.NextProxy do
     end
   end
 
-  defp build_request_headers(conn, upstream, nonce, csrf_token) do
+  defp build_request_headers(conn, upstream, nonce, csrf_token, next_dev_request?) do
     original_headers = Enum.reject(conn.req_headers, fn {name, _} -> header_dropped?(name) end)
 
     original_headers
     |> replace_header("host", host_header(upstream))
     |> put_forwarded_headers(conn, upstream)
-    |> maybe_put_header("x-csp-nonce", nonce)
+    |> maybe_put_header("x-csp-nonce", if(next_dev_request?, do: nil, else: nonce))
     |> maybe_put_header("x-csrf-token", csrf_token)
   end
 
@@ -232,10 +233,16 @@ defmodule MoneyTreeWeb.Plugs.NextProxy do
     replace_header(headers, name, value)
   end
 
-  defp maybe_put_nonce_header(conn, nil), do: conn
+  defp maybe_put_nonce_header(conn, _nonce, true), do: conn
+  defp maybe_put_nonce_header(conn, nil, false), do: conn
 
-  defp maybe_put_nonce_header(conn, nonce) do
+  defp maybe_put_nonce_header(conn, nonce, false) do
     put_resp_header(conn, "x-csp-nonce", nonce)
+  end
+
+  defp next_dev_request?(conn) do
+    Application.get_env(:money_tree, :dev_routes) == true and
+      String.starts_with?(conn.request_path || "", "/app/react")
   end
 
   defp relay_response(conn, %Response{status: status, headers: headers, body: body}) do

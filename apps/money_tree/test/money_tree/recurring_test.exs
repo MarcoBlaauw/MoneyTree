@@ -49,7 +49,15 @@ defmodule MoneyTree.RecurringTest do
       user = user_fixture()
       account = account_fixture(user, %{name: "Subscriptions"})
 
-      insert_tx(account, "sub-1-posted", "-15.99", ~U[2026-01-02 08:00:00Z], "Music Stream", "Subscription", "posted")
+      insert_tx(
+        account,
+        "sub-1-posted",
+        "-15.99",
+        ~U[2026-01-02 08:00:00Z],
+        "Music Stream",
+        "Subscription",
+        "posted"
+      )
 
       insert_tx(
         account,
@@ -61,8 +69,25 @@ defmodule MoneyTree.RecurringTest do
         "pending"
       )
 
-      insert_tx(account, "sub-2-posted", "-15.99", ~U[2026-02-03 08:00:00Z], "Music Stream", "Subscription", "posted")
-      insert_tx(account, "sub-3-posted", "-15.99", ~U[2026-03-03 08:00:00Z], "Music Stream", "Subscription", "posted")
+      insert_tx(
+        account,
+        "sub-2-posted",
+        "-15.99",
+        ~U[2026-02-03 08:00:00Z],
+        "Music Stream",
+        "Subscription",
+        "posted"
+      )
+
+      insert_tx(
+        account,
+        "sub-3-posted",
+        "-15.99",
+        ~U[2026-03-03 08:00:00Z],
+        "Music Stream",
+        "Subscription",
+        "posted"
+      )
 
       assert {:ok, %{series_updated: 1}} = Recurring.detect_for_user(user.id)
 
@@ -91,7 +116,15 @@ defmodule MoneyTree.RecurringTest do
     end
   end
 
-  defp insert_tx(account, external_id, amount, posted_at, description, category, status \\ "posted") do
+  defp insert_tx(
+         account,
+         external_id,
+         amount,
+         posted_at,
+         description,
+         category,
+         status \\ "posted"
+       ) do
     params = %{
       external_id: external_id,
       amount: Decimal.new(amount),

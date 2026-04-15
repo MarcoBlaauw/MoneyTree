@@ -31,7 +31,9 @@ defmodule MoneyTreeWeb.Owner.UserController do
          {:ok, %User{} = updated} <- apply_owner_update(user, params, actor) do
       json(conn, %{data: serialize_user(updated)})
     else
-      {:error, :not_found} -> not_found(conn)
+      {:error, :not_found} ->
+        not_found(conn)
+
       {:error, :invalid_suspended} ->
         unprocessable(conn, %{error: "suspended must be a boolean"})
 
@@ -59,8 +61,12 @@ defmodule MoneyTreeWeb.Owner.UserController do
          {:ok, _updated} <- Accounts.suspend_user(user, actor: actor) do
       send_resp(conn, :no_content, "")
     else
-      {:error, :not_found} -> not_found(conn)
-      {:error, :already_suspended} -> conflict(conn, %{error: "user is already suspended"})
+      {:error, :not_found} ->
+        not_found(conn)
+
+      {:error, :already_suspended} ->
+        conflict(conn, %{error: "user is already suspended"})
+
       {:error, %Changeset{} = changeset} ->
         unprocessable(conn, %{errors: format_changeset_errors(changeset)})
     end

@@ -15,6 +15,8 @@ defmodule MoneyTree.Teller.Client do
           | {:access_token, String.t()}
           | {:adapter, module() | {module(), keyword()}}
           | {:finch, module()}
+          | {:connect_options, keyword()}
+          | {:transport_opts, keyword()}
           | {:timeout, non_neg_integer()}
           | {:telemetry_metadata, map()}
           | {:headers, [{binary(), binary()}]}
@@ -88,16 +90,12 @@ defmodule MoneyTree.Teller.Client do
     connect_options =
       opts
       |> Keyword.get(:connect_options, [])
-      |> Keyword.merge(timeout: timeout)
       |> maybe_put_transport_opts(transport_opts)
 
     common_opts =
-      [
-        finch: finch,
-        receive_timeout: timeout,
-        connect_options: connect_options,
-        headers: base_headers
-      ]
+      [receive_timeout: timeout, headers: base_headers]
+      |> maybe_put_connect_options(connect_options)
+      |> maybe_put_finch(finch, connect_options)
       |> maybe_put_adapter(adapter)
 
     %__MODULE__{
@@ -118,6 +116,19 @@ defmodule MoneyTree.Teller.Client do
 
     Keyword.put(connect_options, :transport_opts, merged_transport_opts)
   end
+
+  defp maybe_put_connect_options(opts, []), do: opts
+
+  defp maybe_put_connect_options(opts, connect_options),
+    do: Keyword.put(opts, :connect_options, connect_options)
+
+  defp maybe_put_finch(opts, nil, _connect_options), do: opts
+  # Req.new/1 merges global :req default_options, and this project sets `finch`.
+  # When connect_options are present we must force finch off to avoid Req conflict.
+  defp maybe_put_finch(opts, _finch, connect_options) when connect_options != [],
+    do: Keyword.put(opts, :finch, nil)
+
+  defp maybe_put_finch(opts, finch, _connect_options), do: Keyword.put(opts, :finch, finch)
 
   defp transport_opts_from_config(config) do
     []
@@ -201,7 +212,8 @@ defmodule MoneyTree.Teller.Client do
       |> stringify_keys()
       |> maybe_put_application_id(connect_application_id())
 
-    request(client, client.connect_request, :post, "/connect_tokens", json: payload)
+    # Connect tokens are minted via Teller API endpoints.
+    request(client, client.api_request, :post, "/connect_tokens", json: payload)
     |> normalize_response()
   end
 

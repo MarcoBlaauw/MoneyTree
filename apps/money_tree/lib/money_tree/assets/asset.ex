@@ -85,7 +85,9 @@ defmodule MoneyTree.Assets.Asset do
     Map.put(asset, :documents_text, refs |> Enum.join("\n"))
   end
 
-  defp normalize_currency(value) when is_binary(value), do: value |> String.trim() |> String.upcase()
+  defp normalize_currency(value) when is_binary(value),
+    do: value |> String.trim() |> String.upcase()
+
   defp normalize_currency(value), do: value
 
   defp validate_currency(changeset, field) do
@@ -101,8 +103,12 @@ defmodule MoneyTree.Assets.Asset do
   defp validate_decimal(changeset, field) do
     validate_change(changeset, field, fn ^field, value ->
       cond do
-        is_nil(value) -> []
-        match?(%Decimal{}, value) -> []
+        is_nil(value) ->
+          []
+
+        match?(%Decimal{}, value) ->
+          []
+
         is_binary(value) or is_number(value) ->
           case Decimal.cast(value) do
             {:ok, _} -> []
@@ -120,7 +126,9 @@ defmodule MoneyTree.Assets.Asset do
       changeset
       |> get_change(:documents_text)
       |> case do
-        nil -> nil
+        nil ->
+          nil
+
         text when is_binary(text) ->
           text
           |> String.split(~r/[\r\n,]+/, trim: true)
@@ -145,7 +153,9 @@ defmodule MoneyTree.Assets.Asset do
         |> Enum.filter(&is_binary/1)
         |> Enum.reject(&(&1 == ""))
         |> Enum.uniq()
-      _ -> []
+
+      _ ->
+        []
     end)
   end
 

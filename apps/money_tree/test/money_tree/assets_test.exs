@@ -26,6 +26,7 @@ defmodule MoneyTree.AssetsTest do
       assert [%Asset{id: ^hidden_asset_id}] = Assets.list_assets(other_user)
 
       membership_fixture(account, other_user)
+
       other_user_asset_ids =
         Assets.list_assets(other_user)
         |> Enum.map(& &1.id)
@@ -33,8 +34,10 @@ defmodule MoneyTree.AssetsTest do
 
       assert other_user_asset_ids == Enum.sort([hidden_asset_id, asset_id])
       assert [%Asset{id: ^asset_id}] = Assets.list_assets(owner, preload: [])
+
       assert Enum.sort(Enum.map(Assets.list_assets(other_user, preload: []), & &1.id)) ==
                Enum.sort([hidden_asset_id, asset_id])
+
       assert [%Asset{id: ^asset_id}] = Assets.list_assets(owner, account_id: account.id)
     end
   end
@@ -114,7 +117,10 @@ defmodule MoneyTree.AssetsTest do
       asset = asset_fixture(account, %{name: "Vehicle", valuation_amount: Decimal.new("15000")})
 
       assert {:ok, %Asset{} = updated} =
-               Assets.update_asset(user, asset, %{name: "Updated Vehicle", valuation_amount: "15500.50"})
+               Assets.update_asset(user, asset, %{
+                 name: "Updated Vehicle",
+                 valuation_amount: "15500.50"
+               })
 
       assert updated.name == "Updated Vehicle"
       assert updated.valuation_amount == Decimal.new("15500.50")
@@ -165,8 +171,19 @@ defmodule MoneyTree.AssetsTest do
       account = account_fixture(user, %{currency: "USD"})
       other_account = account_fixture(user, %{currency: "EUR"})
 
-      asset_one = asset_fixture(account, %{name: "Primary Home", valuation_amount: Decimal.new("400000"), valuation_currency: "USD"})
-      asset_two = asset_fixture(other_account, %{name: "Vacation Flat", valuation_amount: Decimal.new("250000"), valuation_currency: "EUR"})
+      asset_one =
+        asset_fixture(account, %{
+          name: "Primary Home",
+          valuation_amount: Decimal.new("400000"),
+          valuation_currency: "USD"
+        })
+
+      asset_two =
+        asset_fixture(other_account, %{
+          name: "Vacation Flat",
+          valuation_amount: Decimal.new("250000"),
+          valuation_currency: "EUR"
+        })
 
       summary = Assets.dashboard_summary(user)
 
@@ -178,9 +195,14 @@ defmodule MoneyTree.AssetsTest do
       eur_total = Enum.find(summary.totals, &(&1.currency == "EUR"))
 
       assert usd_total.asset_count == 1
-      assert usd_total.valuation == MoneyTree.Accounts.format_money(Decimal.new("400000"), "USD", [])
+
+      assert usd_total.valuation ==
+               MoneyTree.Accounts.format_money(Decimal.new("400000"), "USD", [])
+
       assert eur_total.asset_count == 1
-      assert eur_total.valuation == MoneyTree.Accounts.format_money(Decimal.new("250000"), "EUR", [])
+
+      assert eur_total.valuation ==
+               MoneyTree.Accounts.format_money(Decimal.new("250000"), "EUR", [])
     end
   end
 end

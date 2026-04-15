@@ -4,7 +4,10 @@ defmodule MoneyTree.Repo.Migrations.CreateAssets do
   def change do
     create table(:assets, primary_key: false) do
       add :id, :binary_id, primary_key: true
-      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all), null: false
+
+      add :account_id, references(:accounts, type: :binary_id, on_delete: :delete_all),
+        null: false
+
       add :name, :string, null: false
       add :asset_type, :string, null: false
       add :category, :string

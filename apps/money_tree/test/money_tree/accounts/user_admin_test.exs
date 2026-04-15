@@ -11,7 +11,8 @@ defmodule MoneyTree.Accounts.UserAdminTest do
       user_two = user_fixture(%{email: "two@example.com"})
       user_three = user_fixture(%{email: "three@example.com"})
 
-      %{entries: entries, metadata: metadata} = Accounts.paginate_users(%{"page" => "1", "per_page" => "2"})
+      %{entries: entries, metadata: metadata} =
+        Accounts.paginate_users(%{"page" => "1", "per_page" => "2"})
 
       assert length(entries) == 2
       assert metadata.page == 1

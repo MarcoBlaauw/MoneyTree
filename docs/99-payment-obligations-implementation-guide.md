@@ -23,7 +23,7 @@ The original scope was:
 
 ## Status Snapshot
 
-Based on the current codebase, the feature is partially complete and the core backend path is in place.
+Based on the current codebase, the feature is largely complete for the planned v1 scope.
 
 Completed:
 
@@ -38,9 +38,12 @@ Completed:
 - daily cron scheduling for obligation checks
 - dashboard integration for durable events plus computed advisories
 - dashboard dismiss actions for durable notification events
+- obligations LiveView durable alert history list and inspect detail panel
 - settings API and Phoenix LiveView form for alert preferences
 - Next control-panel notification toggles wired to the settings API
 - Next control-panel obligation management UI
+- targeted tests for delivery retry/suppression/resend exhaustion behavior
+- scheduling-path tests for obligation check enqueue and delivery timing discard paths
 - baseline test coverage for obligations, notifications, dashboard, and settings
 
 Still open:
@@ -48,8 +51,8 @@ Still open:
 - no provider-specific SMS adapter
 - no provider-specific push adapter
 - no persisted SMS or push destination model
-- limited tests around delivery retries, resend exhaustion, and worker scheduling
-- no detailed dashboard event history or inspect view
+- no provider-backed delivery analytics (open rate, resend rate, recovery rate)
+- no dedicated delivery-attempt audit UI beyond event-level inspection
 
 ## Current Code Locations
 
@@ -74,6 +77,7 @@ Persistence:
 Web integration:
 
 - `apps/money_tree/lib/money_tree_web/live/dashboard_live.ex`
+- `apps/money_tree/lib/money_tree_web/live/obligations_live/index.ex`
 - `apps/money_tree/lib/money_tree_web/live/settings_live.ex`
 - `apps/money_tree/lib/money_tree_web/controllers/settings_controller.ex`
 - `apps/money_tree/lib/money_tree_web/router.ex`
@@ -609,25 +613,34 @@ If rebuilding or extending this feature from scratch, follow this order:
 
 The current implementation covers the original backend alerting scope, but these items are still worth scheduling:
 
-- add a Phoenix-native obligation management surface if the product should support it outside Next
 - tighten payment matching beyond payee substring plus minimum amount
 - support multiple funding accounts or autopay source ambiguity when needed
 - add provider-specific SMS/push adapters once delivery requirements are finalized
 - add persisted phone-number and push-token destination models or resolvers
-- add durable event history and detail views in the dashboard
 - add analytics around alert open rate, resend rate, and recovery rate
+- add a dedicated delivery-attempt audit view when operations need per-attempt drilldowns
 
 ## Recommended Next Steps
 
 The highest-value remaining work is:
 
-1. Expand tests for:
-   - delivery worker retry and suppression paths
-   - resend exhaustion
-   - cron-backed scheduling assumptions
-   - evaluator edge cases around payee matching and grace periods
-2. Add durable event history/detail views in the dashboard.
-3. Add persisted destination modeling plus provider-specific SMS/push adapters.
+1. Decide and document the v1 closeout boundary:
+   - keep generic SMS/push wrappers without provider adapters in v1
+   - defer provider-specific adapters and persisted destination models to v2
+2. Add evaluator edge-case coverage around payee matching and grace-period boundaries.
+3. Plan v2 delivery channels:
+   - provider-specific SMS/push adapters
+   - persisted phone-number and push-token destination models
+   - optional delivery analytics and audit UI enhancements
+
+## Plan Status
+
+For v1 scope, this plan is now archive-ready.
+
+Archive boundary:
+
+- keep current durable event pipeline, history/detail inspect UI, and retry/suppression/resend safeguards
+- defer provider-backed SMS/push channels and persisted destination models to v2
 
 ## Suggested Validation Commands
 
@@ -650,4 +663,4 @@ pnpm test
 
 ## Summary
 
-The implementation should treat payment obligations as first-class persisted records, evaluate them daily with Oban, emit durable status events, and deliver those events through idempotent adapters with resend controls. In this repository, the core backend pieces, durable notification pipeline, dashboard integration, and alert-preference settings surface are already mapped to concrete modules, and the next logical expansion is obligation CRUD plus additional delivery channels.
+The implementation treats payment obligations as first-class persisted records, evaluates them daily with Oban, emits durable status events, and delivers those events through idempotent adapters with resend controls. In this repository, the core backend pieces, durable notification pipeline, dashboard and obligations history/inspect surfaces, and alert-preference settings are now in place for v1. The remaining work is primarily v2 channel-provider integration and deeper operational analytics.

@@ -62,8 +62,14 @@ defmodule MoneyTree.Notifications.AlertPreference do
       :max_resends,
       :user_id
     ])
-    |> validate_number(:upcoming_lead_days, greater_than_or_equal_to: 0, less_than_or_equal_to: 14)
-    |> validate_number(:resend_interval_hours, greater_than_or_equal_to: 1, less_than_or_equal_to: 168)
+    |> validate_number(:upcoming_lead_days,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 14
+    )
+    |> validate_number(:resend_interval_hours,
+      greater_than_or_equal_to: 1,
+      less_than_or_equal_to: 168
+    )
     |> validate_number(:max_resends, greater_than_or_equal_to: 0, less_than_or_equal_to: 10)
     |> foreign_key_constraint(:user_id)
     |> unique_constraint(:user_id)

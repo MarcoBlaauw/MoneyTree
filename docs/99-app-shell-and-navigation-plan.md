@@ -15,7 +15,7 @@ This document covers:
 
 This document does not redefine the dashboard visual system already covered in:
 
-- `docs/ui-ux-implementation-plan.md`
+- `docs/99-ui-ux-implementation-plan.md`
 
 ## Current-State Assessment
 
@@ -32,7 +32,6 @@ Phoenix routes currently expose:
 Next.js currently exposes:
 
 - `Home`
-- `Control panel`
 - `Link bank`
 - `Verify identity`
 - `Owner users`
@@ -260,7 +259,9 @@ If this work stays small, it can initially live under `Settings > Data & privacy
 
 Status:
 
-- completed
+- completed for shell structure and persistent navigation
+- global navigation now points to canonical `/app/*` routes, including aliases for institution connect, obligations management, and identity verification
+- some flows still resolve through Next bridge routes under the hood and should be normalized further in later phases
 
 ### Phase 2: Settings Information Architecture
 
@@ -288,34 +289,51 @@ Status:
 - browser ceremony, attestation/assertion verification, and credential management UI completed
 - password fallback remains in place intentionally until passkeys, security keys, and email login have been exercised in real use
 
-### Phase 2: Normalize Destinations
+### Phase 4: Normalize Destinations
 
 - make `Accounts & Institutions` a first-class destination
 - make `Obligations` a first-class destination
 - define where `Assets` lives as its own page
 - move `Categorization` under `Transactions`
 
-### Phase 3: Expand Settings
+Status:
+
+- completed for destination availability and navigation
+- `Accounts`, `Obligations`, and `Assets` are first-class LiveView destinations
+- `Categorization rules` now lives under `Transactions` with compatibility redirecting from the legacy route
+
+### Phase 5: Expand Settings
 
 - split `Settings` into subareas
 - add real security management flows
 - add session and device controls
 
-### Phase 4: Data Management
+Status:
+
+- subarea split is completed
+- advanced security/session controls remain incremental follow-up work
+
+### Phase 6: Data Management
 
 - add `Import / Export`
 - add alert history and operational data views as needed
 
-## Immediate Next Step
+## Plan Status
 
-Implement the app shell before building more standalone pages.
+This plan is completed for the shell/navigation scope originally defined here.
 
-That means:
+Completed foundation:
 
-- define a shared shell component
-- decide whether Phoenix, Next.js, or both will render that shell
-- wire the current authenticated destinations into a coherent navigation model
-- remove temporary bridge affordances from product screens
+- app shell and destination navigation
+- settings information architecture
+- passwordless authentication foundation
+- canonical `/app/*` destination routing with compatibility redirects for legacy paths
+- `Import / Export` destination added as a dedicated data-management surface
+
+Remaining follow-up (outside this plan's completion bar):
+
+- continue reducing Next bridge dependencies by migrating selected `/app/react/*` flows into canonical Phoenix destinations where product ownership is clear
+- implement import/export execution flows behind the new destination (currently the destination is scaffolding and routing)
 
 ## Suggested Destination Inventory
 

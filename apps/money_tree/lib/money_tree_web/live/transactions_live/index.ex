@@ -59,7 +59,9 @@ defmodule MoneyTreeWeb.TransactionsLive.Index do
     <section class="space-y-6">
       <.header title="Transactions" subtitle="Review account activity, inspect categories, and correct entries as needed.">
         <:actions>
-          <.link navigate={~p"/app/categorization"} class="btn btn-outline">Open rules</.link>
+          <.link navigate={~p"/app/transactions/categorization"} class="btn btn-outline">
+            Open rules
+          </.link>
         </:actions>
       </.header>
 

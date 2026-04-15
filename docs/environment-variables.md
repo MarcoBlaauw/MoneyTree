@@ -88,6 +88,36 @@ Teller during the exchange flow and stored on each institution connection.
 | `TELLER_CERT_FILE` | Yes (production, unless using PEM vars) | — | Filesystem path to the client certificate (PEM) used for Teller mTLS. |
 | `TELLER_KEY_FILE` | Yes (production, unless using PEM vars) | — | Filesystem path to the client private key (PEM). |
 
+## Stripe Connect integration
+
+Stripe Connect is optional and only required if you want to launch Stripe OAuth from the
+`/app/react/link-bank` flow.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `STRIPE_CONNECT_CLIENT_ID` | Yes (when Stripe Connect flow enabled) | — | Stripe Connect platform client ID used to start OAuth. |
+| `STRIPE_CONNECT_REDIRECT_URI` | Yes (when Stripe Connect flow enabled) | — | OAuth redirect URI configured in Stripe and used by MoneyTree when building the authorization URL. |
+| `STRIPE_CONNECT_HOST` | No | `https://connect.stripe.com` | Optional Stripe Connect host override for non-standard environments. |
+| `STRIPE_CONNECT_SCOPE` | No | `read_write` | OAuth scope sent when creating Stripe Connect authorization sessions. |
+
+## Plaid integration
+
+Plaid integration is used by the `/app/react/link-bank` flow to create Link tokens, exchange
+public tokens, and synchronize accounts and transactions through Phoenix.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `PLAID_CLIENT_ID` | Yes (when Plaid flow enabled) | — | Plaid API client identifier for server-side requests. |
+| `PLAID_SECRET` | Yes (when Plaid flow enabled) | — | Plaid API secret used by Phoenix for authenticated API calls. |
+| `PLAID_ENV` | No | `sandbox` | Plaid environment name (`sandbox`, `development`, `production`) used to select the default API host. |
+| `PLAID_PRODUCTS` | No | `transactions` | Comma-separated list of Plaid products requested in Link tokens. |
+| `PLAID_COUNTRY_CODES` | No | `US` | Comma-separated country codes sent in Link token requests. |
+| `PLAID_CLIENT_NAME` | No | `MoneyTree` | Display name shown in Plaid Link. |
+| `PLAID_LANGUAGE` | No | `en` | Language used by Plaid Link. |
+| `PLAID_REDIRECT_URI` | No | — | Optional redirect URI for Plaid Link flows that require redirects. |
+| `PLAID_WEBHOOK_SECRET` | No | — | Shared webhook secret used by the current webhook signature validation flow. |
+| `PLAID_API_HOST` | No | derived from `PLAID_ENV` | Optional explicit Plaid API host override. Use only for controlled non-standard environments. |
+
 ## Additional tips
 
 * Store secrets in a credential manager (1Password, Bitwarden, AWS Secrets Manager, etc.) instead of

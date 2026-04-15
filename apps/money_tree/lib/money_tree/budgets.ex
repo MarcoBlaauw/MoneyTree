@@ -97,7 +97,8 @@ defmodule MoneyTree.Budgets do
   @doc """
   Creates a new budget tied to the provided user.
   """
-  @spec create_budget(User.t() | binary(), map()) :: {:ok, Budget.t()} | {:error, Ecto.Changeset.t()}
+  @spec create_budget(User.t() | binary(), map()) ::
+          {:ok, Budget.t()} | {:error, Ecto.Changeset.t()}
   def create_budget(user, attrs) when is_map(attrs) do
     user_id = normalize_user_id(user)
     attrs = stringify_keys(attrs)
@@ -182,7 +183,8 @@ defmodule MoneyTree.Budgets do
       budget = get_budget!(user_id, budget_id)
       previous_allocation = budget.allocation_amount
 
-      with {:ok, updated_budget} <- update_budget(budget, %{allocation_amount: suggested_allocation}),
+      with {:ok, updated_budget} <-
+             update_budget(budget, %{allocation_amount: suggested_allocation}),
            {:ok, _revision} <-
              create_revision(user_id, budget, %{
                status: :accepted,

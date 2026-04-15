@@ -28,7 +28,8 @@ defmodule MoneyTree.AssetsFixtures do
         notes: Map.get(attrs, :notes, "Fixture asset"),
         acquired_on: Map.get(attrs, :acquired_on, ~D[2015-01-01]),
         last_valued_on: Map.get(attrs, :last_valued_on, Date.utc_today()),
-        document_refs: Map.get(attrs, :document_refs, ["Deed ##{System.unique_integer([:positive])}"])
+        document_refs:
+          Map.get(attrs, :document_refs, ["Deed ##{System.unique_integer([:positive])}"])
       }
 
     %Asset{}
