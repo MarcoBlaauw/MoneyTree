@@ -375,6 +375,38 @@ defmodule MoneyTree.BudgetsTest do
                  "Not now"
                )
     end
+
+    test "planner recommendation sorting handles month buckets without datetime type crashes", %{
+      user: user
+    } do
+      account = account_fixture(user)
+
+      {:ok, _budget} =
+        Budgets.create_budget(user, %{
+          name: "Utilities",
+          period: :monthly,
+          allocation_amount: "200.00",
+          currency: "USD",
+          entry_type: :expense,
+          variability: :fixed
+        })
+
+      insert_transaction(account, %{
+        amount: Decimal.new("-120.00"),
+        category: "Utilities",
+        posted_at: DateTime.from_naive!(~N[2026-04-15 08:00:00], "Etc/UTC")
+      })
+
+      insert_transaction(account, %{
+        amount: Decimal.new("-140.00"),
+        category: "Utilities",
+        posted_at: DateTime.from_naive!(~N[2026-03-10 08:00:00], "Etc/UTC")
+      })
+
+      recommendations = Budgets.planner_recommendations(user)
+      assert length(recommendations) == 1
+      assert hd(recommendations).budget_name == "Utilities"
+    end
   end
 
   defp insert_transaction(%Account{} = account, attrs) do

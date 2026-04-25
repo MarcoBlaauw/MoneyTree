@@ -18,16 +18,39 @@ defmodule MoneyTree.Transactions.Transaction do
 
   @supported_statuses ~w(pending posted voided reversed)
   @supported_categorization_sources ~w(provider rule manual model)
+  @supported_sources ~w(unknown plaid teller manual_import user_manual pdf_extract screenshot_extract)
+  @supported_transaction_kinds ~w(
+    unknown
+    income
+    expense
+    internal_transfer
+    credit_card_payment
+    loan_payment
+    adjustment
+  )
 
   schema "transactions" do
     field :external_id, :string
+    field :source, :string, default: "unknown"
+    field :source_transaction_id, :string
+    field :source_reference, :string
+    field :source_fingerprint, :string
+    field :normalized_fingerprint, :string
     field :amount, :decimal
     field :currency, :string
     field :type, :string
     field :posted_at, :utc_datetime_usec
+    field :authorized_at, :utc_datetime_usec
     field :settled_at, :utc_datetime_usec
     field :description, :string
+    field :original_description, :string
     field :category, :string
+    field :transaction_kind, :string, default: "unknown"
+    field :excluded_from_spending, :boolean, default: false
+    field :needs_review, :boolean, default: false
+    field :review_reason, :string
+    field :manual_import_batch_id, :binary_id
+    field :manual_import_row_id, :binary_id
     field :categorization_confidence, :decimal
     field :categorization_source, :string
     field :merchant_name, :string
@@ -44,13 +67,26 @@ defmodule MoneyTree.Transactions.Transaction do
     transaction
     |> cast(attrs, [
       :external_id,
+      :source,
+      :source_transaction_id,
+      :source_reference,
+      :source_fingerprint,
+      :normalized_fingerprint,
       :amount,
       :currency,
       :type,
       :posted_at,
+      :authorized_at,
       :settled_at,
       :description,
+      :original_description,
       :category,
+      :transaction_kind,
+      :excluded_from_spending,
+      :needs_review,
+      :review_reason,
+      :manual_import_batch_id,
+      :manual_import_row_id,
       :categorization_confidence,
       :categorization_source,
       :merchant_name,
@@ -69,14 +105,26 @@ defmodule MoneyTree.Transactions.Transaction do
     ])
     |> update_change(:currency, &normalize_currency/1)
     |> validate_currency(:currency)
+    |> validate_length(:source, max: 60)
+    |> validate_length(:source_transaction_id, max: 120)
+    |> validate_length(:source_reference, max: 255)
+    |> validate_length(:source_fingerprint, max: 128)
+    |> validate_length(:normalized_fingerprint, max: 128)
     |> validate_length(:external_id, min: 1, max: 120)
     |> validate_length(:description, min: 1, max: 255)
+    |> validate_length(:original_description, max: 255)
     |> validate_length(:category, max: 120)
+    |> validate_length(:transaction_kind, max: 60)
+    |> validate_length(:review_reason, max: 400)
     |> validate_length(:merchant_name, max: 160)
     |> validate_change(:categorization_source, &validate_categorization_source/2)
+    |> validate_change(:source, &validate_source/2)
+    |> validate_change(:transaction_kind, &validate_transaction_kind/2)
     |> validate_change(:status, &validate_status/2)
     |> validate_decimal(:amount)
     |> foreign_key_constraint(:account_id)
+    |> foreign_key_constraint(:manual_import_batch_id)
+    |> foreign_key_constraint(:manual_import_row_id)
     |> unique_constraint(:external_id, name: :transactions_account_id_external_id_index)
   end
 
@@ -92,6 +140,20 @@ defmodule MoneyTree.Transactions.Transaction do
 
   defp validate_status(:status, _status),
     do: [status: "must be one of #{Enum.join(@supported_statuses, ", ")}"]
+
+  defp validate_source(:source, source) when source in @supported_sources, do: []
+
+  defp validate_source(:source, _source),
+    do: [source: "must be one of #{Enum.join(@supported_sources, ", ")}"]
+
+  defp validate_transaction_kind(:transaction_kind, kind)
+       when kind in @supported_transaction_kinds,
+       do: []
+
+  defp validate_transaction_kind(:transaction_kind, _kind),
+    do: [
+      transaction_kind: "must be one of #{Enum.join(@supported_transaction_kinds, ", ")}"
+    ]
 
   defp validate_categorization_source(:categorization_source, nil), do: []
 

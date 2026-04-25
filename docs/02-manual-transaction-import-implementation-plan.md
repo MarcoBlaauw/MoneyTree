@@ -1,5 +1,32 @@
 # Manual Transaction Import Implementation Plan
 
+## Implementation Status (2026-04-25)
+
+This plan is complete for the short-term live-data import goal.
+
+Implemented in repo:
+
+- import/export workspace is live (no placeholder cards), including CSV import and transaction/budget CSV export
+- manual account creation is available directly from import flow (unblocks users without linked institutions)
+- batch/row staging model is implemented with explicit status transitions
+- generic CSV parsing supports:
+  - signed amount columns
+  - split debit/credit columns
+  - delimiter detection and BOM handling
+- staging, review decisions, and commit path into canonical `transactions` table are implemented
+- duplicate detection runs before commit and excludes high-confidence duplicates safely
+- transfer matching is integrated with commit for high-confidence internal transfer/payment patterns
+- rollback endpoint and UI flow are implemented with safety checks
+- authenticated API surface exists for batch create/map/parse/review/commit/rollback
+- backend + LiveView tests cover import happy path, duplicate handling, transfer handling, manual account creation, and rollback
+
+Deferred by design (non-blocking for current MVP):
+
+- XLSX parser/presets
+- raw file retention + purge endpoint
+- larger reconciliation UI (bulk tools, dense filters, advanced transfer adjudication)
+- broader institution preset library
+
 ## Purpose
 
 This document defines the first implementation plan for manual transaction imports in `MoneyTree`.
@@ -25,6 +52,20 @@ Manual import is especially important for:
 7. Apply category rules consistently across manual imports and provider syncs.
 8. Keep raw uploaded files and parsed rows secure, private, and easy to purge.
 
+## Short-Term Goal
+
+The immediate goal is not a perfect end-state import platform. It is to make MoneyTree usable with real user data soon so reporting, categorization, and transaction flows can be exercised against live history.
+
+That means the first release should optimize for:
+
+- importing real files safely
+- staging rows before commit
+- committing accepted rows into the existing transaction system
+- preventing obvious duplicate imports
+- avoiding obvious transfer double-counting in dashboard views
+
+It should not wait for every preset, every review surface, or a full reconciliation workspace.
+
 ## Non-Goals
 
 - replacing Plaid or other live institution integrations
@@ -36,18 +77,25 @@ Manual import is especially important for:
 
 ## Recommended Product Slice
 
-Implement a safe, review-first manual import flow:
+Implement a safe, review-first manual import MVP:
 
 1. User selects an account or creates a placeholder/manual account.
-2. User uploads a CSV or XLSX file.
+2. User uploads a CSV file first, with XLSX support added only for the specific formats needed immediately.
 3. MoneyTree detects the institution/export preset when possible.
 4. User confirms or adjusts field mappings.
 5. MoneyTree parses rows into a staging table.
-6. User previews rows, duplicate warnings, categories, and transfer-match suggestions.
+6. User previews rows, duplicate warnings, categories, and basic transfer-match suggestions.
 7. User commits accepted rows into the canonical transaction table.
 8. MoneyTree records the import batch and supports rollback.
 
 This is the smallest coherent slice that makes manual import useful without polluting real transaction history.
+
+Specifically, the first executable slice should support:
+
+- generic CSV with signed amount column
+- generic CSV with separate debit/credit columns
+- one or two known presets only if those reflect actual sample files on hand
+- LiveView-based import screens in the existing app shell before introducing a new Next.js workflow
 
 ## Current Surfaces To Inspect
 
@@ -128,14 +176,16 @@ Suggested fields:
 - `currency` default `USD`
 - `direction`: `income`, `expense`, `transfer`, nullable before classification
 - `external_transaction_id` nullable
+- `source_reference` nullable
 - `check_number` nullable
 - `category_id` nullable
 - `category_name_snapshot` nullable
-- `merchant_rule_id` nullable
+- `category_rule_id` nullable
 - `duplicate_candidate_transaction_id` nullable
 - `duplicate_confidence` nullable
 - `transfer_match_candidate_transaction_id` nullable
 - `transfer_match_confidence` nullable
+- `transfer_match_status` nullable
 - `review_decision`: `accept`, `exclude`, `needs_review`
 - `committed_transaction_id` nullable
 - timestamps
@@ -148,7 +198,7 @@ Rules:
 
 ### `manual_import_presets`
 
-Presets may be code-defined at first. A table is optional in the first release. If added, use it for user-defined mappings and custom institution formats.
+Presets should be code-defined at first. A table is optional in the first release and should not block the first usable import workflow.
 
 Suggested fields:
 
@@ -170,7 +220,7 @@ Suggested fields:
 
 ### CSV
 
-Support UTF-8 CSV files first.
+Support UTF-8 CSV files first. CSV is the required first milestone.
 
 Implementation requirements:
 
@@ -182,7 +232,7 @@ Implementation requirements:
 
 ### XLSX
 
-Support `.xlsx` files using a server-side parser.
+Support `.xlsx` files using a server-side parser only when there is an immediate sample file and test fixture that justifies it. XLSX should not block the first live-data import milestone.
 
 Implementation requirements:
 
@@ -194,9 +244,16 @@ Implementation requirements:
 
 Do not parse files in the browser as the source of truth. Browser parsing may be used for quick UX hints, but Phoenix must parse and validate the file before staging rows.
 
+Recommended rollout:
+
+1. Generic CSV import.
+2. Known CSV presets based on real sample files.
+3. XLSX for the first necessary institution export.
+4. Additional presets later.
+
 ## Institution-Specific Presets
 
-Start with system presets for formats already observed:
+Start with as few system presets as possible, based on files that are actually available for validation.
 
 ### USAA Bank CSV
 
@@ -263,6 +320,10 @@ Rules:
 - Use `Reference` as part of duplicate detection when present.
 - Preserve card member metadata for household reporting, but do not require it for transaction identity.
 
+Implementation note:
+
+- Only include this in the first milestone if American Express XLSX is one of the real files needed for immediate testing.
+
 ### Generic CSV
 
 Provide a manual mapping flow for unknown files.
@@ -300,6 +361,12 @@ Mapping output should be saved as `mapping_config` on the batch so the parse can
 
 For a known preset, default mappings should be prefilled but still visible.
 
+For the first milestone, mapping can be practical rather than polished:
+
+- dropdown-based field assignment is sufficient
+- a small parsed preview is sufficient
+- no custom preset saving is required yet
+
 ## Import Wizard UX
 
 Recommended steps:
@@ -310,6 +377,8 @@ Recommended steps:
 4. Preview & review
 5. Commit
 6. Results
+
+This can be implemented in the existing Phoenix app shell first. It does not need to start as a dedicated Next.js flow.
 
 ### Upload
 
@@ -353,6 +422,16 @@ Allow bulk actions:
 - clear transfer match
 - search/filter by merchant, category, warning, duplicate, or amount
 
+For the first milestone, the minimum required review actions are:
+
+- accept row
+- exclude row
+- change category
+- see duplicate warning
+- see transfer suggestion
+
+Bulk editing, advanced filtering, and dense reconciliation tooling can follow later.
+
 ### Commit
 
 - Show final counts before commit.
@@ -392,6 +471,8 @@ Create a deterministic fingerprint from normalized fields:
 
 Store a `source_fingerprint` or equivalent on committed transactions when imported manually.
 
+Use the shared transaction-identity foundation from `docs/00-transaction-identity-transfer-matching-prerequisites.md` rather than creating a parallel import-only duplicate model.
+
 ### Fuzzy Matching
 
 For files without reliable identifiers, flag likely duplicates using:
@@ -418,7 +499,7 @@ Rules:
 
 1. Each upload creates one batch.
 2. Parsed rows belong to one batch.
-3. Committed transactions should store `manual_import_batch_id` and `manual_import_row_id` where possible.
+3. Committed transactions should store `manual_import_batch_id` and `manual_import_row_id` where possible, or equivalent source-link metadata if those columns land later in the transaction identity rollout.
 4. A batch can be committed once.
 5. A committed batch can be rolled back only if affected transactions have not been materially changed in ways that would make rollback unsafe.
 6. Batch status transitions should be explicit and tested.
@@ -454,9 +535,18 @@ Safety checks:
 
 Rollback should be covered by tests because it is easy to get dangerously wrong.
 
+For the first milestone, rollback may be limited to transactions that have not been manually recategorized, transfer-matched, or otherwise edited after import.
+
 ## Transfer Matching
 
 Manual imports need transfer detection so cash-flow dashboards do not treat money movement as spending.
+
+For the first milestone, support only the highest-value transfer cases:
+
+- checking to savings
+- checking to credit card payment
+
+Loan-payment differentiation and more ambiguous wallet/peer-transfer cases can follow after the first usable import flow is in place.
 
 Examples:
 
@@ -508,7 +598,7 @@ Rule outputs:
 - reason/source rule
 - whether user review is needed
 
-Initial default rules should cover common patterns:
+Initial default rules should cover only the most useful common patterns:
 
 - mortgage/rent
 - payroll/income
@@ -523,6 +613,8 @@ Initial default rules should cover common patterns:
 - fuel
 - medical/pharmacy
 - fees
+
+Do not block the first import milestone on a large curated taxonomy. The existing string-based category model can carry the first release as long as categorization is deterministic and editable.
 
 User rule support:
 
@@ -550,7 +642,7 @@ Requirements:
 
 ## API Design
 
-Suggested Phoenix routes:
+Suggested Phoenix routes if controller-backed APIs are needed:
 
 - `POST /api/manual-imports` upload file and create batch
 - `GET /api/manual-imports` list batches
@@ -564,6 +656,8 @@ Suggested Phoenix routes:
 - `DELETE /api/manual-imports/:id/raw-file` purge retained raw file
 
 All write endpoints should require CSRF/session protections consistent with the rest of the app.
+
+If the first implementation is LiveView-driven, keep the API surface minimal and internal to the LiveView where practical. Do not build a large standalone API solely for future-proofing.
 
 ## Backend Modules
 
@@ -582,22 +676,29 @@ Suggested modules:
 
 Keep parser modules pure where possible so tests can cover them without database setup.
 
+Use the transaction foundations from `MoneyTree.Transactions` where possible instead of recreating categorization, duplicate, and transfer logic entirely under `ManualImports`.
+
 ## Frontend Surfaces
 
-Suggested Next.js pages/components:
+Recommended first surface:
 
-- `/imports`
-- `/imports/new`
-- `/imports/[id]`
-- upload dropzone component
-- account/preset selector
-- column mapping table
-- staged transaction review grid
-- duplicate warning badges
-- transfer-match review controls
-- commit confirmation modal
-- rollback confirmation modal
-- import result summary
+- extend the existing `/app/import-export` LiveView into the first import workflow
+
+Possible later surfaces:
+
+- dedicated import dashboard pages
+- richer review grids
+- Next.js import flow if the workflow outgrows LiveView
+
+First-milestone UI needs:
+
+- file upload
+- account selection / manual account creation
+- preset or generic mapping selection
+- parsed row preview
+- row accept/exclude/category actions
+- commit confirmation
+- results summary
 
 The review grid should be practical and dense. This is not a marketing page; it is a financial cleanup workflow.
 
@@ -622,9 +723,8 @@ Testing must be implemented alongside the feature, not after.
 Cover:
 
 - CSV parsing with quoted values, BOM, empty rows, and malformed rows
-- XLSX parsing with leading metadata rows
-- USAA preset detection and mapping
-- Amex preset detection and mapping
+- XLSX parsing with leading metadata rows, only if XLSX is included in the current milestone
+- preset detection and mapping for whichever formats are actually implemented first
 - generic CSV mapping validation
 - date parsing errors
 - amount sign handling
@@ -670,10 +770,10 @@ Cover:
 - upload flow
 - preset detection display
 - manual mapping validation
-- preview table filters
+- preview table filters if implemented
 - duplicate warning display
 - category bulk-edit interaction
-- transfer-match accept/reject interaction
+- transfer-match accept/reject interaction if implemented
 - commit confirmation
 - rollback confirmation
 - useful error states
@@ -682,51 +782,56 @@ Cover:
 
 Verify with real sample exports:
 
-1. USAA CSV bank activity export
-2. American Express XLSX activity export
-3. generic CSV with single signed amount column
-4. generic CSV with separate debit and credit columns
-5. re-upload of the same file
-6. overlapping files with duplicate rows
-7. checking and credit card files imported together to verify transfer/payment matching
-8. rollback after commit
+1. generic CSV with single signed amount column
+2. generic CSV with separate debit and credit columns
+3. at least one real institution export the user wants immediately
+4. re-upload of the same file
+5. overlapping files with duplicate rows
+6. checking and credit card files imported together to verify transfer/payment matching
+7. rollback after commit
 
 ## Delivery Order
 
 Recommended implementation order:
 
-1. Add schemas/migrations for batches and rows.
-2. Add parser behavior and preset definitions for USAA CSV and Amex XLSX.
-3. Add upload and batch creation endpoints.
-4. Add mapping save and parse/stage endpoints.
-5. Add duplicate detection.
-6. Add category rule application.
-7. Add transfer matching.
-8. Add preview/review UI.
-9. Add commit path into canonical transactions.
-10. Add rollback.
-11. Add raw file purge.
-12. Add reporting adjustments for transfer exclusion and savings transfer visibility.
-13. Add full tests and manual verification docs.
+1. Complete the minimum transaction identity foundation from `docs/00-transaction-identity-transfer-matching-prerequisites.md` needed for safe duplicate detection, transfer matching, and reporting.
+2. Add schemas/migrations for batches and rows.
+3. Add generic CSV parser behavior, mapping validation, and staging flow.
+4. Add the first import UI in the existing Phoenix app shell.
+5. Add commit path into canonical transactions.
+6. Add duplicate detection using the shared transaction identity helpers.
+7. Add the minimum transfer matching needed for checking/savings and checking/credit-card flows.
+8. Add reporting adjustments for transfer exclusion and savings-transfer visibility.
+9. Add rollback for safe cases.
+10. Add one or two specific presets based on real files being used for validation.
+11. Add XLSX support only if required by those real files.
+12. Add raw file purge and follow-on UX improvements.
+13. Expand tests and manual verification coverage as formats and review tooling grow.
 
 Each phase should include tests and should keep the app runnable through `./scripts/dev.sh`.
 
 ## Completion Criteria
 
-Manual transaction import is complete only when all of the following are true:
+Manual transaction import is usable for the short-term goal once all of the following are true:
 
-1. CSV and XLSX uploads are accepted and validated server-side.
-2. USAA CSV and American Express XLSX presets are implemented and tested.
-3. Unknown CSV files can be manually mapped.
-4. Parsed rows are staged and reviewable before commit.
-5. Duplicate candidates are detected and surfaced before commit.
-6. Category rules are applied during staging and can be adjusted before commit.
-7. Transfer matches can be suggested and confirmed or rejected.
-8. Accepted rows commit into the canonical transaction table.
-9. Import batches are auditable after commit.
-10. A committed batch can be rolled back safely.
-11. Raw uploaded files can be purged without destroying import audit metadata.
-12. Reports include committed manual imports and avoid double-counting confirmed transfers.
-13. Backend and frontend tests cover the happy path, failure paths, duplicates, transfer matching, and rollback.
+1. CSV uploads are accepted and validated server-side.
+2. Unknown CSV files can be manually mapped.
+3. Parsed rows are staged and reviewable before commit.
+4. Duplicate candidates are detected and surfaced before commit.
+5. Basic category rules are applied during staging and can be adjusted before commit.
+6. High-value transfer matches can be suggested for checking/savings and checking/credit-card cases.
+7. Accepted rows commit into the canonical transaction table.
+8. Import batches are auditable after commit.
+9. A committed batch can be rolled back safely in supported cases.
+10. Reports include committed manual imports and avoid double-counting confirmed transfers.
+11. Backend and UI tests cover the core happy path, duplicate handling, transfer handling, and rollback.
 
-If any of these are missing, manual import should still be treated as incomplete.
+Additional work can then extend the feature with:
+
+- institution-specific presets
+- XLSX support
+- broader reconciliation UX
+- richer filtering and bulk actions
+- expanded rollback and audit capabilities
+
+Manual import should be treated as incomplete for the broader end-state until those later capabilities land, but the tool should already be usable with real data once the short-term criteria above are met.

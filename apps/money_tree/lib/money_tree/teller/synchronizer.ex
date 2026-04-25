@@ -16,6 +16,7 @@ defmodule MoneyTree.Teller.Synchronizer do
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Recurring
   alias MoneyTree.Repo
+  alias MoneyTree.Transactions.Fingerprints
   alias MoneyTree.Transactions.Transaction
 
   @telemetry_start [:money_tree, :teller, :sync, :start]
@@ -427,47 +428,75 @@ defmodule MoneyTree.Teller.Synchronizer do
           }}}
 
       true ->
-        attrs = %{
-          account_id: account.id,
-          external_id: external_id,
-          amount: amount,
-          currency: currency,
-          type: get_in_any(payload, ["type", :type]),
-          posted_at: posted_at,
-          settled_at:
-            parse_datetime(get_in_any(payload, ["settled_at", :settled_at])) ||
-              parse_datetime(
+        description = transaction_description(payload)
+
+        attrs =
+          %{
+            account_id: account.id,
+            external_id: external_id,
+            source: "teller",
+            source_transaction_id: external_id,
+            source_reference: source_reference(payload),
+            amount: amount,
+            currency: currency,
+            type: get_in_any(payload, ["type", :type]),
+            posted_at: posted_at,
+            authorized_at:
+              parse_datetime(get_in_any(payload, ["date_authorized", :date_authorized])),
+            settled_at:
+              parse_datetime(get_in_any(payload, ["settled_at", :settled_at])) ||
+                parse_datetime(
+                  get_in_any(payload, [
+                    ["settled_at", "date"],
+                    ["settled_at", :date],
+                    [:settled_at, "date"],
+                    [:settled_at, :date]
+                  ])
+                ) ||
+                parse_datetime(get_in_any(payload, ["date_settled", :date_settled])),
+            description: description,
+            original_description:
+              get_in_any(payload, ["original_description", :original_description]) || description,
+            category:
+              get_in_any(payload, ["category", :category]) ||
                 get_in_any(payload, [
-                  ["settled_at", "date"],
-                  ["settled_at", :date],
-                  [:settled_at, "date"],
-                  [:settled_at, :date]
-                ])
-              ) ||
-              parse_datetime(get_in_any(payload, ["date_settled", :date_settled])),
-          description: transaction_description(payload),
-          category:
-            get_in_any(payload, ["category", :category]) ||
-              get_in_any(payload, [
-                ["details", "category"],
-                ["details", :category],
-                [:details, "category"],
-                [:details, :category]
-              ]),
-          merchant_name:
-            get_in_any(payload, ["merchant_name", :merchant_name]) ||
-              get_in_any(payload, [
-                ["details", "merchant"],
-                ["details", :merchant],
-                [:details, "merchant"],
-                [:details, :merchant]
-              ]),
-          status: get_in_any(payload, ["status", :status]) || "posted",
-          encrypted_metadata: metadata_payload(payload)
-        }
+                  ["details", "category"],
+                  ["details", :category],
+                  [:details, "category"],
+                  [:details, :category]
+                ]),
+            merchant_name:
+              get_in_any(payload, ["merchant_name", :merchant_name]) ||
+                get_in_any(payload, [
+                  ["details", "merchant"],
+                  ["details", :merchant],
+                  [:details, "merchant"],
+                  [:details, :merchant]
+                ]),
+            status: get_in_any(payload, ["status", :status]) || "posted",
+            encrypted_metadata: metadata_payload(payload)
+          }
+          |> with_fingerprints()
 
         {:ok, attrs}
     end
+  end
+
+  defp with_fingerprints(attrs) do
+    attrs
+    |> Map.put(:source_fingerprint, Fingerprints.source_fingerprint(attrs))
+    |> Map.put(:normalized_fingerprint, Fingerprints.normalized_fingerprint(attrs))
+  end
+
+  defp source_reference(payload) do
+    get_in_any(payload, [
+      "reference",
+      :reference,
+      ["details", "reference"],
+      ["details", :reference],
+      [:details, "reference"],
+      [:details, :reference]
+    ])
   end
 
   defp upsert_transaction(account, payload, timestamp) do

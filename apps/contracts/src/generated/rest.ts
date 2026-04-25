@@ -21,6 +21,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mortgages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List current user mortgages */
+        get: operations["listMortgages"];
+        put?: never;
+        /** Create a mortgage */
+        post: operations["createMortgage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mortgages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Fetch a mortgage by id */
+        get: operations["getMortgage"];
+        /** Update a mortgage */
+        put: operations["updateMortgage"];
+        post?: never;
+        /** Delete a mortgage */
+        delete: operations["deleteMortgage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -38,6 +77,112 @@ export interface components {
              */
             timestamp: string;
         };
+        ErrorResponse: {
+            error: string;
+        };
+        MortgageEscrowProfile: {
+            id?: string;
+            property_tax_monthly?: string;
+            homeowners_insurance_monthly?: string;
+            flood_insurance_monthly?: string;
+            other_escrow_monthly?: string;
+            escrow_cushion_months?: string;
+            expected_old_escrow_refund?: string;
+            annual_tax_growth_rate?: string;
+            annual_insurance_growth_rate?: string;
+            source?: string;
+            confidence_score?: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        Mortgage: {
+            id: string;
+            nickname?: string;
+            property_name: string;
+            street_line_1?: string;
+            street_line_2?: string;
+            city?: string;
+            state_region?: string;
+            postal_code?: string;
+            country_code?: string;
+            occupancy_type?: string;
+            loan_type: string;
+            servicer_name?: string;
+            lender_name?: string;
+            original_loan_amount?: string;
+            current_balance: string;
+            original_interest_rate?: string;
+            current_interest_rate: string;
+            original_term_months?: number;
+            remaining_term_months: number;
+            monthly_principal_interest?: string;
+            monthly_payment_total: string;
+            home_value_estimate?: string;
+            pmi_mip_monthly?: string;
+            hoa_monthly?: string;
+            flood_insurance_monthly?: string;
+            has_escrow: boolean;
+            escrow_included_in_payment: boolean;
+            linked_obligation_id?: string;
+            status: string;
+            source?: string;
+            /** Format: date-time */
+            last_reviewed_at?: string;
+            escrow_profile?: components["schemas"]["MortgageEscrowProfile"] | null;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        MortgageEscrowProfileInput: {
+            property_tax_monthly?: string;
+            homeowners_insurance_monthly?: string;
+            flood_insurance_monthly?: string;
+            other_escrow_monthly?: string;
+            escrow_cushion_months?: string;
+            expected_old_escrow_refund?: string;
+            annual_tax_growth_rate?: string;
+            annual_insurance_growth_rate?: string;
+            source?: string;
+            confidence_score?: string;
+        };
+        CreateMortgageRequest: {
+            nickname?: string;
+            property_name: string;
+            street_line_1?: string;
+            street_line_2?: string;
+            city?: string;
+            state_region?: string;
+            postal_code?: string;
+            country_code?: string;
+            occupancy_type?: string;
+            loan_type: string;
+            servicer_name?: string;
+            lender_name?: string;
+            original_loan_amount?: string;
+            current_balance: string;
+            original_interest_rate?: string;
+            current_interest_rate: string;
+            original_term_months?: number;
+            remaining_term_months: number;
+            monthly_principal_interest?: string;
+            monthly_payment_total: string;
+            home_value_estimate?: string;
+            pmi_mip_monthly?: string;
+            hoa_monthly?: string;
+            flood_insurance_monthly?: string;
+            has_escrow?: boolean;
+            escrow_included_in_payment?: boolean;
+            linked_obligation_id?: string;
+            status?: string;
+            source?: string;
+            /** Format: date-time */
+            last_reviewed_at?: string;
+            escrow_profile?: components["schemas"]["MortgageEscrowProfileInput"];
+        };
+        UpdateMortgageRequest: components["schemas"]["CreateMortgageRequest"];
     };
     responses: never;
     parameters: never;
@@ -63,6 +208,153 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    listMortgages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mortgages available to the authenticated user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Mortgage"][];
+                    };
+                };
+            };
+        };
+    };
+    createMortgage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMortgageRequest"];
+            };
+        };
+        responses: {
+            /** @description Mortgage created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Mortgage"];
+                    };
+                };
+            };
+        };
+    };
+    getMortgage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mortgage found */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Mortgage"];
+                    };
+                };
+            };
+            /** @description Mortgage not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateMortgage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMortgageRequest"];
+            };
+        };
+        responses: {
+            /** @description Mortgage updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Mortgage"];
+                    };
+                };
+            };
+            /** @description Mortgage not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteMortgage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mortgage deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Mortgage not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

@@ -761,6 +761,37 @@ defmodule MoneyTree.Accounts do
   end
 
   @doc """
+  Creates a user-owned manual account for workflows that do not rely on institution sync.
+  """
+  @spec create_manual_account(User.t() | binary(), map()) ::
+          {:ok, Account.t()} | {:error, Changeset.t()}
+  def create_manual_account(user, attrs) when is_map(attrs) do
+    user_id = normalize_user_id(user)
+    attrs = stringify_keys(attrs)
+
+    type = Map.get(attrs, "type", "depository")
+    subtype = Map.get(attrs, "subtype")
+
+    params =
+      attrs
+      |> Map.put("user_id", user_id)
+      |> Map.put_new("currency", "USD")
+      |> Map.put_new("type", type)
+      |> Map.put_new("subtype", subtype)
+      |> Map.put_new("current_balance", Decimal.new("0"))
+      |> Map.put_new("manual_account", true)
+      |> Map.put_new("is_internal", true)
+      |> Map.put_new("include_in_cash_flow", true)
+      |> Map.put_new("include_in_net_worth", true)
+      |> Map.put_new("internal_account_kind", infer_internal_account_kind(type, subtype))
+      |> Map.put_new("external_id", "manual:" <> Ecto.UUID.generate())
+
+    %Account{}
+    |> Account.changeset(params)
+    |> Repo.insert()
+  end
+
+  @doc """
   Fetches an accessible account for the user.
   """
   @spec fetch_accessible_account(User.t() | binary(), binary(), keyword()) ::
@@ -1534,6 +1565,34 @@ defmodule MoneyTree.Accounts do
   rescue
     ArgumentError ->
       raise ArgumentError, "unknown account order field: #{inspect(field)}"
+  end
+
+  defp infer_internal_account_kind(type, subtype) do
+    downcased_type = downcase(type)
+    downcased_subtype = downcase(subtype)
+
+    cond do
+      String.contains?(downcased_type, "credit") or String.contains?(downcased_subtype, "credit") ->
+        "credit_card"
+
+      String.contains?(downcased_type, "loan") or String.contains?(downcased_subtype, "loan") ->
+        "loan"
+
+      String.contains?(downcased_subtype, "mortgage") ->
+        "mortgage"
+
+      String.contains?(downcased_subtype, "saving") ->
+        "savings"
+
+      String.contains?(downcased_subtype, "cash") ->
+        "cash"
+
+      downcased_type in ["investment", "brokerage", "retirement"] ->
+        "investment"
+
+      true ->
+        "checking"
+    end
   end
 
   defp maybe_preload_accounts(query, opts) do

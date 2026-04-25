@@ -53,6 +53,13 @@ const quickActions = [
     target: "next" as const,
   },
   {
+    href: "/mortgages",
+    title: "Open Mortgage Center",
+    description:
+      "Track active mortgages, maintain escrow assumptions, and prepare refinance scenarios.",
+    target: "next" as const,
+  },
+  {
     href: "/owner/users",
     title: "Manage users",
     description:

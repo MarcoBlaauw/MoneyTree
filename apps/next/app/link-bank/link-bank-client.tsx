@@ -215,12 +215,6 @@ function extractUserId(event: TellerConnectSuccessEvent): string | undefined {
   return asString(user?.["id"]);
 }
 
-function extractInstitutionName(event: TellerConnectSuccessEvent): string | undefined {
-  const enrollment = extractEnrollment(event);
-  const institution = maybeRecord(enrollment?.["institution"]);
-  return asString(institution?.["name"]);
-}
-
 function collectTellerDiagnostics(payload: unknown): Record<string, string> {
   const root = maybeRecord(payload);
   if (!root) {

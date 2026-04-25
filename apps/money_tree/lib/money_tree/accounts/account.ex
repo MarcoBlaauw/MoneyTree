@@ -20,6 +20,8 @@ defmodule MoneyTree.Accounts.Account do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   @timestamps_opts [type: :utc_datetime_usec]
+  @internal_account_kinds ~w(checking savings credit_card loan mortgage cash investment other)
+  @liability_types ~w(credit_card auto_loan student_loan pool_loan mortgage)
 
   schema "accounts" do
     field(:name, :string)
@@ -27,6 +29,12 @@ defmodule MoneyTree.Accounts.Account do
     field(:type, :string)
     field(:subtype, :string)
     field(:external_id, :string)
+    field(:internal_account_kind, :string)
+    field(:liability_type, :string)
+    field(:is_internal, :boolean, default: true)
+    field(:include_in_cash_flow, :boolean, default: true)
+    field(:include_in_net_worth, :boolean, default: true)
+    field(:manual_account, :boolean, default: false)
     field(:current_balance, :decimal, default: Decimal.new("0"))
     field(:available_balance, :decimal)
     field(:limit, :decimal)
@@ -64,6 +72,12 @@ defmodule MoneyTree.Accounts.Account do
       :type,
       :subtype,
       :external_id,
+      :internal_account_kind,
+      :liability_type,
+      :is_internal,
+      :include_in_cash_flow,
+      :include_in_net_worth,
+      :manual_account,
       :current_balance,
       :available_balance,
       :limit,
@@ -92,7 +106,11 @@ defmodule MoneyTree.Accounts.Account do
     |> validate_length(:type, min: 1, max: 60)
     |> validate_length(:subtype, max: 60)
     |> validate_length(:external_id, max: 120)
+    |> validate_length(:internal_account_kind, max: 60)
+    |> validate_length(:liability_type, max: 60)
     |> validate_length(:fee_schedule, max: 2000)
+    |> validate_change(:internal_account_kind, &validate_internal_account_kind/2)
+    |> validate_change(:liability_type, &validate_liability_type/2)
     |> validate_decimal(:current_balance)
     |> validate_decimal(:available_balance)
     |> validate_decimal(:limit)
@@ -172,6 +190,24 @@ defmodule MoneyTree.Accounts.Account do
       end
     end)
   end
+
+  defp validate_internal_account_kind(:internal_account_kind, nil), do: []
+
+  defp validate_internal_account_kind(:internal_account_kind, kind)
+       when kind in @internal_account_kinds,
+       do: []
+
+  defp validate_internal_account_kind(:internal_account_kind, _kind),
+    do: [
+      internal_account_kind: "must be one of #{Enum.join(@internal_account_kinds, ", ")}"
+    ]
+
+  defp validate_liability_type(:liability_type, nil), do: []
+
+  defp validate_liability_type(:liability_type, type) when type in @liability_types, do: []
+
+  defp validate_liability_type(:liability_type, _type),
+    do: [liability_type: "must be one of #{Enum.join(@liability_types, ", ")}"]
 
   defp cast_decimal(nil), do: :skip
   defp cast_decimal(%Decimal{} = decimal), do: {:ok, decimal}

@@ -109,7 +109,7 @@ defmodule MoneyTree.Budgets.Planner do
     |> Enum.into(%{}, fn {key, spends} ->
       sorted =
         spends
-        |> Enum.sort_by(fn {month, _} -> month end, {:desc, DateTime})
+        |> Enum.sort_by(fn {month, _} -> month_sort_key(month) end, :desc)
         |> Enum.map(fn {_month, spend} -> spend end)
 
       {key, sorted}
@@ -224,4 +224,15 @@ defmodule MoneyTree.Budgets.Planner do
       :error -> Decimal.new("0")
     end
   end
+
+  defp month_sort_key(%DateTime{} = month), do: DateTime.to_unix(month, :microsecond)
+
+  defp month_sort_key(%NaiveDateTime{} = month) do
+    month
+    |> DateTime.from_naive!("Etc/UTC")
+    |> DateTime.to_unix(:microsecond)
+  end
+
+  defp month_sort_key(%Date{} = month), do: Date.to_gregorian_days(month)
+  defp month_sort_key(month), do: to_string(month)
 end

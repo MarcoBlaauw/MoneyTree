@@ -13,6 +13,7 @@ defmodule MoneyTree.Plaid.Synchronizer do
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Recurring
   alias MoneyTree.Repo
+  alias MoneyTree.Transactions.Fingerprints
   alias MoneyTree.Transactions.Transaction
 
   @telemetry_start [:money_tree, :plaid, :sync, :start]
@@ -317,35 +318,70 @@ defmodule MoneyTree.Plaid.Synchronizer do
           }}}
 
       true ->
-        attrs = %{
-          account_id: account.id,
-          external_id: external_id,
-          amount: amount,
-          currency: currency,
-          type:
-            get_in_any(payload, [
-              "payment_channel",
-              :payment_channel,
-              "transaction_type",
-              :transaction_type
-            ]),
-          posted_at: posted_at,
-          settled_at:
-            parse_datetime(get_in_any(payload, ["authorized_datetime", :authorized_datetime])),
-          description: transaction_description(payload),
-          category:
-            get_in_any(payload, ["category", :category]) ||
+        description = transaction_description(payload)
+
+        attrs =
+          %{
+            account_id: account.id,
+            external_id: external_id,
+            source: "plaid",
+            source_transaction_id: external_id,
+            source_reference: source_reference(payload),
+            amount: amount,
+            currency: currency,
+            type:
               get_in_any(payload, [
-                ["personal_finance_category", "primary"],
-                [:personal_finance_category, :primary]
+                "payment_channel",
+                :payment_channel,
+                "transaction_type",
+                :transaction_type
               ]),
-          merchant_name: get_in_any(payload, ["merchant_name", :merchant_name]),
-          status: status,
-          encrypted_metadata: metadata_payload(payload)
-        }
+            posted_at: posted_at,
+            authorized_at:
+              parse_datetime(get_in_any(payload, ["authorized_datetime", :authorized_datetime])),
+            settled_at:
+              parse_datetime(get_in_any(payload, ["authorized_datetime", :authorized_datetime])),
+            description: description,
+            original_description:
+              get_in_any(payload, [
+                "original_description",
+                :original_description,
+                ["payment_meta", "payee"],
+                ["payment_meta", :payee],
+                [:payment_meta, "payee"],
+                [:payment_meta, :payee]
+              ]) || description,
+            category:
+              get_in_any(payload, ["category", :category]) ||
+                get_in_any(payload, [
+                  ["personal_finance_category", "primary"],
+                  [:personal_finance_category, :primary]
+                ]),
+            merchant_name: get_in_any(payload, ["merchant_name", :merchant_name]),
+            status: status,
+            encrypted_metadata: metadata_payload(payload)
+          }
+          |> with_fingerprints()
 
         {:ok, attrs}
     end
+  end
+
+  defp with_fingerprints(attrs) do
+    attrs
+    |> Map.put(:source_fingerprint, Fingerprints.source_fingerprint(attrs))
+    |> Map.put(:normalized_fingerprint, Fingerprints.normalized_fingerprint(attrs))
+  end
+
+  defp source_reference(payload) do
+    get_in_any(payload, [
+      ["payment_meta", "reference_number"],
+      ["payment_meta", :reference_number],
+      [:payment_meta, "reference_number"],
+      [:payment_meta, :reference_number],
+      "reference",
+      :reference
+    ])
   end
 
   defp finalize_success(connection, payload, metadata, start_time) do

@@ -1,5 +1,25 @@
 # Transaction Identity And Transfer Matching Prerequisites Plan
 
+## Implementation Status (2026-04-25)
+
+This plan is complete for the manual-import MVP scope in `docs/02-manual-transaction-import-implementation-plan.md`.
+
+Implemented in repo:
+
+- additive account classification fields (`internal_account_kind`, `liability_type`, `is_internal`, `include_in_cash_flow`, `include_in_net_worth`, `manual_account`)
+- additive transaction identity fields (`source`, `source_transaction_id`, `source_reference`, `source_fingerprint`, `normalized_fingerprint`, `transaction_kind`, `excluded_from_spending`, `needs_review`, `review_reason`)
+- deterministic fingerprint helpers
+- provider-agnostic duplicate detector
+- transfer match schema + context APIs + matcher rules for checking/savings and checking/credit-card patterns
+- reporting semantics wired through `excluded_from_spending` for confirmed/auto-confirmed transfer matches
+- tests for duplicate detection, transfer matching, and reporting behavior
+
+Deferred by design (non-blocking for current MVP):
+
+- broader transfer review/reconciliation workspace beyond import flow
+- richer category taxonomy expansion and long-tail transfer/payment heuristics
+- expanded historical backfill tooling and large-scale migration tooling beyond current additive migrations
+
 ## Purpose
 
 This document defines the prerequisite work MoneyTree should complete before building the manual transaction import workflow described in `docs/02-manual-transaction-import-implementation-plan.md`.
@@ -51,19 +71,20 @@ Without a shared transaction identity and matching system, MoneyTree will double
 
 ## Recommended Product Slice
 
-Build a transaction identity and transfer foundation before manual imports:
+Build the minimum transaction identity and transfer foundation needed before manual imports start committing rows:
 
-1. Normalize account types and ownership metadata.
-2. Add canonical transaction identity fields.
-3. Add transaction fingerprints.
-4. Add duplicate detection helpers.
-5. Add transfer match models.
-6. Add deterministic transfer matching rules.
-7. Add review states for uncertain matches.
-8. Update reporting to exclude confirmed internal transfers from spending.
-9. Add tests using checking, savings, and credit card scenarios.
+1. Inspect and document current account, transaction, and reporting assumptions.
+2. Add additive account classification metadata without replacing current provider `type` / `subtype`.
+3. Add additive transaction identity fields compatible with existing sync upserts.
+4. Add transaction fingerprints.
+5. Add duplicate detection helpers.
+6. Add transfer match models and deterministic matching rules.
+7. Update reporting to exclude confirmed internal transfers from spending.
+8. Add tests using checking, savings, and credit card scenarios.
 
-This gives the manual import feature a safe place to land staged and committed rows.
+This gives the manual import feature a safe place to land staged and committed rows without requiring the entire end-state review UX first.
+
+This prerequisite plan should be interpreted as support for the short-term manual import MVP in `docs/02-manual-transaction-import-implementation-plan.md`, not as a requirement to complete every future-facing transfer or reconciliation idea before importing real user data.
 
 ## Phase 0: Inspect Existing Models
 
@@ -91,22 +112,24 @@ Questions to answer:
 
 Do not start manual imports until these assumptions are clear.
 
-## Phase 1: Normalize Account Types
+## Phase 1: Add Internal Account Classification
 
-MoneyTree needs explicit account type metadata because transfer matching depends on the source and destination account type.
+MoneyTree already stores provider-style account `type` and `subtype`, and current dashboard logic depends on them. Do not replace those fields as a prerequisite step. Add only the minimum internal classification metadata needed for transfer matching and reporting.
 
-Recommended account fields:
+Recommended additive account fields:
 
-- `account_type`: `checking`, `savings`, `credit_card`, `loan`, `mortgage`, `cash`, `investment`, `other`
-- `account_subtype`: optional provider/user subtype
+- `internal_account_kind`: nullable enum-like string such as `checking`, `savings`, `credit_card`, `loan`, `mortgage`, `cash`, `investment`, `other`
 - `liability_type`: nullable; examples `credit_card`, `auto_loan`, `student_loan`, `pool_loan`, `mortgage`
 - `is_internal`: boolean, true when the account belongs to the user/household
 - `include_in_cash_flow`: boolean
 - `include_in_net_worth`: boolean
-- `display_name`
-- `last_four` nullable
-- `institution_name` nullable
 - `manual_account`: boolean
+
+Optional later, not required for this prerequisite slice:
+
+- normalized display name fields
+- last-four helpers
+- denormalized institution labels
 
 Rules:
 
@@ -114,7 +137,8 @@ Rules:
 2. Credit cards are internal liability accounts when owned by the household.
 3. Loans are internal liability accounts when owned by the household.
 4. External merchants are not accounts unless explicitly modeled later.
-5. Account type must be available before transfer matching runs.
+5. Existing `accounts.type` and `accounts.subtype` remain in place and continue to drive current logic until the new classification layer is adopted incrementally.
+6. Internal classification must be available before transfer matching runs.
 
 ## Phase 2: Define Signed Amount Semantics
 
@@ -145,10 +169,12 @@ If current storage uses provider-native signs, add normalized reporting helpers 
 
 Each committed transaction should carry source and identity metadata.
 
+These fields must be additive. The current sync paths use `transactions.external_id` as the provider transaction identifier and upsert key. Do not break that contract while adding richer identity support.
+
 Recommended fields on canonical transactions:
 
 - `source`: `plaid`, `manual_import`, `user_manual`, `teller`, `pdf_extract`, `screenshot_extract`
-- `source_account_id` or `account_id`
+- `account_id`
 - `source_transaction_id` nullable
 - `source_reference` nullable
 - `source_fingerprint`
@@ -173,6 +199,8 @@ Rules:
 2. Always create a `source_fingerprint` for imported/synced rows.
 3. Always create a `normalized_fingerprint` for cross-source duplicate detection.
 4. Keep source reference fields because card exports often include useful reference IDs.
+5. Keep `external_id` for existing provider sync idempotency unless and until all sync/import code paths are migrated together.
+6. Manual-imported transactions may need a generated `external_id` strategy during the transition period so they can coexist with current schema constraints.
 
 ## Phase 4: Define Fingerprint Strategy
 
@@ -248,6 +276,10 @@ Rules:
 4. Same account/amount/date within +/- 3 days should be medium confidence unless merchant also matches.
 5. Same amount and similar merchant outside the date window should be low confidence.
 6. Medium and low confidence matches should be reviewable, not silently skipped.
+
+Implementation note:
+
+- Treat this service as backend infrastructure first. The initial manual import flow can surface its decisions in the staging model before MoneyTree has a full standalone reconciliation UI.
 
 ## Phase 6: Add Transfer Match Model
 
@@ -363,9 +395,9 @@ Reporting behavior:
 - show as debt service in cash-flow reporting
 - avoid double-counting if a liability account transaction is also imported
 
-## Phase 8: Match Review Workflow
+## Phase 8: Match Review Hooks
 
-Add a review state for uncertain matches.
+Add a review state for uncertain matches, but keep this phase scoped to the hooks needed for import staging and lightweight transaction review first.
 
 User actions:
 
@@ -376,12 +408,20 @@ User actions:
 - mark transaction as not a transfer
 - mark transaction as internal transfer without a matching counterpart
 
-UI surfaces:
+Initial surfaces that fit the current repo:
 
-- transaction detail page
 - import preview grid
-- account reconciliation page
-- dashboard warning card for unmatched likely transfers
+- existing transaction list/detail affordances if extended later
+- dashboard warning card for unmatched likely transfers, if a lightweight summary is useful
+
+Later surfaces, not required before import work starts:
+
+- dedicated transaction detail page
+- dedicated account reconciliation page
+
+Implementation note:
+
+- The first manual import milestone only needs enough review state to support staging, commit decisions, and minimal post-import visibility.
 
 Suggested filters:
 
@@ -425,6 +465,8 @@ Rules:
 
 Update reports before manual imports rely on them.
 
+Focus first on the smallest reporting changes that prevent obvious double-counting in existing dashboard and summary queries. Do not block import work on a full reporting redesign.
+
 Dashboard views should support at least:
 
 - cash-flow income
@@ -453,11 +495,16 @@ If existing transactions lack identity fields, add migrations carefully.
 Recommended order:
 
 1. Add nullable columns first.
-2. Backfill account types where known.
+2. Backfill internal account classification where known, without removing existing provider `type` / `subtype`.
 3. Backfill transaction source as `unknown` or existing provider name.
 4. Generate fingerprints for existing posted transactions.
 5. Add indexes after backfill.
 6. Add constraints only after data is clean.
+
+Compatibility rules:
+
+- Existing Plaid and Teller rows must continue to upsert safely during the migration window.
+- Do not change sync conflict targets until the new identity model is wired through the synchronizers and validated.
 
 Suggested indexes:
 
@@ -555,18 +602,26 @@ Expected result:
 Implement in this order:
 
 1. Inspect existing account/transaction/reporting models.
-2. Normalize account type metadata.
+2. Add internal account classification metadata.
 3. Decide and document signed amount semantics.
-4. Add transaction identity columns.
+4. Add additive transaction identity columns while preserving current sync upsert behavior.
 5. Add fingerprint generation helpers.
 6. Add duplicate detection service.
 7. Add transfer match schema.
 8. Add deterministic transfer matching service.
-9. Add category foundations for transfers, card payments, and loan payments.
-10. Update dashboard/reporting semantics.
-11. Add review UI/API hooks for uncertain matches.
-12. Add tests for all scenarios.
-13. Only then proceed with manual import parser/upload work.
+9. Update the minimum dashboard/reporting semantics needed to prevent double-counting.
+10. Add import-oriented review hooks and API support for uncertain matches.
+11. Add tests for core duplicate detection, transfer matching, and reporting scenarios.
+12. Proceed with manual import parser/upload work once this minimum foundation is in place.
+
+Nice-to-have follow-on work after import can start:
+
+- broader review and reconciliation UI
+- richer category foundations for transfer/payment subtypes
+- expanded reporting breakdowns
+- manual transaction entry and non-import review workflows
+
+If a small amount of import work must happen in parallel to validate these foundations against real files, that is acceptable so long as canonical transaction commits do not bypass the identity, duplicate, and transfer semantics defined here.
 
 Each phase should be kept small enough for a focused PR and should include migrations and tests together. Always run migrations in the development instance through the normal project workflow before treating a phase as complete.
 
@@ -574,8 +629,8 @@ Each phase should be kept small enough for a focused PR and should include migra
 
 This prerequisite work is complete only when all of the following are true:
 
-1. Accounts have reliable type metadata for checking, savings, credit cards, and loans.
-2. Transactions have source, reference, fingerprint, kind, and review fields.
+1. Accounts have reliable internal classification metadata for checking, savings, credit cards, and loans without breaking current `type` / `subtype`-based behavior.
+2. Transactions have source, reference, fingerprint, kind, and review fields, added compatibly with current provider sync behavior.
 3. Duplicate detection works without depending on one provider-specific ID.
 4. Transfer matches can be suggested, confirmed, rejected, and audited.
 5. Checking-to-savings transfers can be matched and excluded from spending.
@@ -583,8 +638,8 @@ This prerequisite work is complete only when all of the following are true:
 7. Credit card purchases and credit card payments are reported differently.
 8. Loan payments can be reported as debt service without being confused with transfers.
 9. Reports avoid double-counting confirmed internal transfers.
-10. Uncertain matches are reviewable by the user.
+10. Uncertain matches are reviewable in at least the import workflow, even if a full reconciliation UI is still deferred.
 11. Tests cover duplicate detection, transfer matching, and reporting behavior.
 12. The manual import plan can safely stage and commit rows into this model.
 
-If any of these are missing, manual transaction import should not be considered ready for implementation.
+If these minimum guarantees are missing, manual transaction import should not be considered ready to commit canonical rows. Additional review and reconciliation UX can follow after the import foundation is in place.

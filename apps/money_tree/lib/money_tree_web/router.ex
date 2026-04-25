@@ -91,12 +91,26 @@ defmodule MoneyTreeWeb.Router do
       get "/obligations/:id", ObligationController, :show
       put "/obligations/:id", ObligationController, :update
       delete "/obligations/:id", ObligationController, :delete
+      get "/mortgages", MortgageController, :index
+      post "/mortgages", MortgageController, :create
+      get "/mortgages/:id", MortgageController, :show
+      put "/mortgages/:id", MortgageController, :update
+      delete "/mortgages/:id", MortgageController, :delete
       post "/accounts/:account_id/invitations", InvitationController, :create
       delete "/accounts/:account_id/invitations/:id", InvitationController, :revoke
       get "/categorization/rules", CategorizationController, :list_rules
       post "/categorization/rules", CategorizationController, :create_rule
       delete "/categorization/rules/:id", CategorizationController, :delete_rule
       post "/categorization/recategorize", CategorizationController, :recategorize
+      get "/manual-imports", ManualImportController, :index
+      post "/manual-imports", ManualImportController, :create
+      get "/manual-imports/:id", ManualImportController, :show
+      put "/manual-imports/:id/mapping", ManualImportController, :update_mapping
+      post "/manual-imports/:id/parse", ManualImportController, :parse
+      get "/manual-imports/:id/rows", ManualImportController, :rows
+      patch "/manual-imports/:id/rows", ManualImportController, :update_rows
+      post "/manual-imports/:id/commit", ManualImportController, :commit
+      post "/manual-imports/:id/rollback", ManualImportController, :rollback
     end
 
     scope "/plaid" do
@@ -151,6 +165,9 @@ defmodule MoneyTreeWeb.Router do
 
   scope "/", MoneyTreeWeb do
     pipe_through [:browser, :require_authenticated_user]
+
+    get "/app/import-export/transactions.csv", ImportExportController, :transactions_csv
+    get "/app/import-export/budgets.csv", ImportExportController, :budgets_csv
 
     get "/app", AppController, :index
     get "/app/accounts/connect", AppController, :accounts

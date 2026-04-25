@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { ObligationManagerCard } from "./obligation-manager-card";
 import { NotificationPreferencesCard } from "./notification-preferences-card";
+import { ManualImportCard } from "./manual-import-card";
 import type { ControlPanelObligation, FundingAccountOption } from "../lib/obligations";
 import {
   getControlPanelObligations,
@@ -155,6 +156,8 @@ function ControlPanelContent({
             fundingAccounts={fundingAccounts}
             initialObligations={obligations}
           />
+
+          <ManualImportCard csrfToken={csrfToken} accounts={fundingAccounts} />
 
           <article className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm lg:col-span-2">
             <div className="space-y-1">

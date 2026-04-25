@@ -294,4 +294,139 @@ describe("Control panel page", () => {
     assert.equal(body.linked_funding_account_id, "acct-1");
     assert.equal(body.minimum_due_amount, "88.45");
   });
+
+  it("stages and commits manual import rows from the control panel", async () => {
+    const settings: ControlPanelSettings = {
+      profile: {
+        displayName: "Ada Lovelace",
+        fullName: "Ada Lovelace",
+        email: "ada@example.com",
+        role: "owner",
+      },
+      notifications: {
+        emailEnabled: true,
+        smsEnabled: false,
+        pushEnabled: false,
+        dashboardEnabled: true,
+        upcomingEnabled: true,
+        dueTodayEnabled: true,
+        overdueEnabled: true,
+        recoveredEnabled: true,
+        upcomingLeadDays: 3,
+        resendIntervalHours: 24,
+        maxResends: 2,
+      },
+      sessions: [],
+    };
+
+    const fundingAccounts: FundingAccountOption[] = [
+      {
+        id: "acct-1",
+        name: "Bills Checking",
+        currency: "USD",
+        type: "depository",
+        subtype: "checking",
+      },
+    ];
+
+    const obligations: ControlPanelObligation[] = [];
+
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url === "/api/manual-imports" && method === "POST") {
+        return createFetchResponse(201, {
+          data: { id: "batch-1", status: "uploaded" },
+        });
+      }
+
+      if (url === "/api/manual-imports/batch-1/parse" && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        assert.equal(typeof body.csv_content, "string");
+
+        return createFetchResponse(200, {
+          data: {
+            batch: {
+              id: "batch-1",
+              status: "parsed",
+              row_count: 2,
+              committed_count: 0,
+            },
+          },
+        });
+      }
+
+      if (url === "/api/manual-imports/batch-1/rows" && method === "GET") {
+        return createFetchResponse(200, {
+          data: [
+            {
+              id: "row-1",
+              row_index: 1,
+              posted_at: "2026-04-20T00:00:00Z",
+              description: "Coffee",
+              amount: "-5.25",
+              parse_status: "parsed",
+              review_decision: "accept",
+            },
+            {
+              id: "row-2",
+              row_index: 2,
+              posted_at: "2026-04-21T00:00:00Z",
+              description: "Payroll",
+              amount: "2000.00",
+              parse_status: "parsed",
+              review_decision: "accept",
+            },
+          ],
+        });
+      }
+
+      if (url === "/api/manual-imports/batch-1/commit" && method === "POST") {
+        return createFetchResponse(200, {
+          data: {
+            id: "batch-1",
+            status: "committed",
+            committed_count: 2,
+          },
+        });
+      }
+
+      throw new Error(`Unexpected fetch call: ${method} ${url}`);
+    };
+
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const view = render(
+      await renderControlPanelPage(async () => settings, {
+        csrfToken: CSRF_TOKEN,
+        fetchFundingAccounts: async () => fundingAccounts,
+        fetchObligations: async () => obligations,
+      }),
+    );
+
+    const csvInput = view.getByTestId("manual-import-csv") as HTMLTextAreaElement;
+    fireEvent.change(csvInput, {
+      target: {
+        value: "Date,Description,Amount\n2026-04-20,Coffee,-5.25\n2026-04-21,Payroll,2000.00\n",
+      },
+    });
+
+    await waitFor(() => {
+      assert.ok(csvInput.value.includes("Date,Description,Amount"));
+    });
+
+    fireEvent.click(view.getByTestId("manual-import-parse"));
+
+    await waitFor(() => {
+      assert.ok(view.getByText("Coffee"));
+      assert.ok(view.getByText(/Parsed 2 rows\./i));
+    });
+
+    fireEvent.click(view.getByTestId("manual-import-commit"));
+
+    await waitFor(() => {
+      assert.ok(view.getByText("Committed 2 rows to transactions."));
+    });
+  });
 });

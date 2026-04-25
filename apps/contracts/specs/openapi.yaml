@@ -16,6 +16,115 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+
+  /api/mortgages:
+    get:
+      summary: List current user mortgages
+      operationId: listMortgages
+      responses:
+        '200':
+          description: Mortgages available to the authenticated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Mortgage'
+                required:
+                  - data
+    post:
+      summary: Create a mortgage
+      operationId: createMortgage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMortgageRequest'
+      responses:
+        '201':
+          description: Mortgage created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Mortgage'
+                required:
+                  - data
+
+  /api/mortgages/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Fetch a mortgage by id
+      operationId: getMortgage
+      responses:
+        '200':
+          description: Mortgage found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Mortgage'
+                required:
+                  - data
+        '404':
+          description: Mortgage not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update a mortgage
+      operationId: updateMortgage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMortgageRequest'
+      responses:
+        '200':
+          description: Mortgage updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Mortgage'
+                required:
+                  - data
+        '404':
+          description: Mortgage not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Delete a mortgage
+      operationId: deleteMortgage
+      responses:
+        '204':
+          description: Mortgage deleted
+        '404':
+          description: Mortgage not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   schemas:
     HealthResponse:
@@ -36,3 +145,233 @@ components:
       required:
         - status
         - timestamp
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    MortgageEscrowProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        property_tax_monthly:
+          type: string
+        homeowners_insurance_monthly:
+          type: string
+        flood_insurance_monthly:
+          type: string
+        other_escrow_monthly:
+          type: string
+        escrow_cushion_months:
+          type: string
+        expected_old_escrow_refund:
+          type: string
+        annual_tax_growth_rate:
+          type: string
+        annual_insurance_growth_rate:
+          type: string
+        source:
+          type: string
+        confidence_score:
+          type: string
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Mortgage:
+      type: object
+      properties:
+        id:
+          type: string
+        nickname:
+          type: string
+        property_name:
+          type: string
+        street_line_1:
+          type: string
+        street_line_2:
+          type: string
+        city:
+          type: string
+        state_region:
+          type: string
+        postal_code:
+          type: string
+        country_code:
+          type: string
+        occupancy_type:
+          type: string
+        loan_type:
+          type: string
+        servicer_name:
+          type: string
+        lender_name:
+          type: string
+        original_loan_amount:
+          type: string
+        current_balance:
+          type: string
+        original_interest_rate:
+          type: string
+        current_interest_rate:
+          type: string
+        original_term_months:
+          type: integer
+        remaining_term_months:
+          type: integer
+        monthly_principal_interest:
+          type: string
+        monthly_payment_total:
+          type: string
+        home_value_estimate:
+          type: string
+        pmi_mip_monthly:
+          type: string
+        hoa_monthly:
+          type: string
+        flood_insurance_monthly:
+          type: string
+        has_escrow:
+          type: boolean
+        escrow_included_in_payment:
+          type: boolean
+        linked_obligation_id:
+          type: string
+        status:
+          type: string
+        source:
+          type: string
+        last_reviewed_at:
+          type: string
+          format: date-time
+        escrow_profile:
+          oneOf:
+            - $ref: '#/components/schemas/MortgageEscrowProfile'
+            - type: 'null'
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - property_name
+        - loan_type
+        - current_balance
+        - current_interest_rate
+        - remaining_term_months
+        - monthly_payment_total
+        - has_escrow
+        - escrow_included_in_payment
+        - status
+
+    MortgageEscrowProfileInput:
+      type: object
+      properties:
+        property_tax_monthly:
+          type: string
+        homeowners_insurance_monthly:
+          type: string
+        flood_insurance_monthly:
+          type: string
+        other_escrow_monthly:
+          type: string
+        escrow_cushion_months:
+          type: string
+        expected_old_escrow_refund:
+          type: string
+        annual_tax_growth_rate:
+          type: string
+        annual_insurance_growth_rate:
+          type: string
+        source:
+          type: string
+        confidence_score:
+          type: string
+
+    CreateMortgageRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+        property_name:
+          type: string
+        street_line_1:
+          type: string
+        street_line_2:
+          type: string
+        city:
+          type: string
+        state_region:
+          type: string
+        postal_code:
+          type: string
+        country_code:
+          type: string
+        occupancy_type:
+          type: string
+        loan_type:
+          type: string
+        servicer_name:
+          type: string
+        lender_name:
+          type: string
+        original_loan_amount:
+          type: string
+        current_balance:
+          type: string
+        original_interest_rate:
+          type: string
+        current_interest_rate:
+          type: string
+        original_term_months:
+          type: integer
+        remaining_term_months:
+          type: integer
+        monthly_principal_interest:
+          type: string
+        monthly_payment_total:
+          type: string
+        home_value_estimate:
+          type: string
+        pmi_mip_monthly:
+          type: string
+        hoa_monthly:
+          type: string
+        flood_insurance_monthly:
+          type: string
+        has_escrow:
+          type: boolean
+        escrow_included_in_payment:
+          type: boolean
+        linked_obligation_id:
+          type: string
+        status:
+          type: string
+        source:
+          type: string
+        last_reviewed_at:
+          type: string
+          format: date-time
+        escrow_profile:
+          $ref: '#/components/schemas/MortgageEscrowProfileInput'
+      required:
+        - property_name
+        - loan_type
+        - current_balance
+        - current_interest_rate
+        - remaining_term_months
+        - monthly_payment_total
+
+    UpdateMortgageRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateMortgageRequest'

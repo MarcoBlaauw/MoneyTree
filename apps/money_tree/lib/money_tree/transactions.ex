@@ -5,9 +5,12 @@ defmodule MoneyTree.Transactions do
 
   import Ecto.Query, warn: false
 
+  alias Ecto.Multi
   alias MoneyTree.Accounts
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Repo
+  alias MoneyTree.Transactions.TransferMatch
+  alias MoneyTree.Transactions.TransferMatcher
   alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Users.User
   alias Decimal
@@ -17,6 +20,8 @@ defmodule MoneyTree.Transactions do
   @default_page 1
   @default_per_page 20
   @max_per_page 100
+
+  @transfer_confirmed_statuses ["confirmed", "auto_confirmed"]
 
   @doc """
   Returns paginated transactions accessible to the user.
@@ -51,6 +56,108 @@ defmodule MoneyTree.Transactions do
           total_entries
         )
     }
+  end
+
+  @doc """
+  Returns transfer match records for transactions accessible to the user.
+  """
+  @spec list_transfer_matches(User.t() | binary(), keyword()) :: [TransferMatch.t()]
+  def list_transfer_matches(user, opts \\ []) do
+    statuses = Keyword.get(opts, :statuses)
+
+    query =
+      from(match in TransferMatch,
+        join: outflow in Transaction,
+        on: outflow.id == match.outflow_transaction_id,
+        join: inflow in Transaction,
+        on: inflow.id == match.inflow_transaction_id,
+        join: outflow_account in subquery(Accounts.accessible_accounts_query(user)),
+        on: outflow.account_id == outflow_account.id,
+        join: inflow_account in subquery(Accounts.accessible_accounts_query(user)),
+        on: inflow.account_id == inflow_account.id,
+        preload: [outflow_transaction: outflow, inflow_transaction: inflow],
+        order_by: [desc: match.inserted_at]
+      )
+
+    query
+    |> maybe_filter_match_statuses(statuses)
+    |> Repo.all()
+  end
+
+  @doc """
+  Suggests transfer matches from recent user transactions.
+  """
+  @spec suggest_transfer_matches(User.t() | binary(), keyword()) :: [map()]
+  def suggest_transfer_matches(user, opts \\ []) do
+    lookback_days = Keyword.get(opts, :lookback_days, 30)
+    since = lookback_datetime(lookback_days)
+    limit = Keyword.get(opts, :limit, 100)
+
+    transactions =
+      from(transaction in Transaction,
+        join: account in subquery(Accounts.accessible_accounts_query(user)),
+        on: transaction.account_id == account.id,
+        where: not is_nil(transaction.posted_at) and transaction.posted_at >= ^since,
+        preload: [account: account],
+        order_by: [desc: transaction.posted_at, desc: transaction.inserted_at],
+        limit: ^limit
+      )
+      |> Repo.all()
+
+    transactions
+    |> suggestion_pairs()
+    |> Enum.flat_map(fn {outflow, inflow} ->
+      case TransferMatcher.suggest_pair(outflow, outflow.account, inflow, inflow.account, opts) do
+        {:ok, suggestion} -> [suggestion]
+        :no_match -> []
+      end
+    end)
+    |> Enum.uniq_by(&{&1.outflow_transaction_id, &1.inflow_transaction_id})
+  end
+
+  @doc """
+  Creates a transfer match and applies spending exclusion when confirmed.
+  """
+  @spec create_transfer_match(User.t() | binary(), map()) ::
+          {:ok, TransferMatch.t()} | {:error, :not_found | Ecto.Changeset.t()}
+  def create_transfer_match(user, attrs) when is_map(attrs) do
+    with {:ok, outflow} <- fetch_accessible_transaction(user, get(attrs, :outflow_transaction_id)),
+         {:ok, inflow} <- fetch_accessible_transaction(user, get(attrs, :inflow_transaction_id)) do
+      status = get(attrs, :status) || "suggested"
+
+      Multi.new()
+      |> Multi.insert(
+        :match,
+        TransferMatch.changeset(%TransferMatch{}, attrs)
+      )
+      |> maybe_apply_confirmed_transaction_flags(status, outflow, inflow, attrs)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{match: match}} -> {:ok, match}
+        {:error, _operation, %Ecto.Changeset{} = changeset, _changes} -> {:error, changeset}
+        {:error, _operation, reason, _changes} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Updates transfer match status and keeps transaction spending flags in sync.
+  """
+  @spec update_transfer_match_status(User.t() | binary(), binary(), String.t()) ::
+          {:ok, TransferMatch.t()} | {:error, :not_found | Ecto.Changeset.t()}
+  def update_transfer_match_status(user, match_id, status)
+      when is_binary(match_id) and is_binary(status) do
+    with {:ok, match} <- fetch_accessible_transfer_match(user, match_id) do
+      Multi.new()
+      |> Multi.update(:match, TransferMatch.changeset(match, %{status: status}))
+      |> maybe_sync_status_transaction_flags(status, match)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{match: updated}} -> {:ok, updated}
+        {:error, _operation, %Ecto.Changeset{} = changeset, _changes} -> {:error, changeset}
+        {:error, _operation, reason, _changes} -> {:error, reason}
+      end
+    end
   end
 
   @doc """
@@ -115,6 +222,7 @@ defmodule MoneyTree.Transactions do
       from(transaction in Transaction,
         join: account in subquery(Accounts.accessible_accounts_query(user)),
         on: transaction.account_id == account.id,
+        where: not transaction.excluded_from_spending,
         group_by: [transaction.category, transaction.currency],
         select:
           {transaction.currency, coalesce(transaction.category, "Uncategorized"),
@@ -179,6 +287,7 @@ defmodule MoneyTree.Transactions do
       from(transaction in Transaction,
         join: account in subquery(Accounts.accessible_accounts_query(user)),
         on: transaction.account_id == account.id,
+        where: not transaction.excluded_from_spending,
         where:
           fragment("LOWER(COALESCE(?, ''))", transaction.category) in ^normalized_categories or
             fragment("LOWER(COALESCE(?, ''))", transaction.merchant_name) in ^normalized_categories or
@@ -351,6 +460,17 @@ defmodule MoneyTree.Transactions do
     )
   end
 
+  defp maybe_filter_match_statuses(query, nil), do: query
+  defp maybe_filter_match_statuses(query, []), do: query
+
+  defp maybe_filter_match_statuses(query, statuses) when is_list(statuses) do
+    where(
+      query,
+      [match, _outflow, _inflow, _outflow_account, _inflow_account],
+      match.status in ^statuses
+    )
+  end
+
   defp cast_decimal(nil), do: Decimal.new("0")
   defp cast_decimal(%Decimal{} = value), do: value
 
@@ -386,4 +506,155 @@ defmodule MoneyTree.Transactions do
   rescue
     _ -> 0
   end
+
+  defp suggestion_pairs(transactions) do
+    transactions
+    |> Enum.flat_map(fn left ->
+      Enum.flat_map(transactions, fn right ->
+        if left.id != right.id and left.account_id != right.account_id do
+          if outflow?(left.amount) and inflow?(right.amount) do
+            [{left, right}]
+          else
+            []
+          end
+        else
+          []
+        end
+      end)
+    end)
+  end
+
+  defp maybe_apply_confirmed_transaction_flags(multi, status, outflow, inflow, attrs)
+       when status in @transfer_confirmed_statuses do
+    transaction_kind = transaction_kind_for_match_type(get(attrs, :match_type))
+
+    multi
+    |> Multi.update(
+      :outflow_transaction,
+      Transaction.changeset(outflow, confirmed_flags(transaction_kind))
+    )
+    |> Multi.update(
+      :inflow_transaction,
+      Transaction.changeset(inflow, confirmed_flags("internal_transfer"))
+    )
+  end
+
+  defp maybe_apply_confirmed_transaction_flags(multi, _status, _outflow, _inflow, _attrs),
+    do: multi
+
+  defp maybe_sync_status_transaction_flags(multi, status, match)
+       when status in @transfer_confirmed_statuses do
+    multi
+    |> Multi.run(:outflow_transaction, fn _repo, _changes ->
+      update_transfer_transaction_flags(
+        match.outflow_transaction_id,
+        confirmed_flags(transaction_kind_for_match_type(match.match_type))
+      )
+    end)
+    |> Multi.run(:inflow_transaction, fn _repo, _changes ->
+      update_transfer_transaction_flags(
+        match.inflow_transaction_id,
+        confirmed_flags("internal_transfer")
+      )
+    end)
+  end
+
+  defp maybe_sync_status_transaction_flags(multi, "rejected", match) do
+    multi
+    |> Multi.run(:outflow_transaction, fn _repo, _changes ->
+      update_transfer_transaction_flags(match.outflow_transaction_id, rejected_flags())
+    end)
+    |> Multi.run(:inflow_transaction, fn _repo, _changes ->
+      update_transfer_transaction_flags(match.inflow_transaction_id, rejected_flags())
+    end)
+  end
+
+  defp maybe_sync_status_transaction_flags(multi, _status, _match), do: multi
+
+  defp update_transfer_transaction_flags(transaction_id, attrs) do
+    case Repo.get(Transaction, transaction_id) do
+      nil ->
+        {:error, :not_found}
+
+      %Transaction{} = transaction ->
+        transaction
+        |> Transaction.changeset(attrs)
+        |> Repo.update()
+    end
+  end
+
+  defp fetch_accessible_transaction(user, transaction_id) when is_binary(transaction_id) do
+    transaction =
+      from(transaction in Transaction,
+        join: account in subquery(Accounts.accessible_accounts_query(user)),
+        on: transaction.account_id == account.id,
+        where: transaction.id == ^transaction_id,
+        preload: [account: account]
+      )
+      |> Repo.one()
+
+    case transaction do
+      %Transaction{} = value -> {:ok, value}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  defp fetch_accessible_transaction(_user, _transaction_id), do: {:error, :not_found}
+
+  defp fetch_accessible_transfer_match(user, match_id) do
+    match =
+      from(match in TransferMatch,
+        join: outflow in Transaction,
+        on: outflow.id == match.outflow_transaction_id,
+        join: inflow in Transaction,
+        on: inflow.id == match.inflow_transaction_id,
+        join: outflow_account in subquery(Accounts.accessible_accounts_query(user)),
+        on: outflow.account_id == outflow_account.id,
+        join: inflow_account in subquery(Accounts.accessible_accounts_query(user)),
+        on: inflow.account_id == inflow_account.id,
+        where: match.id == ^match_id
+      )
+      |> Repo.one()
+
+    case match do
+      %TransferMatch{} = value -> {:ok, value}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  defp confirmed_flags(transaction_kind) do
+    %{
+      excluded_from_spending: true,
+      transaction_kind: transaction_kind,
+      needs_review: false,
+      review_reason: nil
+    }
+  end
+
+  defp rejected_flags do
+    %{
+      excluded_from_spending: false,
+      needs_review: false
+    }
+  end
+
+  defp transaction_kind_for_match_type("checking_to_credit_card"), do: "credit_card_payment"
+  defp transaction_kind_for_match_type("checking_to_loan"), do: "loan_payment"
+  defp transaction_kind_for_match_type(_match_type), do: "internal_transfer"
+
+  defp outflow?(amount) do
+    case Decimal.cast(amount) do
+      {:ok, value} -> Decimal.compare(value, Decimal.new("0")) == :lt
+      :error -> false
+    end
+  end
+
+  defp inflow?(amount) do
+    case Decimal.cast(amount) do
+      {:ok, value} -> Decimal.compare(value, Decimal.new("0")) == :gt
+      :error -> false
+    end
+  end
+
+  defp get(map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
 end
