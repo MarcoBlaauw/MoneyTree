@@ -79,7 +79,7 @@ defmodule MoneyTreeWeb.AccountsLive.Index do
   def render(assigns) do
     ~H"""
     <section class="space-y-6">
-      <.header title="Accounts &amp; institutions" subtitle="Review linked institutions, connected accounts, and sync health.">
+      <.header title="Accounts & institutions" subtitle="Review linked institutions, connected accounts, and sync health.">
         <:actions>
           <a href="/app/react/link-bank" class="btn btn-outline">Connect institution</a>
         </:actions>

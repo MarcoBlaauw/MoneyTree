@@ -4,7 +4,7 @@ defmodule MoneyTreeWeb.ManualImportController do
   alias Ecto.Changeset
   alias MoneyTree.ManualImports
   alias MoneyTree.ManualImports.Batch
-  alias MoneyTree.ManualImports.CSVParser
+  alias MoneyTree.ManualImports.ImportParser
   alias MoneyTree.ManualImports.Row
 
   def index(%{assigns: %{current_user: current_user}} = conn, _params) do
@@ -86,9 +86,13 @@ defmodule MoneyTreeWeb.ManualImportController do
 
   def parse(%{assigns: %{current_user: current_user}} = conn, %{"id" => id} = params) do
     with {:ok, batch} <- ManualImports.get_batch(current_user, id),
-         {:ok, content, file_attrs} <- fetch_csv_content(params),
+         {:ok, content, file_attrs} <- fetch_import_content(params),
          mapping_config <- params["mapping_config"] || batch.mapping_config || %{},
-         {:ok, parsed} <- CSVParser.parse(content, mapping_config),
+         {:ok, parsed} <-
+           ImportParser.parse(content, mapping_config,
+             file_name: Map.get(file_attrs, "file_name"),
+             file_mime_type: Map.get(file_attrs, "file_mime_type")
+           ),
          {:ok, _mapped_batch} <-
            ManualImports.update_mapping(current_user, batch.id, mapping_config, file_attrs),
          {:ok, %{batch: staged_batch}} <-
@@ -229,11 +233,11 @@ defmodule MoneyTreeWeb.ManualImportController do
     end
   end
 
-  defp fetch_csv_content(%{"csv_content" => content}) when is_binary(content) do
+  defp fetch_import_content(%{"csv_content" => content}) when is_binary(content) do
     {:ok, content, %{}}
   end
 
-  defp fetch_csv_content(%{"file" => %Plug.Upload{} = upload}) do
+  defp fetch_import_content(%{"file" => %Plug.Upload{} = upload}) do
     case File.read(upload.path) do
       {:ok, content} ->
         attrs = %{
@@ -250,7 +254,7 @@ defmodule MoneyTreeWeb.ManualImportController do
     end
   end
 
-  defp fetch_csv_content(_params), do: {:error, :missing_file}
+  defp fetch_import_content(_params), do: {:error, :missing_file}
 
   defp maybe_put_file_attrs(attrs, nil), do: attrs
 

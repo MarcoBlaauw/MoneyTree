@@ -120,4 +120,18 @@ defmodule MoneyTreeWeb.SettingsLiveTest do
     assert html =~ "Register security key"
     assert html =~ "Remove"
   end
+
+  test "shows warning for non-local ollama url", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/app/settings/privacy")
+
+    view
+    |> form("#ai-settings-form", %{
+      "ai" => %{
+        "base_url" => "https://ollama.example.com"
+      }
+    })
+    |> render_change()
+
+    assert render(view) =~ "Non-local Ollama URL detected"
+  end
 end

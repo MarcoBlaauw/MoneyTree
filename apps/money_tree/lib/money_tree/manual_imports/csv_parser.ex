@@ -256,6 +256,9 @@ defmodule MoneyTree.ManualImports.CSVParser do
       trimmed == "" ->
         {:error, :invalid}
 
+      String.match?(trimmed, ~r/^\d+(\.\d+)?$/) ->
+        parse_excel_serial_date(trimmed)
+
       String.match?(trimmed, ~r/^\d{4}-\d{1,2}-\d{1,2}$/) ->
         parse_date_with_format(trimmed, :iso_dash)
 
@@ -267,6 +270,21 @@ defmodule MoneyTree.ManualImports.CSVParser do
 
       true ->
         {:error, :invalid}
+    end
+  end
+
+  defp parse_excel_serial_date(serial_string) do
+    with {number, _rest} <- Float.parse(serial_string),
+         true <- number >= 20_000 and number <= 80_000 do
+      serial_days = trunc(number)
+      base_date = ~D[1899-12-30]
+
+      case Date.add(base_date, serial_days) do
+        %Date{} = date -> {:ok, to_utc_datetime(date)}
+        _ -> {:error, :invalid}
+      end
+    else
+      _ -> {:error, :invalid}
     end
   end
 

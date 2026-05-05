@@ -202,6 +202,70 @@ plaid_runtime_config =
 
 config :money_tree, MoneyTree.Plaid, Keyword.merge(base_plaid_config, plaid_runtime_config)
 
+ai_env = fn key ->
+  case System.get_env(key) do
+    nil -> nil
+    "" -> nil
+    value -> value
+  end
+end
+
+parse_bool_env = fn
+  value when value in [true, false] ->
+    value
+
+  value when is_binary(value) ->
+    String.downcase(String.trim(value)) in ["true", "1", "yes", "on"]
+
+  _value ->
+    false
+end
+
+ai_runtime_config =
+  [
+    enabled:
+      case ai_env.("AI_ENABLED") do
+        nil -> nil
+        value -> parse_bool_env.(value)
+      end,
+    require_confirmation:
+      case ai_env.("AI_REQUIRE_CONFIRMATION") do
+        nil -> nil
+        value -> parse_bool_env.(value)
+      end,
+    default_provider: ai_env.("AI_PROVIDER"),
+    max_input_transactions:
+      case ai_env.("OLLAMA_MAX_INPUT_TRANSACTIONS") do
+        nil -> nil
+        value -> String.to_integer(value)
+      end
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+ollama_runtime_config =
+  [
+    base_url: ai_env.("OLLAMA_BASE_URL"),
+    model: ai_env.("OLLAMA_MODEL"),
+    timeout_ms:
+      case ai_env.("OLLAMA_TIMEOUT_MS") do
+        nil -> nil
+        value -> String.to_integer(value)
+      end
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+if ai_runtime_config != [] or ollama_runtime_config != [] do
+  base_ai_config = Application.get_env(:money_tree, MoneyTree.AI, [])
+  base_ollama_config = Keyword.get(base_ai_config, :ollama, [])
+
+  merged_ai_config =
+    base_ai_config
+    |> Keyword.merge(ai_runtime_config)
+    |> Keyword.put(:ollama, Keyword.merge(base_ollama_config, ollama_runtime_config))
+
+  config :money_tree, MoneyTree.AI, merged_ai_config
+end
+
 stripe_runtime_config =
   [
     connect_client_id: teller_env.("STRIPE_CONNECT_CLIENT_ID"),

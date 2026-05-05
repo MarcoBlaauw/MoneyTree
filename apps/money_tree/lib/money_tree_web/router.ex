@@ -102,6 +102,17 @@ defmodule MoneyTreeWeb.Router do
       post "/categorization/rules", CategorizationController, :create_rule
       delete "/categorization/rules/:id", CategorizationController, :delete_rule
       post "/categorization/recategorize", CategorizationController, :recategorize
+      get "/ai/settings", AIController, :settings
+      put "/ai/settings", AIController, :update_settings
+      post "/ai/test-connection", AIController, :test_connection
+      get "/ai/models", AIController, :models
+      post "/ai/categorization-runs", AIController, :create_categorization_run
+      post "/ai/import-categorization-runs", AIController, :create_import_categorization_run
+      get "/ai/suggestion-runs", AIController, :list_runs
+      get "/ai/suggestions", AIController, :list_suggestions
+      post "/ai/suggestions/:id/accept", AIController, :accept_suggestion
+      post "/ai/suggestions/:id/reject", AIController, :reject_suggestion
+      post "/ai/suggestions/:id/apply-edited", AIController, :apply_edited_suggestion
       get "/manual-imports", ManualImportController, :index
       post "/manual-imports", ManualImportController, :create
       get "/manual-imports/:id", ManualImportController, :show

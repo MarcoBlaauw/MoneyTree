@@ -3,6 +3,7 @@ defmodule MoneyTreeWeb.ManualImportControllerTest do
 
   import MoneyTree.AccountsFixtures
 
+  alias MoneyTree.XLSXFixture
   alias MoneyTreeWeb.Auth
 
   @session_cookie Auth.session_cookie_name()
@@ -99,9 +100,62 @@ defmodule MoneyTreeWeb.ManualImportControllerTest do
       assert json_response(parse_conn, 422) == %{"error" => "description mapping is required"}
     end
 
+    test "parses xlsx file uploads", %{conn: conn} do
+      user = user_fixture()
+      %{token: token} = session_fixture(user)
+      account = account_fixture(user)
+
+      authed_conn = put_req_header(conn, "cookie", "#{@session_cookie}=#{token}")
+
+      create_conn = post(authed_conn, ~p"/api/manual-imports", %{"account_id" => account.id})
+      %{"data" => %{"id" => batch_id}} = json_response(create_conn, 201)
+
+      xlsx =
+        XLSXFixture.simple_workbook_binary([
+          ["Date", "Description", "Amount", "Status"],
+          ["2026-04-20", "Coffee", -5.25, "Posted"]
+        ])
+
+      upload = write_temp_upload!("sample.xlsx", xlsx)
+
+      parse_conn =
+        post(authed_conn, ~p"/api/manual-imports/#{batch_id}/parse", %{
+          "file" => upload,
+          "mapping_config" => %{
+            "columns" => %{
+              "posted_at" => "Date",
+              "description" => "Description",
+              "amount" => "Amount",
+              "status" => "Status"
+            }
+          }
+        })
+
+      assert %{
+               "data" => %{
+                 "rows_inserted" => 1,
+                 "batch" => %{"id" => ^batch_id, "status" => "parsed", "row_count" => 1}
+               }
+             } = json_response(parse_conn, 200)
+    end
+
     test "requires authentication", %{conn: conn} do
       conn = get(conn, ~p"/api/manual-imports")
       assert conn.status == 401
     end
+  end
+
+  defp write_temp_upload!(file_name, content) do
+    path =
+      System.tmp_dir!()
+      |> Path.join("moneytree-test-#{System.unique_integer([:positive])}-#{file_name}")
+
+    File.write!(path, content)
+
+    %Plug.Upload{
+      path: path,
+      filename: file_name,
+      content_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
   end
 end

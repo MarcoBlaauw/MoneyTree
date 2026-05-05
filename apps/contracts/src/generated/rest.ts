@@ -60,6 +60,183 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get AI settings for the authenticated user */
+        get: operations["getAiSettings"];
+        /** Update AI settings for the authenticated user */
+        put: operations["updateAiSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/test-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test AI provider connectivity */
+        post: operations["testAiConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List available AI models from the configured provider */
+        get: operations["listAiModels"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/categorization-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an AI categorization run */
+        post: operations["createAiCategorizationRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/import-categorization-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create an AI import-row categorization run */
+        post: operations["createAiImportCategorizationRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/suggestion-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List AI suggestion runs */
+        get: operations["listAiSuggestionRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List AI suggestions */
+        get: operations["listAiSuggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/suggestions/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept and apply an AI suggestion */
+        post: operations["acceptAiSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/suggestions/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject an AI suggestion */
+        post: operations["rejectAiSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/suggestions/{id}/apply-edited": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply an edited AI suggestion payload */
+        post: operations["applyEditedAiSuggestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -183,6 +360,90 @@ export interface components {
             escrow_profile?: components["schemas"]["MortgageEscrowProfileInput"];
         };
         UpdateMortgageRequest: components["schemas"]["CreateMortgageRequest"];
+        AiSettings: {
+            enabled_globally?: boolean;
+            require_confirmation?: boolean;
+            local_ai_enabled?: boolean;
+            provider?: string;
+            ollama_base_url?: string;
+            default_model?: string;
+            allow_ai_for_categorization?: boolean;
+            allow_ai_for_budget_recommendations?: boolean;
+            allow_ai_pattern_detection?: boolean;
+            store_prompt_debug_data?: boolean;
+        };
+        UpdateAiSettingsRequest: {
+            settings: {
+                local_ai_enabled?: boolean;
+                provider?: string;
+                ollama_base_url?: string;
+                default_model?: string;
+                allow_ai_for_categorization?: boolean;
+                allow_ai_for_budget_recommendations?: boolean;
+                allow_ai_pattern_detection?: boolean;
+                store_prompt_debug_data?: boolean;
+            };
+        };
+        AiConnectionResult: {
+            provider?: string;
+            base_url?: string;
+            model?: string;
+            model_available?: boolean;
+            models?: string[];
+        };
+        AiSuggestionRun: {
+            id?: string;
+            user_id?: string;
+            provider?: string;
+            model?: string;
+            feature?: string;
+            status?: string;
+            input_scope?: {
+                [key: string]: unknown;
+            };
+            prompt_version?: string;
+            schema_version?: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            completed_at?: string;
+            duration_ms?: number;
+            error_code?: string;
+            error_message_safe?: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        AiSuggestion: {
+            id?: string;
+            ai_suggestion_run_id?: string;
+            user_id?: string;
+            target_type?: string;
+            target_id?: string;
+            suggestion_type?: string;
+            payload?: {
+                [key: string]: unknown;
+            };
+            approved_payload?: {
+                [key: string]: unknown;
+            };
+            confidence?: string;
+            reason?: string;
+            evidence?: {
+                [key: string]: unknown;
+            };
+            status?: string;
+            reviewed_by_user_id?: string;
+            /** Format: date-time */
+            reviewed_at?: string;
+            /** Format: date-time */
+            applied_at?: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -355,6 +616,289 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAiSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description AI settings payload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiSettings"];
+                    };
+                };
+            };
+        };
+    };
+    updateAiSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAiSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated AI settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiSettings"];
+                    };
+                };
+            };
+        };
+    };
+    testAiConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    settings?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Connectivity test result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiConnectionResult"];
+                    };
+                };
+            };
+        };
+    };
+    listAiModels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Available model names */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            models: string[];
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createAiCategorizationRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    limit?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Categorization run created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiSuggestionRun"];
+                    };
+                };
+            };
+        };
+    };
+    createAiImportCategorizationRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    batch_id: string;
+                    limit?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Import categorization run created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiSuggestionRun"];
+                    };
+                };
+            };
+        };
+    };
+    listAiSuggestionRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description AI suggestion runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiSuggestionRun"][];
+                    };
+                };
+            };
+        };
+    };
+    listAiSuggestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description AI suggestions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiSuggestion"][];
+                    };
+                };
+            };
+        };
+    };
+    acceptAiSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted AI suggestion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiSuggestion"];
+                    };
+                };
+            };
+        };
+    };
+    rejectAiSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rejected AI suggestion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiSuggestion"];
+                    };
+                };
+            };
+        };
+    };
+    applyEditedAiSuggestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    payload: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Updated AI suggestion */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["AiSuggestion"];
+                    };
                 };
             };
         };

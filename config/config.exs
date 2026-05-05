@@ -58,6 +58,20 @@ config :money_tree, MoneyTree.Plaid,
   finch: MoneyTree.Finch,
   telemetry_metadata: %{service: "money_tree", integration: "plaid"}
 
+config :money_tree, MoneyTree.AI,
+  enabled: false,
+  require_confirmation: true,
+  default_provider: "ollama",
+  max_input_transactions: 200,
+  provider_modules: %{
+    "ollama" => MoneyTree.AI.Providers.Ollama
+  },
+  ollama: [
+    base_url: "http://localhost:11434",
+    model: "llama3.1:8b",
+    timeout_ms: 60_000
+  ]
+
 config :money_tree, Oban,
   repo: MoneyTree.Repo,
   queues: [

@@ -6,6 +6,7 @@ defmodule MoneyTreeWeb.SettingsLive do
   use MoneyTreeWeb, :live_view
 
   alias MoneyTree.Accounts
+  alias MoneyTree.AI
   alias MoneyTree.Notifications
 
   @sections [
@@ -41,6 +42,7 @@ defmodule MoneyTreeWeb.SettingsLive do
        locked?: false,
        profile_form: nil,
        notification_form: nil,
+       ai_form: nil,
        sections: @sections,
        current_section: "profile"
      )
@@ -168,6 +170,59 @@ defmodule MoneyTreeWeb.SettingsLive do
     {:noreply, put_flash(socket, :error, "Unlock settings to update alert preferences.")}
   end
 
+  def handle_event(
+        "validate-ai",
+        %{"ai" => params},
+        %{assigns: %{ai_form: current}} = socket
+      ) do
+    {:noreply, assign(socket, :ai_form, merge_ai_form(current, params))}
+  end
+
+  def handle_event(
+        "save-ai",
+        %{"ai" => params},
+        %{assigns: %{current_user: current_user, locked?: false, ai_form: current}} = socket
+      ) do
+    merged = merge_ai_form(current, params)
+
+    case AI.update_settings(current_user, merged) do
+      {:ok, _preference} ->
+        {:noreply,
+         socket
+         |> assign(:ai_form, merged)
+         |> put_flash(:info, "AI settings updated.")}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Unable to save AI settings.")}
+    end
+  end
+
+  def handle_event("save-ai", _params, socket) do
+    {:noreply, put_flash(socket, :error, "Unlock settings to update AI preferences.")}
+  end
+
+  def handle_event(
+        "test-ai-connection",
+        _params,
+        %{assigns: %{current_user: current_user, ai_form: ai_form}} = socket
+      ) do
+    case AI.test_connection(current_user, ai_form) do
+      {:ok, result} ->
+        message =
+          if result.model_available do
+            "AI connection ok. Model #{result.model} is available."
+          else
+            "AI connection ok, but model #{result.model} is not installed locally."
+          end
+
+        {:noreply, put_flash(socket, :info, message)}
+
+      {:error, _reason} ->
+        {:noreply,
+         put_flash(socket, :error, "AI connection test failed. Verify Ollama is running.")}
+    end
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -213,7 +268,7 @@ defmodule MoneyTreeWeb.SettingsLive do
               <% "notifications" -> %>
                 <.notifications_section notification_form={@notification_form} />
               <% "privacy" -> %>
-                <.privacy_section settings={@settings} />
+                <.privacy_section settings={@settings} ai_form={@ai_form} />
             <% end %>
           </div>
         </div>
@@ -513,6 +568,7 @@ defmodule MoneyTreeWeb.SettingsLive do
   end
 
   attr :settings, :map, required: true
+  attr :ai_form, :map, required: true
 
   defp privacy_section(assigns) do
     ~H"""
@@ -546,6 +602,79 @@ defmodule MoneyTreeWeb.SettingsLive do
           </dl>
         </div>
       </div>
+
+      <div class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <h3 class="text-lg font-semibold text-zinc-900">Local AI assistant</h3>
+        <p class="mt-2 text-sm text-zinc-500">
+          Configure Ollama-backed AI suggestions for categorization and future import analysis.
+        </p>
+
+        <.form
+          for={%{}}
+          id="ai-settings-form"
+          phx-change="validate-ai"
+          phx-submit="save-ai"
+          class="mt-4 space-y-4"
+        >
+          <label class="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 p-3 text-sm text-zinc-700">
+            <span>Enable local AI</span>
+            <input type="hidden" name="ai[local_ai_enabled]" value="false" />
+            <input
+              type="checkbox"
+              name="ai[local_ai_enabled]"
+              value="true"
+              checked={to_boolean(@ai_form["local_ai_enabled"])}
+            />
+          </label>
+
+          <label class="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 p-3 text-sm text-zinc-700">
+            <span>Enable categorization suggestions</span>
+            <input type="hidden" name="ai[allow_ai_for_categorization]" value="false" />
+            <input
+              type="checkbox"
+              name="ai[allow_ai_for_categorization]"
+              value="true"
+              checked={to_boolean(@ai_form["allow_ai_for_categorization"])}
+            />
+          </label>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div>
+              <label class="text-sm font-medium text-zinc-700" for="ai-base-url">Ollama base URL</label>
+              <input
+                id="ai-base-url"
+                class="input"
+                type="text"
+                name="ai[base_url]"
+                value={@ai_form["base_url"]}
+              />
+              <p
+                :if={show_non_local_ai_warning?(@ai_form["base_url"])}
+                class="mt-1 text-xs text-amber-700"
+              >
+                Non-local Ollama URL detected. Review network trust and data sharing risk before enabling.
+              </p>
+            </div>
+            <div>
+              <label class="text-sm font-medium text-zinc-700" for="ai-model">Default model</label>
+              <input
+                id="ai-model"
+                class="input"
+                type="text"
+                name="ai[model]"
+                value={@ai_form["model"]}
+              />
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button type="submit" class="btn">Save AI settings</button>
+            <button type="button" class="btn btn-outline" phx-click="test-ai-connection">
+              Test connection
+            </button>
+          </div>
+        </.form>
+      </div>
     </section>
     """
   end
@@ -558,6 +687,7 @@ defmodule MoneyTreeWeb.SettingsLive do
     socket
     |> assign(:settings, settings)
     |> assign(:profile_form, to_form(profile_changeset, as: :profile))
+    |> assign(:ai_form, ai_form(current_user))
     |> assign(
       :notification_form,
       to_form(Notifications.change_alert_preference(preference), as: :notifications)
@@ -591,5 +721,88 @@ defmodule MoneyTreeWeb.SettingsLive do
     |> Calendar.strftime("%b %d, %Y %H:%M UTC")
   rescue
     _ -> DateTime.to_string(datetime)
+  end
+
+  defp ai_form(current_user) do
+    snapshot = AI.settings_snapshot(current_user)
+
+    %{
+      "local_ai_enabled" => snapshot.local_ai_enabled,
+      "allow_ai_for_categorization" => snapshot.allow_ai_for_categorization,
+      "base_url" => snapshot.ollama_base_url,
+      "model" => snapshot.default_model
+    }
+  end
+
+  defp merge_ai_form(current, params) do
+    %{
+      "local_ai_enabled" =>
+        to_boolean(Map.get(params, "local_ai_enabled", current["local_ai_enabled"])),
+      "allow_ai_for_categorization" =>
+        to_boolean(
+          Map.get(params, "allow_ai_for_categorization", current["allow_ai_for_categorization"])
+        ),
+      "base_url" => Map.get(params, "base_url", current["base_url"]),
+      "model" => Map.get(params, "model", current["model"])
+    }
+  end
+
+  defp to_boolean(value) when value in [true, "true", "on", "1", 1], do: true
+  defp to_boolean(_value), do: false
+
+  defp show_non_local_ai_warning?(value) when is_binary(value) do
+    not local_or_private_ai_url?(value)
+  end
+
+  defp show_non_local_ai_warning?(_value), do: false
+
+  defp local_or_private_ai_url?(value) do
+    trimmed = String.trim(value)
+
+    normalized =
+      cond do
+        trimmed == "" ->
+          ""
+
+        String.starts_with?(trimmed, "http://") ->
+          trimmed
+
+        String.starts_with?(trimmed, "https://") ->
+          trimmed
+
+        true ->
+          "http://" <> trimmed
+      end
+
+    with normalized when normalized != "" <- normalized,
+         %URI{host: host} when is_binary(host) <- URI.parse(normalized) do
+      host = String.downcase(host)
+
+      host in ["localhost", "127.0.0.1", "::1"] ||
+        String.ends_with?(host, ".local") ||
+        private_ipv4_host?(host) ||
+        private_ipv6_host?(host)
+    else
+      _ -> false
+    end
+  end
+
+  defp private_ipv4_host?(host) do
+    case String.split(host, ".") do
+      [first, second, _third, _fourth] ->
+        case {Integer.parse(first), Integer.parse(second)} do
+          {{10, ""}, _} -> true
+          {{192, ""}, {168, ""}} -> true
+          {{172, ""}, {octet2, ""}} when octet2 in 16..31 -> true
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp private_ipv6_host?(host) do
+    String.starts_with?(host, "fc") || String.starts_with?(host, "fd")
   end
 end

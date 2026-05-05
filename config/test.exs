@@ -40,6 +40,20 @@ config :money_tree, Oban,
   queues: false,
   plugins: false
 
+config :money_tree, MoneyTree.AI,
+  enabled: true,
+  require_confirmation: true,
+  default_provider: "ollama",
+  max_input_transactions: 200,
+  provider_modules: %{
+    "ollama" => MoneyTree.AI.TestProvider
+  },
+  ollama: [
+    base_url: "http://localhost:11434",
+    model: "test-model:latest",
+    timeout_ms: 5000
+  ]
+
 config :money_tree, :disable_oban_tracing, true
 
 config :logger, level: :warning

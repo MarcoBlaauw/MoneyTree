@@ -125,6 +125,270 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/ai/settings:
+    get:
+      summary: Get AI settings for the authenticated user
+      operationId: getAiSettings
+      responses:
+        '200':
+          description: AI settings payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiSettings'
+                required:
+                  - data
+    put:
+      summary: Update AI settings for the authenticated user
+      operationId: updateAiSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAiSettingsRequest'
+      responses:
+        '200':
+          description: Updated AI settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiSettings'
+                required:
+                  - data
+
+  /api/ai/test-connection:
+    post:
+      summary: Test AI provider connectivity
+      operationId: testAiConnection
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                settings:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Connectivity test result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiConnectionResult'
+                required:
+                  - data
+
+  /api/ai/models:
+    get:
+      summary: List available AI models from the configured provider
+      operationId: listAiModels
+      responses:
+        '200':
+          description: Available model names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      models:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - models
+                required:
+                  - data
+
+  /api/ai/categorization-runs:
+    post:
+      summary: Create an AI categorization run
+      operationId: createAiCategorizationRun
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                limit:
+                  type: integer
+      responses:
+        '201':
+          description: Categorization run created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiSuggestionRun'
+                required:
+                  - data
+
+  /api/ai/import-categorization-runs:
+    post:
+      summary: Create an AI import-row categorization run
+      operationId: createAiImportCategorizationRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - batch_id
+              properties:
+                batch_id:
+                  type: string
+                limit:
+                  type: integer
+      responses:
+        '201':
+          description: Import categorization run created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiSuggestionRun'
+                required:
+                  - data
+
+  /api/ai/suggestion-runs:
+    get:
+      summary: List AI suggestion runs
+      operationId: listAiSuggestionRuns
+      responses:
+        '200':
+          description: AI suggestion runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AiSuggestionRun'
+                required:
+                  - data
+
+  /api/ai/suggestions:
+    get:
+      summary: List AI suggestions
+      operationId: listAiSuggestions
+      responses:
+        '200':
+          description: AI suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AiSuggestion'
+                required:
+                  - data
+
+  /api/ai/suggestions/{id}/accept:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Accept and apply an AI suggestion
+      operationId: acceptAiSuggestion
+      responses:
+        '200':
+          description: Accepted AI suggestion
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiSuggestion'
+                required:
+                  - data
+
+  /api/ai/suggestions/{id}/reject:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Reject an AI suggestion
+      operationId: rejectAiSuggestion
+      responses:
+        '200':
+          description: Rejected AI suggestion
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiSuggestion'
+                required:
+                  - data
+
+  /api/ai/suggestions/{id}/apply-edited:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Apply an edited AI suggestion payload
+      operationId: applyEditedAiSuggestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: object
+                  additionalProperties: true
+              required:
+                - payload
+      responses:
+        '200':
+          description: Updated AI suggestion
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiSuggestion'
+                required:
+                  - data
+
 components:
   schemas:
     HealthResponse:
@@ -375,3 +639,154 @@ components:
     UpdateMortgageRequest:
       allOf:
         - $ref: '#/components/schemas/CreateMortgageRequest'
+
+    AiSettings:
+      type: object
+      properties:
+        enabled_globally:
+          type: boolean
+        require_confirmation:
+          type: boolean
+        local_ai_enabled:
+          type: boolean
+        provider:
+          type: string
+        ollama_base_url:
+          type: string
+        default_model:
+          type: string
+        allow_ai_for_categorization:
+          type: boolean
+        allow_ai_for_budget_recommendations:
+          type: boolean
+        allow_ai_pattern_detection:
+          type: boolean
+        store_prompt_debug_data:
+          type: boolean
+
+    UpdateAiSettingsRequest:
+      type: object
+      properties:
+        settings:
+          type: object
+          properties:
+            local_ai_enabled:
+              type: boolean
+            provider:
+              type: string
+            ollama_base_url:
+              type: string
+            default_model:
+              type: string
+            allow_ai_for_categorization:
+              type: boolean
+            allow_ai_for_budget_recommendations:
+              type: boolean
+            allow_ai_pattern_detection:
+              type: boolean
+            store_prompt_debug_data:
+              type: boolean
+      required:
+        - settings
+
+    AiConnectionResult:
+      type: object
+      properties:
+        provider:
+          type: string
+        base_url:
+          type: string
+        model:
+          type: string
+        model_available:
+          type: boolean
+        models:
+          type: array
+          items:
+            type: string
+
+    AiSuggestionRun:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        feature:
+          type: string
+        status:
+          type: string
+        input_scope:
+          type: object
+          additionalProperties: true
+        prompt_version:
+          type: string
+        schema_version:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+        error_code:
+          type: string
+        error_message_safe:
+          type: string
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AiSuggestion:
+      type: object
+      properties:
+        id:
+          type: string
+        ai_suggestion_run_id:
+          type: string
+        user_id:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          type: string
+        suggestion_type:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        approved_payload:
+          type: object
+          additionalProperties: true
+        confidence:
+          type: string
+        reason:
+          type: string
+        evidence:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+        reviewed_by_user_id:
+          type: string
+        reviewed_at:
+          type: string
+          format: date-time
+        applied_at:
+          type: string
+          format: date-time
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
