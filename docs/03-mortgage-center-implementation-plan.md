@@ -1,171 +1,277 @@
-# Mortgage Center implementation plan
+# Loan Center implementation plan
 
 ## Purpose and scope
 
-Add a mortgage-focused workspace to MoneyTree that lets a user:
+Replace the earlier Mortgage Center-only direction with a broader **Loan Center** that defaults to mortgage loans first.
 
-- store one or more mortgages
-- view mortgage details and escrow together
-- analyze deterministic refinance scenarios later
-- connect mortgage records to existing obligations and notification systems later
-- import mortgage documents later through a review-first workflow
+Loan Center should let a user manage loan records, import loan documents, compare refinance scenarios, and make better debt decisions using deterministic calculations, user-confirmed inputs, and optional AI-assisted extraction.
 
-This plan is execution-oriented and repo-anchored. It keeps the existing architectural direction from
-`docs/mortgage-refinance-implementation-plan.md` while applying the Mortgage Center framing and Phase 1
-scope refinements from `docs/mortgage-center-addendum.md`.
+The first implementation should focus on mortgage refinance analysis because MoneyTree already has mortgage baseline records, escrow profile support, mortgage CRUD routes, and prior Mortgage Center planning. The architecture should still leave room for other loan types later, including auto loans, personal loans, student loans, HELOCs, and credit card balance-transfer style comparisons.
 
-## Product framing
+## Product goals
 
-### Initial product shell
+Loan Center should answer the questions users actually use when deciding whether to refinance:
 
-Start with a **Mortgage Center**.
+1. **What will the new monthly payment likely be?**
+2. **How long until the refinance breaks even?**
+3. **What is the full-term finance cost for each scenario?**
 
-Mortgage Center is the initial home-finance shell for:
+Those three outputs must be first-class in the UI and API. Other details matter, but these are the core decision metrics.
 
-- mortgage tracking
-- escrow visibility
-- refinance analysis
-- statements and imports
-- alerts and rate watch
+Loan Center should also show:
 
-### Future relationship to Home Owner Center
+- low / expected / high refinance cost ranges
+- low / expected / high new monthly payment ranges
+- full-term total payment and interest cost
+- finance cost comparison against the current loan
+- cash-to-close estimate
+- true refinance cost versus escrow/prepaid timing costs
+- lender fee and third-party fee breakdown
+- escrow and prepaid assumptions
+- PMI/MIP impact for mortgages
+- break-even point by month and date
+- 5-year, 7-year, 10-year, and full-term comparisons
+- warnings when a lower payment is mostly caused by resetting the term
+- alerts when rate or quote changes make a refinance worth reviewing
 
-Do not build a broad Home Owner Center now.
+## Current repo fit
 
-If MoneyTree later expands into non-mortgage homeowner workflows such as insurance, property taxes,
-HOA, maintenance, or home documents, Mortgage Center can become a subsection of a future Home Owner
-Center. That future possibility should shape naming and IA, but it should not broaden current scope.
-
-## Repo fit
-
-Use the existing MoneyTree boundaries already established in the repo:
+MoneyTree already has a good foundation for the first Loan Center slice:
 
 - Phoenix backend contexts in `apps/money_tree/lib/money_tree`
 - Phoenix JSON controllers and router in `apps/money_tree/lib/money_tree_web`
 - additive Ecto migrations in `apps/money_tree/priv/repo/migrations`
 - Next.js app UI in `apps/next/app`
+- shared Tailwind/UI package in `apps/ui`
 - API contracts in `apps/contracts`
-- notification events and delivery via existing notifications modules
-- obligation linkage through the existing obligations domain
-- background jobs through Oban
+- Oban background jobs
+- Swoosh mail delivery
+- notification/event infrastructure
+- existing obligations domain
+- existing mortgage context and mortgage CRUD API
 
-Keep financial calculations deterministic and implemented in Elixir code. Keep document imports
-review-first, confirmation-based, and separate from canonical persistence.
-
-## Current repo surfaces to extend
-
-- `apps/money_tree/lib/money_tree`
-- `apps/money_tree/lib/money_tree_web/controllers`
-- `apps/money_tree/lib/money_tree_web/router.ex`
-- `apps/money_tree/priv/repo/migrations`
-- `apps/next/app`
-- `apps/contracts`
-- existing obligations and notifications modules
-- existing Oban configuration and worker patterns
-
-## Naming and IA
-
-Use **Mortgage Center** consistently in docs, contracts, backend naming, and frontend page labels.
-
-Recommended IA now:
-
-- Mortgage Center
-- Overview
-- Current mortgage
-- Escrow
-- Refinance analysis
-- Statements & imports
-- Alerts
-- Rate watch
-
-Keep the route family under `/app/react/mortgages` for now, but treat those routes as Mortgage Center
-surfaces in product language.
-
-## Route structure
-
-### Next.js routes
-
-- `/app/react/mortgages` -> Mortgage Center overview
-- `/app/react/mortgages/[mortgageId]` -> Mortgage Center detail
-- `/app/react/mortgages/[mortgageId]/refinance` -> Mortgage Center refinance workspace
-- `/app/react/mortgages/[mortgageId]/imports` -> Mortgage Center statements/imports workspace
-- `/app/react/mortgages/[mortgageId]/alerts` -> Mortgage Center alerts workspace
-
-### Phoenix API routes
-
-Add authenticated JSON APIs under the existing `/api` pattern in [router.ex](/home/webmeester/MoneyTree/apps/money_tree/lib/money_tree_web/router.ex).
-
-Recommended endpoint family:
-
-- `GET /api/mortgages`
-- `POST /api/mortgages`
-- `GET /api/mortgages/:id`
-- `PUT /api/mortgages/:id`
-- `DELETE /api/mortgages/:id`
-- `GET /api/mortgages/:id/refinance_scenarios`
-- `POST /api/mortgages/:id/refinance_scenarios`
-- `GET /api/refinance_scenarios/:id`
-- `PUT /api/refinance_scenarios/:id`
-- `DELETE /api/refinance_scenarios/:id`
-- `POST /api/mortgages/:id/analyze`
-- `GET /api/mortgages/:id/rate_snapshots`
-- `POST /api/mortgage_rates/import`
-- `GET /api/mortgages/:id/alerts`
-- `POST /api/mortgages/:id/alerts`
-- `PUT /api/mortgage_alerts/:id`
-- `DELETE /api/mortgage_alerts/:id`
-- `GET /api/mortgages/:id/import_reviews`
-- `POST /api/mortgages/:id/import_reviews`
-- `POST /api/mortgage_import_reviews/:id/confirm`
-- `POST /api/mortgage_import_reviews/:id/reject`
-
-Phase 1 only needs the mortgage CRUD subset.
-
-## Backend module plan
-
-Create a new context family under `MoneyTree.Mortgages`.
-
-Recommended modules:
+Existing mortgage modules and APIs should be reused rather than replaced:
 
 - `MoneyTree.Mortgages`
 - `MoneyTree.Mortgages.Mortgage`
 - `MoneyTree.Mortgages.EscrowProfile`
-- `MoneyTree.Mortgages.RefinanceScenario`
-- `MoneyTree.Mortgages.RefinanceFee`
-- `MoneyTree.Mortgages.RateSnapshot`
-- `MoneyTree.Mortgages.RateProvider`
-- `MoneyTree.Mortgages.Analysis`
-- `MoneyTree.Mortgages.AnalysisEngine`
-- `MoneyTree.Mortgages.ImportJob`
-- `MoneyTree.Mortgages.ImportReview`
-- `MoneyTree.Mortgages.AlertRule`
-
-Recommended web layer additions:
-
 - `MoneyTreeWeb.MortgageController`
-- `MoneyTreeWeb.RefinanceScenarioController`
-- `MoneyTreeWeb.MortgageAnalysisController`
-- `MoneyTreeWeb.MortgageAlertController`
-- `MoneyTreeWeb.MortgageImportReviewController`
-- `MoneyTreeWeb.MortgageRateController`
+- `/api/mortgages`
+- `/api/mortgages/:id`
 
-Keep pure calculation logic in service modules, not controllers and not frontend code.
+## Naming and information architecture
 
-## Schema plan
+### Product area
 
-All schema changes should be additive. Reuse existing obligations and notifications systems rather
-than creating parallel systems.
+Use **Loan Center** as the top-level product area.
 
-### Core Phase 1 tables
+Initial user-facing navigation label:
 
-#### `mortgages`
+- `Loan Center`
 
-Primary user mortgage record.
+Initial default loan type:
+
+- `Mortgage`
+
+Recommended app navigation placement:
+
+```text
+Dashboard
+Accounts
+Transactions
+Budgets
+Obligations
+Assets
+Loan Center
+Transfers
+Settings
+```
+
+### Initial Loan Center sections
+
+For the mortgage-first implementation:
+
+```text
+Loan Center
+├── Overview
+├── Current loans
+├── Mortgage details
+├── Documents
+├── Refinance analysis
+├── Rate watch
+├── Lender quotes
+├── Alerts
+└── Analysis history
+```
+
+The UI may still use mortgage-specific labels inside mortgage screens, but the outer shell should be Loan Center so the future expansion path is obvious.
+
+## Route structure
+
+### Canonical Phoenix routes
+
+Add canonical authenticated routes under `/app`:
+
+- `/app/loans` -> Loan Center overview
+- `/app/loans/:loan_id` -> loan detail
+- `/app/loans/:loan_id/refinance` -> refinance analysis workspace
+- `/app/loans/:loan_id/documents` -> document import/review workspace
+- `/app/loans/:loan_id/quotes` -> lender quote workspace
+- `/app/loans/:loan_id/alerts` -> loan/refinance alerts
+
+### Mortgage compatibility routes
+
+Existing mortgage routes and APIs should continue to work. If the UI already has mortgage routes, add redirects or compatibility links rather than breaking them.
+
+Possible compatibility routes:
+
+- `/app/mortgages` -> redirects to `/app/loans?type=mortgage`
+- `/app/mortgages/:id` -> redirects to `/app/loans/:loan_id` if/when mortgage-to-loan mapping exists
+
+### API route strategy
+
+Use generic `/api/loans` routes for new Loan Center features where practical, but keep existing `/api/mortgages` routes for the current mortgage baseline.
+
+Near-term API families:
+
+- `/api/mortgages` for existing mortgage CRUD
+- `/api/loans` for generic loan records once introduced
+- `/api/loans/:loan_id/refinance_scenarios`
+- `/api/refinance_scenarios/:id`
+- `/api/refinance_scenarios/:id/analyze`
+- `/api/loans/:loan_id/documents`
+- `/api/loan_documents/:id/extract`
+- `/api/loan_document_extractions/:id/confirm`
+- `/api/loans/:loan_id/lender_quotes`
+- `/api/loans/:loan_id/alert_rules`
+
+For the first slice, mortgage records can act as the only loan source while the generic loan abstraction is introduced gradually.
+
+## Core architecture principle
+
+Keep these concerns separate:
+
+- canonical loan/mortgage data
+- imported document data
+- extracted candidate data
+- confirmed user data
+- refinance assumptions
+- fee assumptions
+- analysis results
+- alerts
+
+Do not allow an uploaded document or LLM extraction to silently overwrite canonical loan records.
+
+## Data input strategy
+
+Loan Center must support data input that is separate from data already available in MoneyTree.
+
+Input sources:
+
+1. Existing MoneyTree data
+   - mortgage records
+   - obligations
+   - connected accounts later
+   - payment history later
+2. Manual input
+   - current loan details
+   - lender quotes
+   - fee estimates
+   - refinance assumptions
+3. Document upload
+   - current mortgage papers
+   - statements
+   - closing disclosures
+   - loan estimates
+   - escrow statements
+   - payoff quotes
+   - screenshots or scanned PDFs
+4. External rate sources
+   - public benchmarks
+   - API-driven rate sources if available
+   - manual rate imports
+5. Financial institution / lender quote sources later
+   - lender APIs
+   - aggregator APIs
+   - uploaded quote documents
+
+Every imported source should be traceable. The user should be able to see whether a value came from MoneyTree data, manual input, an uploaded document, an external benchmark, or a lender quote.
+
+## Deterministic math, AI-assisted extraction
+
+Ollama may be used for:
+
+- classifying uploaded loan documents
+- extracting candidate fields
+- summarizing document findings
+- explaining analysis results in plain language
+- highlighting missing or suspicious assumptions
+
+Ollama must not be used as the source of truth for financial calculations.
+
+All payment, break-even, cost-range, and full-term cost calculations must be deterministic and covered by tests.
+
+## Domain model direction
+
+### Phase 1: Use existing mortgage records
+
+The current `mortgages` table and `mortgage_escrow_profiles` table are enough to start mortgage refinance analysis.
+
+Do not block the refinance feature on a broad loan migration.
+
+### Phase 2: Introduce generic loan abstraction
+
+Add a generic loan layer once the mortgage-first refinance flow is working.
+
+Recommended future tables:
+
+#### `loans`
+
+Generic loan baseline.
 
 Suggested fields:
 
+- `id`
 - `user_id`
+- `loan_type`
 - `nickname`
+- `lender_name`
+- `servicer_name`
+- `account_reference_masked`
+- `current_balance`
+- `current_interest_rate`
+- `rate_type`
+- `original_loan_amount`
+- `original_term_months`
+- `remaining_term_months`
+- `monthly_payment`
+- `minimum_payment`
+- `payment_frequency`
+- `secured`
+- `collateral_type`
+- `status`
+- `source`
+- `last_reviewed_at`
+- timestamps
+
+Initial loan types:
+
+- mortgage
+- auto
+- personal
+- student
+- heloc
+- credit_card_balance_transfer
+- other
+
+#### `mortgage_loan_details`
+
+Mortgage-specific extension when `loan_type = mortgage`.
+
+Suggested fields:
+
+- `loan_id`
+- `mortgage_id` if mapping from existing mortgage record is used
 - `property_name`
 - `street_line_1`
 - `street_line_2`
@@ -174,126 +280,446 @@ Suggested fields:
 - `postal_code`
 - `country_code`
 - `occupancy_type`
-- `loan_type`
-- `servicer_name`
-- `lender_name`
-- `original_loan_amount`
-- `current_balance`
-- `original_interest_rate`
-- `current_interest_rate`
-- `original_term_months`
-- `remaining_term_months`
-- `monthly_principal_interest`
-- `monthly_payment_total`
 - `home_value_estimate`
+- `has_escrow`
+- `escrow_included_in_payment`
 - `pmi_mip_monthly`
 - `hoa_monthly`
 - `flood_insurance_monthly`
-- `has_escrow`
-- `escrow_included_in_payment`
-- `linked_obligation_id`
-- `status`
-- `source`
-- `last_reviewed_at`
 - timestamps
 
-#### `mortgage_escrow_profiles`
+This avoids stuffing every future loan type into mortgage-only columns.
 
-Separate escrow assumptions and tracked escrow amounts from the base mortgage record.
+## Refinance scenario schema
+
+Use generic refinance scenario records with mortgage-specific detail available where needed.
+
+### `refinance_scenarios`
 
 Suggested fields:
 
-- `mortgage_id`
-- `property_tax_monthly`
-- `homeowners_insurance_monthly`
-- `flood_insurance_monthly`
-- `other_escrow_monthly`
-- `escrow_cushion_months`
-- `expected_old_escrow_refund`
-- `annual_tax_growth_rate`
-- `annual_insurance_growth_rate`
-- `source`
-- `confidence_score`
-- timestamps
-
-### Later tables
-
-#### `refinance_scenarios`
-
-- `mortgage_id`
+- `id`
+- `user_id`
+- `loan_id`
+- `mortgage_id` nullable transitional field while mortgage records are the first supported loan source
 - `name`
-- `loan_type`
-- `rate_source_type`
-- `rate_snapshot_id`
-- `interest_rate`
-- `term_months`
-- `points`
+- `scenario_type`
+- `target_loan_type`
+- `product_type`
+- `loan_type_detail`
+- `new_term_months`
+- `new_interest_rate`
+- `new_apr`
+- `new_principal_amount`
 - `cash_out_amount`
-- `financed_fees`
-- `roll_closing_costs_into_loan`
-- `estimated_appraised_value`
-- `estimated_ltv`
-- `estimated_pmi_mip_monthly`
-- `expected_property_tax_monthly`
-- `expected_homeowners_insurance_monthly`
-- `expected_flood_insurance_monthly`
-- `expected_hoa_monthly`
-- `preserve_current_payoff_timeline`
+- `cash_in_amount`
+- `roll_costs_into_loan`
+- `points`
+- `lender_credit_amount`
+- `expected_years_before_sale_or_refi`
 - `closing_date_assumption`
-- `expected_years_in_home`
+- `rate_source_type`
+- `rate_observation_id`
+- `lender_quote_id`
 - `status`
 - timestamps
 
-#### `refinance_fees`
+### `refinance_fee_items`
 
+Line-item fees and cash-flow timing items.
+
+Suggested fields:
+
+- `id`
 - `refinance_scenario_id`
 - `category`
 - `code`
 - `name`
-- `amount`
+- `low_amount`
+- `expected_amount`
+- `high_amount`
+- `fixed_amount`
+- `percentage_of_loan_amount`
 - `kind`
+- `paid_at_closing`
 - `financed`
-- `sort_order`
+- `is_true_cost`
+- `is_prepaid_or_escrow`
 - `required`
+- `sort_order`
 - `notes`
 - timestamps
 
-#### `mortgage_rate_snapshots`
+Each fee item should support ranges. If only one value is known, store it as expected amount and allow low/high to match expected.
 
+Fee categories:
+
+- origination
+- points
+- underwriting
+- processing
+- application
+- appraisal
+- credit_report
+- flood_certification
+- title_search
+- title_insurance
+- settlement_or_closing
+- recording
+- attorney_or_notary
+- prepaid_interest
+- escrow_deposit
+- homeowners_insurance
+- property_tax_escrow
+- payoff_interest_adjustment
+- release_fee
+- prepayment_penalty
+- lender_credit
+- other
+
+## Refinance analysis result schema
+
+### `refinance_analysis_results`
+
+Store analysis snapshots so alerts and historical comparisons are reproducible.
+
+Suggested fields:
+
+- `id`
+- `user_id`
+- `loan_id`
+- `mortgage_id`
+- `refinance_scenario_id`
+- `analysis_version`
+- `current_monthly_payment`
+- `new_monthly_payment_low`
+- `new_monthly_payment_expected`
+- `new_monthly_payment_high`
+- `monthly_savings_low`
+- `monthly_savings_expected`
+- `monthly_savings_high`
+- `true_refinance_cost_low`
+- `true_refinance_cost_expected`
+- `true_refinance_cost_high`
+- `cash_to_close_low`
+- `cash_to_close_expected`
+- `cash_to_close_high`
+- `break_even_months_low`
+- `break_even_months_expected`
+- `break_even_months_high`
+- `current_full_term_total_payment`
+- `current_full_term_interest_cost`
+- `new_full_term_total_payment_low`
+- `new_full_term_total_payment_expected`
+- `new_full_term_total_payment_high`
+- `new_full_term_interest_cost_low`
+- `new_full_term_interest_cost_expected`
+- `new_full_term_interest_cost_high`
+- `full_term_finance_cost_delta_low`
+- `full_term_finance_cost_delta_expected`
+- `full_term_finance_cost_delta_high`
+- `five_year_net_delta`
+- `seven_year_net_delta`
+- `ten_year_net_delta`
+- `warnings`
+- `assumptions`
+- `computed_at`
+- timestamps
+
+Important: full-term finance cost should be displayed for every scenario, not hidden behind advanced details.
+
+## Cost range modeling
+
+Loan Center should estimate three bands for refinance costs:
+
+- optimistic / low
+- expected / typical
+- conservative / high
+
+For mortgage refinance, separate:
+
+### True refinance costs
+
+These affect break-even:
+
+- origination
+- underwriting
+- processing
+- application
+- points
+- appraisal
+- credit report
+- title search
+- title insurance
+- settlement/closing
+- recording
+- attorney/notary
+- flood certification
+- release fee
+- prepayment penalty
+
+### Cash-flow timing costs
+
+These affect cash to close but should not be treated as true refinance cost:
+
+- prepaid interest
+- initial escrow deposit
+- homeowners insurance prepaid
+- property tax escrow deposit
+- payoff interest adjustment
+
+### Offsets
+
+These reduce net cash burden or net cost depending on type:
+
+- lender credits
+- expected old escrow refund
+- waived fees
+- seller/third-party credits if relevant
+
+The UI should show:
+
+```text
+True refinance cost range
+Cash to close range
+Estimated old escrow refund
+Net cash impact range
+```
+
+## Monthly payment range modeling
+
+Loan Center should estimate three monthly payment bands:
+
+- optimistic / low
+- expected / typical
+- conservative / high
+
+For mortgage refinance, payment range should include:
+
+- principal and interest
+- escrow estimate
+- PMI/MIP if applicable
+- HOA if user chooses to include it
+- flood insurance if applicable
+
+UI should display:
+
+```text
+New principal & interest
+Estimated escrow
+PMI/MIP
+Other monthly loan-adjacent costs
+Estimated total monthly payment
+```
+
+Users should be able to toggle whether non-loan items like HOA are included in the displayed total.
+
+## Full-term finance cost
+
+Every refinance scenario must show full-term numbers:
+
+- total payments over full new term
+- total interest over full new term
+- total true refinance costs
+- total financed fees impact
+- full-term finance cost
+- comparison to current loan if kept to payoff
+
+For decision-making, display both:
+
+1. **Full-term cost**: what happens if this loan is kept to payoff.
+2. **Expected horizon cost**: what happens if the user sells/refinances again after their expected horizon.
+
+This avoids the common trap where a refinance looks good monthly but increases long-term cost.
+
+## Break-even calculation
+
+Break-even should support ranges:
+
+- low-cost / high-savings break-even
+- expected break-even
+- high-cost / low-savings break-even
+
+Break-even should be based on true refinance costs, not escrow/prepaid timing costs.
+
+The UI should also show the break-even date based on the assumed closing date.
+
+Example:
+
+```text
+Expected break-even: 34 months, around March 2029
+Conservative break-even: 52 months, around September 2030
+```
+
+## Rate and quote inputs
+
+### Rate observations
+
+Rate observations are market or benchmark rates. They are useful for trend watch and rough scenario generation, but they are not guaranteed offers.
+
+Suggested tables:
+
+#### `loan_rate_sources`
+
+- `id`
 - `provider_key`
-- `product_type`
+- `name`
+- `source_type`
+- `base_url`
+- `enabled`
+- `requires_api_key`
+- `config`
+- `last_success_at`
+- `last_error_at`
+- `last_error_message`
+- timestamps
+
+#### `loan_rate_observations`
+
+- `id`
+- `rate_source_id`
+- `provider_key`
+- `series_key`
 - `loan_type`
+- `product_type`
 - `term_months`
-- `occupancy_type`
 - `rate`
 - `apr`
 - `points`
 - `assumptions`
 - `source_url`
 - `published_at`
+- `observed_at`
 - `imported_at`
 - `raw_payload`
 - timestamps
 
-#### `mortgage_import_reviews`
+Initial source types:
 
+- manual
+- public_benchmark
+- csv_import
+- lender_api later
+- aggregator_api later
+
+### Lender quotes
+
+Lender quotes are more specific than rate observations and should be stored separately.
+
+#### `loan_lender_quotes`
+
+Suggested fields:
+
+- `id`
 - `user_id`
+- `loan_id`
 - `mortgage_id`
-- `source_type`
-- `source_filename`
-- `storage_key`
-- `extraction_method`
+- `lender_name`
+- `quote_source`
+- `quote_reference`
+- `loan_type`
+- `product_type`
+- `term_months`
+- `interest_rate`
+- `apr`
+- `points`
+- `lender_credit_amount`
+- `estimated_closing_costs_low`
+- `estimated_closing_costs_expected`
+- `estimated_closing_costs_high`
+- `estimated_cash_to_close_low`
+- `estimated_cash_to_close_expected`
+- `estimated_cash_to_close_high`
+- `estimated_monthly_payment_low`
+- `estimated_monthly_payment_expected`
+- `estimated_monthly_payment_high`
+- `lock_available`
+- `lock_expires_at`
+- `quote_expires_at`
+- `raw_payload`
 - `status`
-- `parsed_payload`
-- `confidence_score`
-- `review_notes`
-- `confirmed_at`
 - timestamps
 
-#### `mortgage_alert_rules`
+## Document import and extraction
 
-- `mortgage_id`
+### `loan_documents`
+
+Suggested fields:
+
+- `id`
 - `user_id`
+- `loan_id`
+- `mortgage_id`
+- `document_type`
+- `original_filename`
+- `content_type`
+- `byte_size`
+- `storage_key`
+- `checksum_sha256`
+- `status`
+- `uploaded_at`
+- timestamps
+
+Document types:
+
+- mortgage_statement
+- closing_disclosure
+- loan_estimate
+- escrow_statement
+- payoff_quote
+- lender_quote
+- property_tax_bill
+- homeowners_insurance
+- auto_loan_statement
+- student_loan_statement
+- personal_loan_statement
+- credit_card_statement
+- other
+
+### `loan_document_extractions`
+
+Suggested fields:
+
+- `id`
+- `user_id`
+- `loan_id`
+- `mortgage_id`
+- `loan_document_id`
+- `extraction_method`
+- `model_name`
+- `status`
+- `ocr_text_storage_key`
+- `raw_text_excerpt`
+- `extracted_payload`
+- `field_confidence`
+- `source_citations`
+- `reviewed_at`
+- `confirmed_at`
+- `rejected_at`
+- timestamps
+
+Workflow:
+
+1. User uploads document.
+2. Store original document metadata and file.
+3. Enqueue Oban extraction job.
+4. Extract text/OCR.
+5. Use Ollama to extract structured candidate fields.
+6. Store candidate fields with confidence and source snippets.
+7. User reviews and confirms selected values.
+8. Confirmed values update loan/mortgage records, lender quotes, or scenario assumptions.
+
+## Alert rules
+
+### `loan_alert_rules`
+
+Suggested fields:
+
+- `id`
+- `user_id`
+- `loan_id`
+- `mortgage_id`
+- `name`
 - `kind`
 - `active`
 - `threshold_config`
@@ -302,388 +728,339 @@ Suggested fields:
 - `last_triggered_at`
 - timestamps
 
-### Notification expansion later
+Initial alert kinds:
 
-Extend `notification_events.kind` only after the base mortgage domain is in place. Candidate kinds:
+- `rate_below_threshold`
+- `monthly_payment_below_threshold`
+- `monthly_savings_above_threshold`
+- `break_even_below_months`
+- `full_term_cost_savings_above_threshold`
+- `expected_horizon_savings_above_threshold`
+- `lender_quote_expiring`
+- `document_review_needed`
+
+Use existing MoneyTree notifications and Swoosh delivery. Do not create a parallel alert delivery system.
+
+## Backend module plan
+
+Recommended modules:
+
+```text
+MoneyTree.Loans
+MoneyTree.Loans.Loan
+MoneyTree.Loans.RefinanceScenario
+MoneyTree.Loans.RefinanceFeeItem
+MoneyTree.Loans.RefinanceAnalysisResult
+MoneyTree.Loans.RateSource
+MoneyTree.Loans.RateObservation
+MoneyTree.Loans.LenderQuote
+MoneyTree.Loans.LoanDocument
+MoneyTree.Loans.DocumentExtraction
+MoneyTree.Loans.AlertRule
+MoneyTree.Loans.Amortization
+MoneyTree.Loans.RefinanceCalculator
+MoneyTree.Loans.CostRangeEstimator
+MoneyTree.Loans.PaymentRangeEstimator
+MoneyTree.Loans.WarningEngine
+MoneyTree.Loans.Workers.RateImportWorker
+MoneyTree.Loans.Workers.DocumentExtractionWorker
+MoneyTree.Loans.Workers.AlertEvaluationWorker
+```
+
+Mortgage-specific support can remain under `MoneyTree.Mortgages`, but generic refinance math should live under `MoneyTree.Loans`.
+
+## Frontend plan
+
+### Phase 1 Loan Center overview
+
+Route:
+
+- `/app/loans`
+
+Contents:
+
+- mortgage-first empty state
+- list existing mortgages as loan cards
+- CTA to add/import a mortgage
+- CTA to start refinance analysis
+- basic explanation that Loan Center starts with mortgages and will support other loans later
+
+### Mortgage loan detail
+
+Route:
+
+- `/app/loans/:loan_id`
+
+Contents:
+
+- loan baseline summary
+- current balance
+- current rate
+- remaining term
+- current monthly payment
+- escrow/mortgage-specific details when applicable
+- linked obligation if present
+- document review queue
+- latest analysis summary
+
+### Refinance analysis workspace
+
+Route:
+
+- `/app/loans/:loan_id/refinance`
+
+Core UI outputs:
+
+1. New monthly payment range
+2. Break-even range
+3. Full-term finance cost comparison
+
+Secondary UI outputs:
+
+- cost range
+- cash to close range
+- escrow/prepaid breakdown
+- true cost breakdown
+- interest comparison
+- expected-horizon comparison
+- assumptions
+- warnings
+
+### Scenario comparison table
+
+Columns:
+
+- scenario name
+- term
+- rate
+- APR
+- points
+- expected monthly payment
+- expected monthly savings
+- expected true refinance cost
+- expected cash to close
+- expected break-even
+- full-term total cost
+- full-term savings/cost increase
+- 5-year net
+- 7-year net
+- 10-year net
+- warnings
+
+## API contract plan
+
+Update `apps/contracts/specs/openapi.yaml` before wiring frontend consumers.
+
+Add schemas for:
+
+- `Loan`
+- `LoanDetail`
+- `RefinanceScenario`
+- `CreateRefinanceScenarioRequest`
+- `UpdateRefinanceScenarioRequest`
+- `RefinanceFeeItem`
+- `RefinanceAnalysisResult`
+- `PaymentRange`
+- `CostRange`
+- `BreakEvenRange`
+- `FullTermCostComparison`
+- `LoanRateSource`
+- `LoanRateObservation`
+- `LoanLenderQuote`
+- `LoanDocument`
+- `LoanDocumentExtraction`
+- `LoanAlertRule`
+
+Decimal values should remain string-encoded to match existing contract patterns.
+
+## Implementation phases
+
+### Phase 0: Rename product direction and add Loan Center destination
 
-- `mortgage_payment_due`
-- `mortgage_rate_watch`
-- `mortgage_break_even`
-- `mortgage_review`
+Tasks:
+
+- update docs from Mortgage Center to Loan Center framing
+- add `Loan Center` to `MoneyTreeWeb.Layouts.app_nav_items/0`
+- add `/app/loans` route
+- create authenticated placeholder/overview page
+- show existing mortgage records as the first loan type if practical
+- add route/navigation tests
 
-## API and contract plan
+Acceptance criteria:
 
-Define request and response contracts in `apps/contracts` before wiring generated consumers.
+- authenticated users can open Loan Center from the app menu
+- page clearly says mortgage loans are supported first
+- existing mortgage records are not duplicated
 
-Contract guidance:
+### Phase 1: Refinance math foundation
 
-- keep structured numeric fields as the source of truth
-- keep explanation payloads separate from raw calculations
-- avoid presentation-only strings as contract primitives
+Tasks:
 
-Recommended analysis response shape later:
+- implement amortization calculations
+- implement full-term cost calculations
+- implement payment range calculations
+- implement cost range calculations
+- implement break-even range calculations
+- implement warning engine
+- add unit tests with realistic mortgage examples
 
-- `mortgage_summary`
-- `current_loan_baseline`
-- `scenario_summaries`
-- `payment_ranges`
-- `closing_cost_breakdown`
-- `escrow_breakdown`
-- `break_even_metrics`
-- `warnings`
-- `assumptions`
-- `rate_source`
-- `generated_at`
+Acceptance criteria:
 
-Phase 1 contracts should stay narrow:
+- every scenario returns monthly payment, break-even, and full-term cost
+- true refinance cost is separated from cash-to-close timing costs
+- lower payment but higher full-term cost generates a warning
 
-- mortgage list item
-- mortgage detail
-- escrow profile payload
-- create mortgage request
-- update mortgage request
+### Phase 2: Scenario persistence and API
 
-## Frontend page plan
+Tasks:
 
-Use Next.js for Mortgage Center.
+- add refinance scenario tables
+- add fee item tables
+- add analysis result snapshot table
+- add context functions
+- add API controllers/routes
+- update OpenAPI contracts
+- add controller tests and authorization tests
 
-### Phase 1 pages
+Acceptance criteria:
 
-#### `/app/react/mortgages`
+- user can save multiple refinance scenarios for a mortgage-backed loan
+- scenario analysis is reproducible from stored assumptions
+- users cannot access another user's loan scenarios
 
-Mortgage Center overview page:
+### Phase 3: Refinance UI
 
-- list saved mortgages
-- show high-level mortgage summary cards
-- show escrow summary in overview rows or cards
-- CTA to add a mortgage manually
-- leave visible room for refinance, imports, and alerts later
+Tasks:
 
-#### `/app/react/mortgages/[mortgageId]`
+- build scenario form
+- build fee/cost editor
+- build scenario comparison table
+- build analysis detail page/drawer
+- highlight monthly payment, break-even, and full-term cost
+- add assumptions and warnings panel
 
-Mortgage Center detail page:
+Acceptance criteria:
 
-- mortgage summary
-- escrow summary
-- edit affordance
-- placeholder navigation or section entry points for refinance, imports, and alerts
+- user can compare at least two scenarios
+- UI shows low/expected/high ranges
+- full-term cost is visible without opening advanced settings
 
-### Later pages
+### Phase 4: Documents and Ollama extraction
 
-#### `/app/react/mortgages/[mortgageId]/refinance`
+Tasks:
 
-- current mortgage baseline
-- scenario comparison
-- fee breakdown
-- break-even outputs
-- warnings and deterministic explanations
+- add loan document tables
+- add extraction review tables
+- add upload endpoint
+- add OCR/text extraction worker
+- add Ollama extraction adapter
+- add review/confirm UI
+- update canonical records only after confirmation
 
-#### `/app/react/mortgages/[mortgageId]/imports`
+Acceptance criteria:
 
-- uploaded document list
-- processing status
-- parsed values
-- confirmation and diff flow
+- user can upload current mortgage papers
+- extracted fields show confidence and source snippets
+- user confirmation controls persistence
 
-#### `/app/react/mortgages/[mortgageId]/alerts`
+### Phase 5: Rates and lender quotes
 
-- payment reminder settings
-- rate watch thresholds
-- annual review reminders
-- notification preference linkage
+Tasks:
 
-## Alert and integration plan
+- add rate source and observation tables
+- add manual rate source
+- add benchmark import worker
+- add lender quote table/API
+- add manual lender quote UI
+- convert quote to scenario
 
-Do not build a second alerting subsystem.
+Acceptance criteria:
 
-Use existing systems:
+- benchmark rates can seed scenarios but are labeled as estimates
+- lender quotes are tracked separately from benchmark rates
+- quote expiration is visible
 
-- `MoneyTree.Obligations.Obligation`
-- `MoneyTree.Notifications.Event`
-- Oban workers for scheduled evaluation and delivery
+### Phase 6: Alerts
 
-Recommended integration approach:
+Tasks:
 
-- a mortgage can optionally create or sync a linked obligation for the recurring mortgage payment
-- refinance watch and review reminders should create notification events directly
-- obligation linkage should be opt-in or review-first, not forced in Phase 1
+- add loan alert rules
+- add alert evaluation worker
+- integrate with existing notification events
+- send email alerts via existing mailer
+- add alert editor UI
 
-Suggested mortgage-to-obligation mapping later:
+Acceptance criteria:
 
-- `creditor_payee` <- servicer or lender name
-- `minimum_due_amount` <- total monthly payment or P&I depending on escrow inclusion
-- `alert_preferences` <- merged from mortgage settings
-- `linked_funding_account_id` <- selected account from mortgage settings
+- user can create alerts for rate, payment, break-even, and full-term cost thresholds
+- alerts are not noisy or duplicated
+- delivery uses existing notification infrastructure
 
-## Import pipeline plan
+### Phase 7: Expand beyond mortgages
 
-Imports are explicitly later-phase work. Keep them review-first.
+Tasks:
 
-Workflow:
+- introduce generic `loans` table if not already done
+- add non-mortgage loan types
+- add auto/personal/student loan input forms
+- add non-mortgage refinance scenario templates
+- keep mortgage-specific escrow/PMI logic isolated
 
-1. upload document or screenshot
-2. store file metadata
-3. enqueue extraction via Oban
-4. classify document type
-5. extract candidate mortgage fields
-6. compute field-level confidence
-7. show review UI
-8. require explicit user confirmation
-9. preserve provenance and review history
+Acceptance criteria:
 
-First extracted fields later:
+- at least one non-mortgage loan type can use the same refinance engine
+- mortgage-specific fields do not leak into non-mortgage flows
 
-- servicer name
-- masked loan number
-- property address
-- current principal balance
-- interest rate
-- monthly principal and interest
-- escrow amount
-- total payment due
-- due date
-- property tax amount if visible
-- homeowners insurance amount if visible
-- PMI/MIP if visible
+## Testing requirements
 
-Recommended layering:
+### Backend
 
-- keep generic file handling outside core mortgage calculation logic
-- let a future document layer handle upload/storage concerns
-- keep `MoneyTree.Mortgages.ImportJob` responsible only for mortgage-specific mapping into review data
+Test:
 
-## Deterministic calculation plan
+- amortization schedule
+- monthly payment range
+- cost range
+- break-even range
+- full-term cost comparison
+- scenario CRUD authorization
+- fee classification
+- document extraction confirmation
+- alert evaluation thresholds
 
-Build refinance calculations in pure Elixir under `MoneyTree.Mortgages.AnalysisEngine`.
+### Frontend
 
-Responsibilities later:
+Test:
 
-- amortization
-- monthly payment calculations
-- financed-fee handling
-- escrow-inclusive payment comparisons
-- optimistic/typical/conservative ranges
-- break-even calculations
-- time-horizon comparison
-- warnings for term reset and unfavorable scenarios
-- structured explanation payloads
+- Loan Center navigation
+- mortgage-first empty state
+- scenario form validation
+- scenario comparison table
+- full-term cost visibility
+- warnings panel
+- document review flow
+- alert rule form
 
-No AI-generated financial calculations.
+### End-to-end
 
-## Phased rollout
+Add one happy-path flow:
 
-### Phase 1 - Mortgage Center shell
+1. log in
+2. open Loan Center
+3. select or create mortgage loan
+4. create refinance scenario
+5. add fee assumptions
+6. run analysis
+7. verify monthly payment, break-even, and full-term cost appear
 
-Goal: create the Mortgage Center shell, mortgage CRUD, escrow storage, Mortgage Center overview page,
-and mortgage detail page.
+## Developer notes for Codex/agents
 
-Scope:
-
-1. add `mortgages` and `mortgage_escrow_profiles` tables
-2. add backend schemas and context functions
-3. add contracts for mortgage CRUD
-4. add authenticated Phoenix CRUD endpoints
-5. add Next Mortgage Center overview page
-6. add Next mortgage detail page
-7. support manual entry and editing only
-
-Exit criteria:
-
-- user can create, edit, and view a mortgage
-- escrow values are stored separately but displayed together
-- user lands in a Mortgage Center overview
-- the shell clearly leaves room for refinance, imports, and alerts
-
-### Phase 2 - Deterministic refinance analysis
-
-Goal: honest refinance comparison built on the saved mortgage baseline.
-
-Scope:
-
-1. add `refinance_scenarios` and `refinance_fees`
-2. implement `AnalysisEngine`
-3. implement keep-current baseline calculations
-4. implement refinance scenario calculations
-5. implement payment ranges, break-even, and warnings
-6. add analysis endpoint and contracts
-7. add Mortgage Center refinance page
-
-Exit criteria:
-
-- user can compare at least one scenario against the saved mortgage
-- payment, cost, and break-even outputs are visible
-- escrow is included in comparison outputs
-
-### Phase 3 - Obligation and alert linkage
-
-Goal: connect Mortgage Center to existing obligations and notifications.
-
-Scope:
-
-1. add `mortgage_alert_rules`
-2. add mortgage-linked obligation sync service
-3. expand notification event kinds as needed
-4. add alert evaluation service and scheduled job
-5. add Mortgage Center alerts page
-
-Exit criteria:
-
-- user can opt into payment reminders and mortgage watch alerts
-- events flow through existing notification delivery paths
-
-### Phase 4 - Rate snapshotting
-
-Goal: import refinance rates with attribution and timestamps.
-
-Scope:
-
-1. add `mortgage_rate_snapshots`
-2. define `RateProvider` behavior and one adapter
-3. add import trigger endpoint and dev/admin path
-4. add snapshot-backed scenario defaults
-5. surface source and timestamp in UI
-
-Exit criteria:
-
-- scenario builder can use imported snapshots
-- UI shows source and import time clearly
-
-### Phase 5 - Import review workflow
-
-Goal: allow mortgage detail imports from statements and screenshots with review before persistence.
-
-Scope:
-
-1. add `mortgage_import_reviews`
-2. add upload endpoint and metadata flow
-3. add Oban extraction scaffold
-4. add import review API and UI
-5. map confirmed fields into mortgage and escrow records
-6. trigger re-analysis suggestion after confirmed changes
-
-Exit criteria:
-
-- user can upload a file, review parsed values, and confirm changes manually
-
-### Phase 6 - Product integration polish
-
-Goal: connect Mortgage Center outcomes back into the broader app.
-
-Scope:
-
-1. add dashboard summary cards
-2. add annual review reminders
-3. add re-run analysis automation when material values change
-4. add export only if later approved
-5. add more rate providers only if useful
-
-Exit criteria:
-
-- Mortgage Center feels integrated into MoneyTree instead of isolated
-
-## Small execution slices for Codex
-
-These slices are deliberately small and independently executable.
-
-### Phase 1 slices
-
-1. add `mortgages` migration
-2. add `mortgage_escrow_profiles` migration
-3. add `Mortgage` and `EscrowProfile` schemas
-4. add `MoneyTree.Mortgages` CRUD context functions
-5. add backend tests for mortgage CRUD
-6. add contract definitions for mortgage list/detail/create/update
-7. add `MortgageController` CRUD endpoints
-8. add controller tests
-9. add `/api/mortgages` routes
-10. add Next Mortgage Center overview page
-11. add Next mortgage detail page
-12. add focused frontend tests for overview/detail rendering
-13. apply migrations to the dev database
-
-### Later slices
-
-1. add refinance scenario schema and migration
-2. add refinance fee schema and migration
-3. implement amortization and payment math with tests
-4. implement refinance comparison service with tests
-5. expose analysis endpoint and contracts
-6. build refinance page
-7. add mortgage alert rule schema and migration
-8. extend notification event kinds
-9. implement obligation sync service
-10. build alerts page
-11. add rate snapshot schema and provider behavior
-12. build rate snapshot display
-13. add import review schema and upload metadata flow
-14. build import review confirmation flow
-
-## Testing plan
-
-### Backend tests
-
-Add focused tests for:
-
-- mortgage changesets and CRUD context functions
-- escrow storage and retrieval
-- deterministic amortization and refinance math later
-- obligation linkage later
-- alert rule evaluation later
-
-### Controller/API tests
-
-- authenticated mortgage CRUD
-- analysis response shape later
-- alert CRUD later
-- import review confirm/reject later
-
-### Frontend tests
-
-- Mortgage Center overview rendering
-- mortgage detail rendering
-- refinance comparison interactions later
-- import review flow later
-
-### Migration discipline
-
-Every schema-affecting slice must:
-
-1. add the migration
-2. apply it to the active dev database
-3. verify affected flows against the migrated schema
-
-## Guardrails and non-goals
-
-### Guardrails
-
-- keep Mortgage Center as the initial shell
-- do not broaden this into a full Home Owner Center yet
-- keep calculations deterministic and explainable
-- keep imports review-first and confirmation-based
-- keep escrow visible in major summaries
-- keep rate provider assumptions out of core analysis math
-- reuse obligations, notifications, contracts, Phoenix contexts, Next, and Oban
-
-### Non-goals for now
-
-- lender marketplace flows
-- automatic lender application submission
-- auto-persisting OCR or AI guesses as truth
-- tax advice or deduction optimization
-- broad homeowner management beyond mortgage workflows
-- a standalone refinance widget detached from Mortgage Center
-
-## Final implementation stance
-
-Treat mortgage tracking as a first-class MoneyTree domain, and treat refinance analysis as a tool
-built on top of that domain.
-
-That keeps the first implementation slice small and coherent:
-
-- Mortgage Center shell
-- mortgage CRUD
-- escrow storage
-- overview page
-- detail page
-
-Everything else layers on after that without changing the core shape.
+- Start with mortgage loans because the repo already has mortgage data.
+- Do not duplicate mortgage records.
+- Do not let LLM extraction directly update canonical loan data.
+- Keep calculations deterministic and tested.
+- Keep full-term finance cost as a first-class output.
+- Keep monthly payment, break-even, and full-term cost visible in the UI.
+- Use existing Oban, Swoosh, notification, contract, and app-shell patterns.
+- Prefer small vertical slices over large rewrites.
+- Run migrations against the local dev database after adding schemas.
+- Run the relevant checks from `README.md` before committing implementation work.
