@@ -1205,7 +1205,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                               class="btn btn-outline"
                               phx-click="convert-quote"
                               phx-value-id={row.quote.id}
-                              disabled={row.quote.status == "converted"}>
+                              disabled={quote_convert_disabled?(row.quote)}>
                         Convert to scenario
                       </button>
                     </td>
@@ -2839,6 +2839,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp quote_rows(current_user, mortgages) do
     Enum.flat_map(mortgages, fn mortgage ->
+      Loans.expire_lender_quotes(current_user, mortgage)
+
       current_user
       |> Loans.list_lender_quotes(mortgage)
       |> Enum.map(fn quote ->
@@ -3300,6 +3302,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp quote_lock_status(%LenderQuote{lock_available: true}), do: "Available"
   defp quote_lock_status(_quote), do: "No lock"
+
+  defp quote_convert_disabled?(%LenderQuote{status: status}) do
+    status in ["converted", "expired", "archived"]
+  end
 
   defp alert_threshold_label(%AlertRule{kind: "lender_quote_expiring", threshold_config: config}) do
     "#{Map.get(config || %{}, "lead_days", 7)} days"

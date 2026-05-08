@@ -290,6 +290,41 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert Enum.any?(fee_items, &(&1.name == "Estimated lender quote costs"))
   end
 
+  test "shows expired lender quote freshness in the quotes workspace", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    mortgage =
+      mortgage_fixture(user, %{
+        property_name: "Maple Residence",
+        current_balance: "400000.00",
+        current_interest_rate: "0.0625",
+        monthly_payment_total: "2462.87",
+        remaining_term_months: 360
+      })
+
+    {:ok, quote} =
+      Loans.create_lender_quote(user, mortgage, %{
+        lender_name: "Expired Lender",
+        quote_source: "manual",
+        loan_type: "mortgage",
+        product_type: "fixed",
+        term_months: 360,
+        interest_rate: "0.0550",
+        lock_available: false,
+        quote_expires_at: ~U[2026-05-01 12:00:00Z],
+        raw_payload: %{},
+        status: "active"
+      })
+
+    {:ok, _view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/quotes")
+
+    assert html =~ "Expired Lender"
+    assert html =~ "Expired"
+
+    assert {:ok, expired_quote} = Loans.fetch_lender_quote(user, quote.id)
+    assert expired_quote.status == "expired"
+  end
+
   test "creates and lists document metadata in the documents workspace", %{conn: conn} do
     {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
 

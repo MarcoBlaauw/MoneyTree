@@ -17,6 +17,7 @@ defmodule MoneyTree.Loans do
   alias MoneyTree.Loans.RateSource
   alias MoneyTree.Loans.Workers.AlertEvaluationWorker
   alias MoneyTree.Loans.Workers.DocumentExtractionWorker
+  alias MoneyTree.Loans.Workers.RateImportWorker
   alias MoneyTree.Notifications
   alias MoneyTree.Loans.RefinanceAnalysisResult
   alias MoneyTree.Loans.RefinanceCalculator
@@ -492,6 +493,37 @@ defmodule MoneyTree.Loans do
         {:ok, observation} -> {:ok, Repo.preload(observation, preload)}
         {:error, changeset} -> {:error, changeset}
       end
+    end
+  end
+
+  @doc """
+  Enqueues import for a configured benchmark rate source.
+  """
+  @spec enqueue_rate_import(RateSource.t() | binary()) ::
+          {:ok, Oban.Job.t()} | {:error, :not_found} | {:error, term()}
+  def enqueue_rate_import(source_or_id) do
+    with {:ok, source} <- fetch_rate_source(source_or_id, preload: []) do
+      %{rate_source_id: source.id}
+      |> RateImportWorker.new()
+      |> Oban.insert()
+    end
+  end
+
+  @doc """
+  Imports benchmark rate observations from a source's configured observations.
+
+  This is intentionally deterministic in v1. Automated workers consume explicit
+  source config entries instead of scraping or calling an external provider.
+  """
+  @spec process_rate_import_job(binary()) ::
+          {:ok, %{source: RateSource.t(), imported: [RateObservation.t()]}}
+          | {:error, :not_found | :disabled | :no_configured_observations}
+          | {:error, Ecto.Changeset.t()}
+  def process_rate_import_job(source_id) when is_binary(source_id) do
+    with {:ok, source} <- fetch_rate_source(source_id, preload: []),
+         :ok <- ensure_rate_source_enabled(source),
+         {:ok, observations} <- configured_rate_observations(source) do
+      import_rate_observations(source, observations)
     end
   end
 
@@ -1277,6 +1309,34 @@ defmodule MoneyTree.Loans do
     with {:ok, quote} <- fetch_lender_quote(user, quote_id, preload: []),
          {:ok, updated} <- update_lender_quote(user, quote, attrs, opts) do
       {:ok, updated}
+    end
+  end
+
+  @doc """
+  Marks active lender quotes as expired when their expiration timestamp has passed.
+  """
+  @spec expire_lender_quotes(User.t() | binary(), Mortgage.t() | binary(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, :not_found}
+  def expire_lender_quotes(user, mortgage_or_id, opts \\ []) do
+    now = Keyword.get_lazy(opts, :now, fn -> DateTime.utc_now() end)
+
+    with {:ok, mortgage} <- Mortgages.fetch_mortgage(user, normalize_id(mortgage_or_id)) do
+      {count, _rows} =
+        LenderQuote
+        |> where(
+          [quote],
+          quote.user_id == ^normalize_user_id(user) and quote.mortgage_id == ^mortgage.id and
+            quote.status == "active" and not is_nil(quote.quote_expires_at) and
+            quote.quote_expires_at < ^now
+        )
+        |> Repo.update_all(
+          set: [
+            status: "expired",
+            updated_at: DateTime.utc_now()
+          ]
+        )
+
+      {:ok, count}
     end
   end
 
@@ -2383,6 +2443,83 @@ defmodule MoneyTree.Loans do
       },
       computed_at: DateTime.utc_now()
     }
+  end
+
+  defp ensure_rate_source_enabled(%RateSource{enabled: true}), do: :ok
+  defp ensure_rate_source_enabled(%RateSource{}), do: {:error, :disabled}
+
+  defp configured_rate_observations(%RateSource{config: config}) when is_map(config) do
+    case Map.get(config, "observations") || Map.get(config, :observations) do
+      observations when is_list(observations) and observations != [] -> {:ok, observations}
+      _value -> {:error, :no_configured_observations}
+    end
+  end
+
+  defp configured_rate_observations(_source), do: {:error, :no_configured_observations}
+
+  defp import_rate_observations(%RateSource{} = source, observations) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    multi =
+      observations
+      |> Enum.with_index()
+      |> Enum.reduce(Multi.new(), fn {attrs, index}, multi ->
+        Multi.insert(multi, {:observation, index}, rate_import_changeset(source, attrs, now))
+      end)
+      |> Multi.update(:source, rate_source_success_changeset(source, now))
+
+    case Repo.transaction(multi) do
+      {:ok, changes} ->
+        imported =
+          changes
+          |> Enum.filter(fn {key, _value} -> match?({:observation, _index}, key) end)
+          |> Enum.sort_by(fn {{:observation, index}, _value} -> index end)
+          |> Enum.map(fn {_key, observation} -> Repo.preload(observation, :rate_source) end)
+
+        {:ok, %{source: changes.source, imported: imported}}
+
+      {:error, _operation, %Ecto.Changeset{} = changeset, _changes} ->
+        mark_rate_source_import_error(source, inspect(changeset.errors))
+        {:error, changeset}
+    end
+  end
+
+  defp rate_import_changeset(source, attrs, now) do
+    attrs = normalize_attr_map(attrs)
+
+    RateObservation.changeset(
+      %RateObservation{},
+      attrs
+      |> Map.put("rate_source_id", source.id)
+      |> Map.put_new("provider_key", source.provider_key)
+      |> Map.put_new("observed_at", now)
+      |> Map.put_new("imported_at", now)
+      |> Map.update("raw_payload", attrs, fn
+        payload when is_map(payload) -> payload
+        _value -> attrs
+      end)
+    )
+  end
+
+  defp rate_source_success_changeset(%RateSource{} = source, now) do
+    RateSource.changeset(source, %{
+      last_success_at: now,
+      last_error_at: nil,
+      last_error_message: nil
+    })
+  end
+
+  defp mark_rate_source_import_error(%RateSource{} = source, message) do
+    now = DateTime.utc_now() |> DateTime.truncate(:microsecond)
+
+    source
+    |> RateSource.changeset(%{
+      last_error_at: now,
+      last_error_message: String.slice(message, 0, 2_000)
+    })
+    |> Repo.update()
+
+    :ok
   end
 
   defp maybe_preload_query(query, preload) when is_list(preload) and preload != [] do

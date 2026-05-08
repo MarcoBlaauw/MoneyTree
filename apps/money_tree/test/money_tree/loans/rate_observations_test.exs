@@ -119,5 +119,55 @@ defmodule MoneyTree.Loans.RateObservationsTest do
       assert D.equal?(scenario.new_interest_rate, D.new("0.06125"))
       assert D.equal?(scenario.new_principal_amount, D.new("375000.00"))
     end
+
+    test "imports configured benchmark observations through the rate import worker" do
+      assert {:ok, %RateSource{} = source} =
+               Loans.create_rate_source(%{
+                 provider_key: "configured-benchmark",
+                 name: "Configured Benchmark",
+                 source_type: "public_benchmark",
+                 config: %{
+                   "observations" => [
+                     %{
+                       "loan_type" => "mortgage",
+                       "product_type" => "fixed",
+                       "term_months" => 360,
+                       "rate" => "0.0600",
+                       "apr" => "0.0610",
+                       "points" => "0.1250",
+                       "series_key" => "30-year-fixed"
+                     },
+                     %{
+                       "loan_type" => "mortgage",
+                       "product_type" => "fixed",
+                       "term_months" => 180,
+                       "rate" => "0.0525",
+                       "apr" => "0.0530",
+                       "series_key" => "15-year-fixed"
+                     }
+                   ]
+                 }
+               })
+
+      assert {:ok, _job} = Loans.enqueue_rate_import(source)
+
+      assert [
+               %RateObservation{term_months: 360, rate: rate_30},
+               %RateObservation{term_months: 180, rate: rate_15}
+             ] =
+               Loans.list_rate_observations(
+                 rate_source_id: source.id,
+                 loan_type: "mortgage"
+               )
+               |> Enum.sort_by(& &1.term_months, :desc)
+
+      assert D.equal?(rate_30, D.new("0.0600"))
+      assert D.equal?(rate_15, D.new("0.0525"))
+
+      assert {:ok, updated_source} = Loans.fetch_rate_source(source.id)
+      assert updated_source.last_success_at
+      refute updated_source.last_error_at
+      refute updated_source.last_error_message
+    end
   end
 end

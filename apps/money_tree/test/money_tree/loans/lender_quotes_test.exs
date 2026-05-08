@@ -61,6 +61,28 @@ defmodule MoneyTree.Loans.LenderQuotesTest do
                Loans.update_lender_quote(user, quote, %{lender_name: "Hidden"})
     end
 
+    test "marks active lender quotes expired after their quote expiration time" do
+      user = user_fixture()
+      mortgage = mortgage_fixture(user)
+      expired_at = ~U[2026-05-01 12:00:00Z]
+
+      {:ok, quote} =
+        Loans.create_lender_quote(
+          user,
+          mortgage,
+          valid_quote_attrs()
+          |> Map.put(:quote_expires_at, expired_at)
+        )
+
+      assert quote.status == "active"
+
+      assert {:ok, 1} =
+               Loans.expire_lender_quotes(user, mortgage, now: ~U[2026-05-02 12:00:00Z])
+
+      assert {:ok, expired_quote} = Loans.fetch_lender_quote(user, quote.id)
+      assert expired_quote.status == "expired"
+    end
+
     test "converts a lender quote into a draft refinance scenario with seeded fees" do
       user = user_fixture()
 
