@@ -1832,6 +1832,24 @@ defmodule MoneyTreeWeb.LoansLive.Index do
             Save a refinance scenario to compare expected monthly payment, break-even, and full-term cost.
           </div>
 
+          <div :if={@scenario_rows != []} class="grid gap-3 md:grid-cols-3">
+            <.refinance_metric
+              label="Lowest expected payment"
+              value={metric_payment_value(@scenario_rows)}
+              row={lowest_expected_payment_row(@scenario_rows)}
+            />
+            <.refinance_metric
+              label="Fastest break-even"
+              value={metric_break_even_value(@scenario_rows)}
+              row={fastest_break_even_row(@scenario_rows)}
+            />
+            <.refinance_metric
+              label="Lowest full-term delta"
+              value={metric_full_term_delta_value(@scenario_rows)}
+              row={lowest_full_term_delta_row(@scenario_rows)}
+            />
+          </div>
+
           <div :if={@scenario_rows != []} class="overflow-x-auto">
             <table class="min-w-full divide-y divide-zinc-200 text-sm">
               <thead>
@@ -2391,12 +2409,28 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     """
   end
 
+  attr :label, :string, required: true
+  attr :value, :string, required: true
+  attr :row, :any, default: nil
+
+  defp refinance_metric(assigns) do
+    ~H"""
+    <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+      <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500"><%= @label %></p>
+      <p class="mt-1 text-xl font-semibold text-zinc-900"><%= @value %></p>
+      <p :if={@row} class="text-xs text-zinc-500"><%= @row.scenario.name %></p>
+      <p :if={@row == nil} class="text-xs text-zinc-500">No comparable scenario</p>
+    </div>
+    """
+  end
+
   defp load_page(socket, current_user) do
     all_mortgages = Mortgages.list_mortgages(current_user)
     mortgages = scope_mortgages(all_mortgages, socket.assigns.route_loan_id)
 
     selected_mortgage = List.first(mortgages)
     what_if_form = maybe_reset_what_if_form(socket.assigns[:what_if_form], selected_mortgage)
+    scenario_rows = scenario_rows(current_user, mortgages)
 
     assign(socket,
       all_mortgages: all_mortgages,
@@ -2404,7 +2438,12 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       selected_mortgage: selected_mortgage,
       what_if_form: what_if_form,
       what_if_summary: what_if_summary(selected_mortgage, what_if_form),
-      scenario_rows: scenario_rows(current_user, mortgages),
+      selected_analysis_scenario_id:
+        default_selected_analysis_scenario_id(
+          socket.assigns.selected_analysis_scenario_id,
+          scenario_rows
+        ),
+      scenario_rows: scenario_rows,
       rate_observation_rows: rate_observation_rows(),
       analysis_history_rows: analysis_history_rows(current_user, mortgages),
       document_rows: document_rows(current_user, mortgages),
@@ -2742,6 +2781,61 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp selected_analysis_rows(scenario_rows, scenario_id) do
     Enum.filter(scenario_rows, &(&1.scenario.id == scenario_id))
+  end
+
+  defp default_selected_analysis_scenario_id(current_id, scenario_rows) do
+    cond do
+      current_id && Enum.any?(scenario_rows, &(&1.scenario.id == current_id)) ->
+        current_id
+
+      scenario_rows != [] ->
+        scenario_rows |> List.first() |> then(& &1.scenario.id)
+
+      true ->
+        nil
+    end
+  end
+
+  defp lowest_expected_payment_row([]), do: nil
+
+  defp lowest_expected_payment_row(scenario_rows) do
+    Enum.min_by(scenario_rows, & &1.analysis.payment_range.expected, Decimal)
+  end
+
+  defp fastest_break_even_row(scenario_rows) do
+    scenario_rows
+    |> Enum.filter(& &1.analysis.break_even_range.expected)
+    |> case do
+      [] -> nil
+      rows -> Enum.min_by(rows, & &1.analysis.break_even_range.expected)
+    end
+  end
+
+  defp lowest_full_term_delta_row([]), do: nil
+
+  defp lowest_full_term_delta_row(scenario_rows) do
+    Enum.min_by(scenario_rows, & &1.analysis.full_term_finance_cost_delta, Decimal)
+  end
+
+  defp metric_payment_value(scenario_rows) do
+    case lowest_expected_payment_row(scenario_rows) do
+      nil -> "No scenarios"
+      row -> format_currency(row.analysis.payment_range.expected)
+    end
+  end
+
+  defp metric_break_even_value(scenario_rows) do
+    case fastest_break_even_row(scenario_rows) do
+      nil -> "No break-even"
+      row -> format_months(row.analysis.break_even_range.expected)
+    end
+  end
+
+  defp metric_full_term_delta_value(scenario_rows) do
+    case lowest_full_term_delta_row(scenario_rows) do
+      nil -> "No scenarios"
+      row -> format_currency(row.analysis.full_term_finance_cost_delta)
+    end
   end
 
   defp analysis_history_rows(current_user, mortgages) do

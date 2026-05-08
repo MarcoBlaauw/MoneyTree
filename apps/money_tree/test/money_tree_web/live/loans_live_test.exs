@@ -827,6 +827,11 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Expected refinance"
     assert html =~ "Maple Residence"
     assert html =~ "$2305.22"
+    assert html =~ "Lowest expected payment"
+    assert html =~ "Fastest break-even"
+    assert html =~ "Lowest full-term delta"
+    assert html =~ "Analysis details"
+    assert html =~ "Current full-term total"
 
     assert [%{name: "Expected refinance"} = scenario] =
              Loans.list_refinance_scenarios(user, mortgage)
@@ -1099,7 +1104,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Payment range"
     assert html =~ "Break-even range"
     assert html =~ "Warnings"
-    assert html =~ "Select “View details”"
+    assert html =~ "Analysis details"
+    assert html =~ "Lowest expected payment"
     assert html =~ "Low"
     assert html =~ "Expected"
     assert html =~ "High"
@@ -1108,20 +1114,19 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "$815.01"
     assert html =~ "Review needed"
     assert html =~ "Monthly payment decreases, but full-term finance cost increases."
-    refute html =~ "Current full-term total"
-
-    html =
-      view
-      |> element("button", "View details")
-      |> render_click()
-
-    assert html =~ "Analysis details"
     assert html =~ "Expected payment"
     assert html =~ "Expected break-even"
     assert html =~ "Full-term delta"
     assert html =~ "Current full-term total"
     assert html =~ "New full-term total"
     assert html =~ "Cash timing cost"
+
+    html =
+      view
+      |> element("button", "Close details")
+      |> render_click()
+
+    assert html =~ "Select “View details”"
   end
 
   test "saves deterministic analysis history from a refinance scenario", %{conn: conn} do
