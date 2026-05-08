@@ -49,8 +49,8 @@ defmodule MoneyTree.Loans do
 
   @default_refinance_preload [:mortgage, :fee_items]
   @analysis_version "2026-05-06-v1"
-  @readable_document_content_types ~w(text/plain text/markdown text/csv application/pdf)
-  @readable_document_extensions ~w(.txt .md .csv .pdf)
+  @readable_document_content_types ~w(text/plain text/markdown text/csv application/pdf image/png image/jpeg)
+  @readable_document_extensions ~w(.txt .md .csv .pdf .png .jpg .jpeg)
   @mortgage_extraction_fields ~w(
     current_balance
     current_interest_rate
@@ -1732,10 +1732,15 @@ defmodule MoneyTree.Loans do
   end
 
   defp extract_text_from_file(%LoanDocument{} = document, path) do
-    if pdf_document?(document) do
-      extract_pdf_text(path)
-    else
-      with {:ok, content} <- File.read(path), do: readable_text(content)
+    cond do
+      pdf_document?(document) ->
+        extract_pdf_text(path)
+
+      image_document?(document) ->
+        extract_image_text(path)
+
+      true ->
+        with {:ok, content} <- File.read(path), do: readable_text(content)
     end
   end
 
@@ -1747,6 +1752,16 @@ defmodule MoneyTree.Loans do
     |> Path.extname()
     |> String.downcase()
     |> Kernel.==(".pdf")
+  end
+
+  defp image_document?(%LoanDocument{content_type: content_type, original_filename: filename}) do
+    extension =
+      filename
+      |> to_string()
+      |> Path.extname()
+      |> String.downcase()
+
+    content_type in ~w(image/png image/jpeg) or extension in ~w(.png .jpg .jpeg)
   end
 
   defp ensure_readable_document_type(%LoanDocument{
@@ -1809,6 +1824,15 @@ defmodule MoneyTree.Loans do
     end
   end
 
+  defp extract_image_text(path) do
+    with {:ok, text} <- run_tesseract(path),
+         {:ok, readable} <- readable_text(text) do
+      {:ok, readable}
+    else
+      {:error, _reason} = error -> error
+    end
+  end
+
   defp run_pdftotext(path) do
     with {:ok, executable} <- find_executable("pdftotext"),
          {output, 0} <- System.cmd(executable, ["-layout", path, "-"], stderr_to_stdout: true) do
@@ -1833,6 +1857,17 @@ defmodule MoneyTree.Loans do
       end
     else
       {:error, _reason} = error -> error
+    end
+  end
+
+  defp run_tesseract(path) do
+    with {:ok, executable} <- find_executable("tesseract"),
+         {output, 0} <-
+           System.cmd(executable, [path, "stdout", "--psm", "6"], stderr_to_stdout: true) do
+      {:ok, output}
+    else
+      {:error, _reason} = error -> error
+      {_output, _status} -> {:error, :image_ocr_failed}
     end
   end
 
