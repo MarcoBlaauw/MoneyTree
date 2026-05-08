@@ -444,6 +444,9 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Document extraction queued for review."
     assert html =~ "Current Balance"
     assert html =~ "390000.00"
+    assert html =~ "Stored text artifact"
+    assert html =~ "Extracted text excerpt"
+    assert html =~ "Mortgage statement"
 
     assert [
              %{
@@ -641,6 +644,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "0.0575"
     assert html =~ "Confidence 0.91"
     assert html =~ "Source p. 1: Unpaid principal balance $390,000.00"
+    assert html =~ "Extracted text excerpt"
+    assert html =~ "Mortgage statement"
 
     assert [
              %{

@@ -10,6 +10,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   alias MoneyTree.Loans.Amortization
   alias MoneyTree.Loans.LenderQuote
   alias MoneyTree.Loans.LoanDocument
+  alias MoneyTree.Loans.LoanDocumentExtraction
   alias MoneyTree.Loans.RateObservation
   alias MoneyTree.Loans.RefinanceCalculator
   alias MoneyTree.Loans.RefinanceFeeItem
@@ -1419,6 +1420,20 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     </dd>
                   </div>
                 </dl>
+
+                <div :if={extraction_review_context?(candidate.extraction)} class="mt-3 rounded-lg border border-zinc-100 bg-white p-3 text-sm">
+                  <div :if={stored_text_artifact(candidate.extraction)} class="text-xs text-zinc-500">
+                    <span class="font-semibold uppercase tracking-wide">Stored text artifact</span>
+                    <span class="break-all"><%= stored_text_artifact(candidate.extraction) %></span>
+                  </div>
+
+                  <details :if={raw_text_excerpt(candidate.extraction)} class="mt-2">
+                    <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Extracted text excerpt
+                    </summary>
+                    <pre class="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs leading-5 text-zinc-700"><%= raw_text_excerpt(candidate.extraction) %></pre>
+                  </details>
+                </div>
               </div>
             </div>
           </div>
@@ -3370,6 +3385,18 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp format_citation(text) when is_binary(text), do: ["Source: #{text}"]
   defp format_citation(_citation), do: []
+
+  defp extraction_review_context?(extraction) do
+    stored_text_artifact(extraction) || raw_text_excerpt(extraction)
+  end
+
+  defp stored_text_artifact(%LoanDocumentExtraction{ocr_text_storage_key: storage_key}) do
+    blank_to_nil(storage_key)
+  end
+
+  defp raw_text_excerpt(%LoanDocumentExtraction{raw_text_excerpt: excerpt}) do
+    blank_to_nil(excerpt)
+  end
 
   defp format_payload_value(value) when is_binary(value), do: value
   defp format_payload_value(value) when is_integer(value) or is_float(value), do: to_string(value)
