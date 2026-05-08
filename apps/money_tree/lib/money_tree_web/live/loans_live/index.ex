@@ -12,6 +12,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   alias MoneyTree.Loans.LoanDocument
   alias MoneyTree.Loans.LoanDocumentExtraction
   alias MoneyTree.Loans.RateObservation
+  alias MoneyTree.Loans.RateSource
   alias MoneyTree.Loans.RefinanceCalculator
   alias MoneyTree.Loans.RefinanceFeeItem
   alias MoneyTree.Loans.RefinanceScenario
@@ -295,6 +296,32 @@ defmodule MoneyTreeWeb.LoansLive.Index do
            rate_observation_form_open?: true,
            rate_observation_changeset: Map.put(changeset, :action, :validate)
          )}
+    end
+  end
+
+  def handle_event(
+        "import-rate-source",
+        %{"id" => source_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Loans.process_rate_import_job(source_id) do
+      {:ok, %{imported: imported}} ->
+        {:noreply,
+         socket
+         |> load_page(current_user)
+         |> put_flash(:info, "Benchmark source imported #{length(imported)} observations.")}
+
+      {:error, :disabled} ->
+        {:noreply, put_flash(socket, :error, "Benchmark source is disabled.")}
+
+      {:error, :no_configured_observations} ->
+        {:noreply, put_flash(socket, :error, "Benchmark source has no configured observations.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Benchmark source not found.")}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Unable to import benchmark source.")}
     end
   end
 
@@ -830,6 +857,25 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   def handle_event(
+        "refresh-quote-expirations",
+        _params,
+        %{assigns: %{current_user: current_user, mortgages: mortgages}} = socket
+      ) do
+    expired_count =
+      Enum.reduce(mortgages, 0, fn mortgage, total ->
+        case Loans.expire_lender_quotes(current_user, mortgage) do
+          {:ok, count} -> total + count
+          {:error, _reason} -> total
+        end
+      end)
+
+    {:noreply,
+     socket
+     |> load_page(current_user)
+     |> put_flash(:info, "Quote freshness refreshed; #{expired_count} quotes expired.")}
+  end
+
+  def handle_event(
         "convert-quote",
         %{"id" => quote_id},
         %{assigns: %{current_user: current_user}} = socket
@@ -1161,9 +1207,14 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 <h3 class="text-base font-semibold text-zinc-900">Lender quote tracker</h3>
                 <p class="text-sm text-zinc-500">Quotes are stored separately from benchmark rate estimates.</p>
               </div>
-              <button type="button" class="btn btn-outline" phx-click="new-quote" disabled={@mortgages == []}>
-                Add lender quote
-              </button>
+              <div class="flex flex-wrap justify-end gap-2">
+                <button type="button" class="btn btn-outline" phx-click="refresh-quote-expirations" disabled={@mortgages == []}>
+                  Refresh expirations
+                </button>
+                <button type="button" class="btn btn-outline" phx-click="new-quote" disabled={@mortgages == []}>
+                  Add lender quote
+                </button>
+              </div>
             </div>
 
             <div :if={@quote_rows == []} class="rounded-xl border border-dashed border-zinc-200 p-5 text-sm text-zinc-500">
@@ -1181,6 +1232,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <th class="px-3 py-2">Costs</th>
                     <th class="px-3 py-2">Lock</th>
                     <th class="px-3 py-2">Expires</th>
+                    <th class="px-3 py-2">Freshness</th>
                     <th class="px-3 py-2">Status</th>
                     <th class="px-3 py-2"></th>
                   </tr>
@@ -1207,6 +1259,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     </td>
                     <td class="px-3 py-3"><%= quote_lock_status(row.quote) %></td>
                     <td class="px-3 py-3"><%= format_datetime(row.quote.quote_expires_at) || "Not set" %></td>
+                    <td class="px-3 py-3"><%= quote_freshness_label(row.quote) %></td>
                     <td class="px-3 py-3"><%= format_label(row.quote.status) %></td>
                     <td class="px-3 py-3 text-right">
                       <button type="button"
@@ -1707,9 +1760,39 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <h2 class="text-lg font-semibold text-zinc-900">Benchmark rates</h2>
               <p class="text-sm text-zinc-500">Rate observations are estimates and can seed editable refinance scenarios.</p>
             </div>
-            <button type="button" class="btn btn-outline" phx-click="new-rate-observation">
-              Add benchmark rate
-            </button>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="btn btn-outline" phx-click="new-rate-observation">
+                Add benchmark rate
+              </button>
+            </div>
+          </div>
+
+          <div :if={@rate_source_rows != []} class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 class="text-sm font-semibold text-zinc-900">Benchmark sources</h3>
+                <p class="text-sm text-zinc-500">Configured public benchmark sources import estimate rows for scenario seeding.</p>
+              </div>
+            </div>
+
+            <div class="mt-3 grid gap-2">
+              <div :for={source <- @rate_source_rows} class="flex flex-col gap-3 rounded-lg bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="font-medium text-zinc-900"><%= source.name %></p>
+                  <p class="text-xs text-zinc-500">
+                    <%= format_label(source.source_type) %> • <%= rate_source_import_status(source) %>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-outline"
+                  phx-click="import-rate-source"
+                  phx-value-id={source.id}
+                >
+                  Import benchmarks
+                </button>
+              </div>
+            </div>
           </div>
 
           <div :if={@rate_observation_rows == []} class="rounded-xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500">
@@ -2457,6 +2540,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
           scenario_rows
         ),
       scenario_rows: scenario_rows,
+      rate_source_rows: rate_source_rows(),
       rate_observation_rows: rate_observation_rows(),
       analysis_history_rows: analysis_history_rows(current_user, mortgages),
       document_rows: document_rows(current_user, mortgages),
@@ -2727,6 +2811,12 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp rate_observation_rows do
     [loan_type: "mortgage", product_type: "fixed", limit: 10]
     |> Loans.list_rate_observations()
+  end
+
+  defp rate_source_rows do
+    [enabled: true]
+    |> Loans.list_rate_sources()
+    |> Enum.reject(&(&1.source_type == "manual"))
   end
 
   defp base_scenario(current_user, mortgages, attrs \\ %{}) do
@@ -3405,6 +3495,16 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp rate_source_label(_observation), do: "Rate source"
 
+  defp rate_source_import_status(%RateSource{last_success_at: %DateTime{} = imported_at}) do
+    "Last imported #{format_datetime(imported_at)}"
+  end
+
+  defp rate_source_import_status(%RateSource{last_error_at: %DateTime{} = error_at}) do
+    "Last error #{format_datetime(error_at)}"
+  end
+
+  defp rate_source_import_status(_source), do: "Not imported"
+
   defp format_months(nil), do: "No break-even"
   defp format_months(months), do: "#{months} months"
 
@@ -3420,6 +3520,18 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp quote_lock_status(%LenderQuote{lock_available: true}), do: "Available"
   defp quote_lock_status(_quote), do: "No lock"
+
+  defp quote_freshness_label(%LenderQuote{status: "expired"}), do: "Expired"
+  defp quote_freshness_label(%LenderQuote{status: "converted"}), do: "Converted"
+  defp quote_freshness_label(%LenderQuote{status: "archived"}), do: "Archived"
+  defp quote_freshness_label(%LenderQuote{quote_expires_at: nil}), do: "No expiration"
+
+  defp quote_freshness_label(%LenderQuote{quote_expires_at: expires_at}) do
+    case DateTime.compare(expires_at, DateTime.utc_now()) do
+      :lt -> "Expired"
+      _ -> "Active until #{format_datetime(expires_at)}"
+    end
+  end
 
   defp quote_convert_disabled?(%LenderQuote{status: status}) do
     status in ["converted", "expired", "archived"]

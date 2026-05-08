@@ -169,5 +169,37 @@ defmodule MoneyTree.Loans.RateObservationsTest do
       refute updated_source.last_error_at
       refute updated_source.last_error_message
     end
+
+    test "creates configured public benchmark source for deterministic imports" do
+      assert {:ok, %RateSource{} = source} =
+               Loans.get_or_create_public_benchmark_rate_source(%{
+                 provider_key: "public-test-benchmark",
+                 name: "Public Test Benchmark",
+                 config: %{
+                   "observations" => [
+                     %{
+                       "loan_type" => "mortgage",
+                       "product_type" => "fixed",
+                       "term_months" => 360,
+                       "rate" => "0.0600"
+                     }
+                   ]
+                 }
+               })
+
+      assert source.provider_key == "public-test-benchmark"
+      assert source.name == "Public Test Benchmark"
+      assert source.source_type == "public_benchmark"
+      assert source.enabled
+      refute source.requires_api_key
+
+      source_id = source.id
+
+      assert {:ok, %RateSource{id: ^source_id}} =
+               Loans.get_or_create_public_benchmark_rate_source(%{
+                 provider_key: "public-test-benchmark",
+                 name: "Ignored Name"
+               })
+    end
   end
 end

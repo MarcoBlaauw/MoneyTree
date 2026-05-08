@@ -450,6 +450,41 @@ defmodule MoneyTree.Loans do
   end
 
   @doc """
+  Creates or returns a configured public benchmark rate source.
+
+  Public benchmark imports are deterministic in this phase: the source stores
+  provider metadata and explicit observation rows in its config. A later provider
+  adapter can update that config before the existing import worker consumes it.
+  """
+  @spec get_or_create_public_benchmark_rate_source(map(), keyword()) ::
+          {:ok, RateSource.t()} | {:error, Ecto.Changeset.t()}
+  def get_or_create_public_benchmark_rate_source(attrs \\ %{}, opts \\ []) when is_map(attrs) do
+    preload = Keyword.get(opts, :preload, [])
+
+    attrs =
+      attrs
+      |> normalize_attr_map()
+      |> Map.put_new("provider_key", "public-mortgage-benchmark")
+      |> Map.put_new("name", "Public mortgage benchmark")
+      |> Map.put_new("source_type", "public_benchmark")
+      |> Map.put_new("enabled", true)
+      |> Map.put_new("requires_api_key", false)
+      |> Map.put_new("config", %{})
+
+    RateSource
+    |> where([source], source.provider_key == ^attrs["provider_key"])
+    |> maybe_preload_query(preload)
+    |> Repo.one()
+    |> case do
+      %RateSource{} = source ->
+        {:ok, source}
+
+      nil ->
+        create_rate_source(attrs, preload: preload)
+    end
+  end
+
+  @doc """
   Lists benchmark or manually entered loan rate observations.
   """
   @spec list_rate_observations(keyword()) :: [RateObservation.t()]

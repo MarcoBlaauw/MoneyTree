@@ -325,6 +325,49 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert expired_quote.status == "expired"
   end
 
+  test "refreshes lender quote expiration status in the quotes workspace", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    mortgage =
+      mortgage_fixture(user, %{
+        property_name: "Maple Residence",
+        current_balance: "400000.00",
+        current_interest_rate: "0.0625",
+        monthly_payment_total: "2462.87",
+        remaining_term_months: 360
+      })
+
+    {:ok, quote} =
+      Loans.create_lender_quote(user, mortgage, %{
+        lender_name: "Refresh Lender",
+        quote_source: "manual",
+        loan_type: "mortgage",
+        product_type: "fixed",
+        term_months: 360,
+        interest_rate: "0.0550",
+        lock_available: false,
+        quote_expires_at: ~U[2026-05-01 12:00:00Z],
+        raw_payload: %{},
+        status: "active"
+      })
+
+    {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/quotes")
+
+    assert html =~ "Refresh expirations"
+    assert html =~ "Freshness"
+    assert html =~ "Expired"
+
+    html =
+      view
+      |> element("button", "Refresh expirations")
+      |> render_click()
+
+    assert html =~ "Quote freshness refreshed; 0 quotes expired."
+
+    assert {:ok, expired_quote} = Loans.fetch_lender_quote(user, quote.id)
+    assert expired_quote.status == "expired"
+  end
+
   test "creates and lists document metadata in the documents workspace", %{conn: conn} do
     {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
 
@@ -938,6 +981,67 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     assert [%{scenario_type: "rate_observation", rate_source_type: "manual"}] =
              Loans.list_refinance_scenarios(user, mortgage)
+  end
+
+  test "imports configured public benchmark rates in refinance workspace", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    mortgage =
+      mortgage_fixture(user, %{
+        property_name: "Maple Residence",
+        current_balance: "400000.00",
+        current_interest_rate: "0.0625",
+        monthly_payment_total: "2462.87",
+        remaining_term_months: 360
+      })
+
+    {:ok, source} =
+      Loans.get_or_create_public_benchmark_rate_source(%{
+        provider_key: "workspace-public-benchmark",
+        name: "Workspace Public Benchmark",
+        config: %{
+          "observations" => [
+            %{
+              "loan_type" => "mortgage",
+              "product_type" => "fixed",
+              "term_months" => 360,
+              "rate" => "0.0600",
+              "apr" => "0.0610",
+              "points" => "0.1250",
+              "series_key" => "30-year-fixed"
+            }
+          ]
+        }
+      })
+
+    {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
+
+    assert html =~ "Benchmark sources"
+    assert html =~ "Workspace Public Benchmark"
+    assert html =~ "Not imported"
+
+    html =
+      view
+      |> element("button[phx-click='import-rate-source'][phx-value-id='#{source.id}']")
+      |> render_click()
+
+    assert html =~ "Benchmark source imported 1 observations."
+    assert html =~ "6.00%"
+    assert html =~ "APR 6.10%"
+    assert html =~ "Workspace Public Benchmark"
+
+    assert [%{rate_source_type: "public_benchmark"}] =
+             Loans.list_rate_observations(rate_source_id: source.id)
+             |> Enum.map(fn observation ->
+               {:ok, scenario} =
+                 Loans.create_refinance_scenario_from_rate_observation(
+                   user,
+                   mortgage,
+                   observation
+                 )
+
+               scenario
+             end)
   end
 
   test "creates and evaluates alert rules in the alerts workspace", %{conn: conn} do
