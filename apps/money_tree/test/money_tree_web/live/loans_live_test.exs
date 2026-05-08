@@ -983,6 +983,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
           "name" => "Savings above target",
           "kind" => "monthly_savings_above_threshold",
           "threshold_value" => "100.00",
+          "cooldown_hours" => "12",
           "active" => "true"
         }
       )
@@ -990,6 +991,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     assert html =~ "Loan alert rule saved."
     assert html =~ "Savings above target"
+    assert html =~ "12 hours"
 
     html =
       view

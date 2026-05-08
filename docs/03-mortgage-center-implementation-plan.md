@@ -885,7 +885,7 @@ Decimal values should remain string-encoded to match existing contract patterns.
 | Phase 3: Refinance UI | Partial | Scenario, fee, comparison, benchmark, lender quote bridge, loan tabs, the ephemeral what-if sandbox, a selected-scenario analysis detail panel, labeled range presentation, highlighted decision metrics, warning callouts, progressive disclosure for refinance forms, percentage-based scenario rate inputs, and mortgage-seeded scenario defaults are implemented. Broader UI/UX cleanup remains. |
 | Phase 4: Documents and Ollama extraction | Partial | Document metadata, uploads, extraction candidates, stored text/PDF/image OCR extraction artifacts, row-level extraction triggers, extracted-text review context, Ollama/manual extraction, review, and confirmation flows exist. OCR depth and review ergonomics still need refinement. |
 | Phase 5: Rates and lender quotes | Partial | Manual benchmark rates, configurable benchmark import worker, lender quote tracking, deterministic quote expiration refresh, and quote-to-scenario conversion exist. External benchmark provider integration and quote freshness polish remain. |
-| Phase 6: Alerts | Partial | Alert rule UI and evaluation foundations exist. Notification delivery, email integration, and anti-noise behavior still need completion. |
+| Phase 6: Alerts | Partial | Alert rule UI, evaluation worker, durable notification delivery integration, and per-rule cooldown anti-noise behavior exist. Email delivery uses existing notification infrastructure. Broader alert polish and scheduled evaluation cadence remain. |
 | Phase 7: Expand beyond mortgages | Pending | Mortgage-backed loans remain the only implemented loan type. |
 
 ### Phase 0: Rename product direction and add Loan Center destination

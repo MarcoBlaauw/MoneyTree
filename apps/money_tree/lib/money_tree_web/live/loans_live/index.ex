@@ -1066,6 +1066,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <th class="px-3 py-2">Rule</th>
                     <th class="px-3 py-2">Kind</th>
                     <th class="px-3 py-2">Threshold</th>
+                    <th class="px-3 py-2">Cooldown</th>
                     <th class="px-3 py-2">Last evaluated</th>
                     <th class="px-3 py-2">Last triggered</th>
                     <th class="px-3 py-2">State</th>
@@ -1076,6 +1077,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <td class="px-3 py-3 font-medium text-zinc-900"><%= row.rule.name %></td>
                     <td class="px-3 py-3"><%= format_label(row.rule.kind) %></td>
                     <td class="px-3 py-3"><%= alert_threshold_label(row.rule) %></td>
+                    <td class="px-3 py-3"><%= alert_cooldown_label(row.rule) %></td>
                     <td class="px-3 py-3"><%= format_datetime(row.rule.last_evaluated_at) || "Never" %></td>
                     <td class="px-3 py-3"><%= format_datetime(row.rule.last_triggered_at) || "Never" %></td>
                     <td class="px-3 py-3"><%= if row.rule.active, do: "Active", else: "Inactive" %></td>
@@ -1129,6 +1131,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <div :if={@alert_form["kind"] == "lender_quote_expiring"}>
                 <label class="text-sm font-medium text-zinc-700" for="alert_rule_lead_days">Lead days</label>
                 <input id="alert_rule_lead_days" class="input" name="alert_rule[lead_days]" type="number" min="0" value={@alert_form["lead_days"]} />
+              </div>
+
+              <div>
+                <label class="text-sm font-medium text-zinc-700" for="alert_rule_cooldown_hours">Cooldown hours</label>
+                <input id="alert_rule_cooldown_hours" class="input" name="alert_rule[cooldown_hours]" type="number" min="0" value={@alert_form["cooldown_hours"]} />
               </div>
 
               <div>
@@ -2890,6 +2897,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       "kind" => "monthly_savings_above_threshold",
       "threshold_value" => "",
       "lead_days" => "7",
+      "cooldown_hours" => "24",
       "active" => "true"
     }
   end
@@ -2928,7 +2936,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
            "kind" => kind,
            "active" => form["active"] || "true",
            "threshold_value" => threshold_value,
-           "lead_days" => form["lead_days"] || "7"
+           "lead_days" => form["lead_days"] || "7",
+           "delivery_preferences" => %{
+             "cooldown_hours" => form["cooldown_hours"] || "24"
+           }
          }}
     end
   end
@@ -3315,6 +3326,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp alert_threshold_label(%AlertRule{threshold_config: config}) do
     Map.get(config || %{}, "threshold", "Not set")
+  end
+
+  defp alert_cooldown_label(%AlertRule{delivery_preferences: preferences}) do
+    "#{Map.get(preferences || %{}, "cooldown_hours", 24)} hours"
   end
 
   defp extraction_summary(%Ecto.Association.NotLoaded{}), do: "Not loaded"

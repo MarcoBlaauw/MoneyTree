@@ -58,7 +58,7 @@ defmodule MoneyTreeWeb.LoanAlertRuleControllerTest do
                |> post(~p"/api/loan_alert_rules/#{rule_id}/evaluate", %{})
                |> json_response(200)
 
-      assert %{"data" => %{"evaluated" => 1, "triggered" => 1}} =
+      assert %{"data" => %{"evaluated" => 1, "triggered" => 0}} =
                authed_conn
                |> post(~p"/api/loans/#{mortgage.id}/alert_rules/evaluate", %{})
                |> json_response(200)

@@ -88,6 +88,52 @@ defmodule MoneyTree.Loans.AlertRulesTest do
       assert event.metadata["refinance_scenario_id"] == scenario.id
     end
 
+    test "suppresses repeated alert notifications during rule cooldown" do
+      user = user_fixture()
+
+      mortgage =
+        mortgage_fixture(user, %{
+          current_balance: "400000.00",
+          current_interest_rate: "0.0625",
+          remaining_term_months: 360,
+          monthly_payment_total: "2462.87"
+        })
+
+      {:ok, _scenario} =
+        Loans.create_refinance_scenario(user, mortgage, %{
+          name: "Lower rate scenario",
+          new_term_months: 360,
+          new_interest_rate: "0.0550",
+          new_principal_amount: "400000.00"
+        })
+
+      {:ok, rule} =
+        Loans.create_loan_alert_rule(user, mortgage, %{
+          name: "Savings above 100",
+          kind: "monthly_savings_above_threshold",
+          threshold_value: "100.00",
+          delivery_preferences: %{"cooldown_hours" => 24}
+        })
+
+      assert {:ok, %{triggered?: true, rule: triggered_rule}} =
+               Loans.evaluate_loan_alert_rule(user, rule)
+
+      assert {:ok, %{triggered?: false, rule: cooled_down_rule}} =
+               Loans.evaluate_loan_alert_rule(user, triggered_rule)
+
+      assert cooled_down_rule.last_triggered_at == triggered_rule.last_triggered_at
+
+      assert 1 ==
+               Repo.aggregate(
+                 from(event in Event,
+                   where:
+                     event.user_id == ^user.id and event.kind == "loan_refinance_alert" and
+                       event.status == "monthly_savings_above_threshold"
+                 ),
+                 :count
+               )
+    end
+
     test "evaluates document review rules" do
       user = user_fixture()
       mortgage = mortgage_fixture(user)

@@ -785,16 +785,11 @@ defmodule MoneyTree.Loans do
           :not_triggered
         end
 
-      attrs = %{"last_evaluated_at" => now}
-
-      attrs =
-        case result do
-          {:triggered, _event_attrs} -> Map.put(attrs, "last_triggered_at", now)
-          _ -> attrs
-        end
-
-      with {:ok, updated_rule} <- update_loan_alert_rule(user, rule, attrs),
-           {:ok, triggered?} <- maybe_record_alert_event(updated_rule, result, now) do
+      with {:ok, evaluated_rule} <-
+             update_loan_alert_rule(user, rule, %{"last_evaluated_at" => now}),
+           {:ok, triggered?} <- maybe_record_alert_event(evaluated_rule, result, now),
+           {:ok, updated_rule} <-
+             maybe_mark_alert_rule_triggered(user, evaluated_rule, triggered?, now) do
         {:ok, %{rule: updated_rule, triggered?: triggered?}}
       end
     end
@@ -1691,6 +1686,16 @@ defmodule MoneyTree.Loans do
   end
 
   defp maybe_record_alert_event(rule, {:triggered, event_attrs}, now) do
+    if alert_rule_in_cooldown?(rule, now) do
+      {:ok, false}
+    else
+      do_record_alert_event(rule, event_attrs, now)
+    end
+  end
+
+  defp maybe_record_alert_event(_rule, _result, _now), do: {:ok, false}
+
+  defp do_record_alert_event(rule, event_attrs, now) do
     attrs =
       Map.merge(event_attrs, %{
         user_id: rule.user_id,
@@ -1707,7 +1712,20 @@ defmodule MoneyTree.Loans do
     end
   end
 
-  defp maybe_record_alert_event(_rule, _result, _now), do: {:ok, false}
+  defp maybe_mark_alert_rule_triggered(user, rule, true, now) do
+    update_loan_alert_rule(user, rule, %{"last_triggered_at" => now})
+  end
+
+  defp maybe_mark_alert_rule_triggered(_user, rule, false, _now), do: {:ok, rule}
+
+  defp alert_rule_in_cooldown?(%AlertRule{last_triggered_at: nil}, _now), do: false
+
+  defp alert_rule_in_cooldown?(%AlertRule{} = rule, now) do
+    cooldown_hours = alert_integer(rule.delivery_preferences, "cooldown_hours", 24)
+
+    DateTime.compare(DateTime.add(rule.last_triggered_at, cooldown_hours * 3_600, :second), now) ==
+      :gt
+  end
 
   defp loan_alert_dedupe_key(rule, event_attrs) do
     metadata = Map.get(event_attrs, :metadata, %{})
