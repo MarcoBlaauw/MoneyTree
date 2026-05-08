@@ -13,6 +13,14 @@ defmodule MoneyTreeWeb.AppRoutesTest do
         ~p"/app/transactions/categorization",
         ~p"/app/obligations",
         ~p"/app/assets",
+        ~p"/app/loans",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000/refinance",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000/documents",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000/quotes",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000/alerts",
+        ~p"/app/mortgages",
+        ~p"/app/mortgages/00000000-0000-0000-0000-000000000000",
         ~p"/app/transfers",
         ~p"/app/budgets",
         ~p"/app/settings",
@@ -44,6 +52,12 @@ defmodule MoneyTreeWeb.AppRoutesTest do
 
       {:ok, assets, _html} = live(authed_conn, ~p"/app/assets")
       assert render(assets) =~ "Assets"
+
+      {:ok, loans, _html} = live(authed_conn, ~p"/app/loans")
+      assert render(loans) =~ "Loan Center"
+
+      {:ok, mortgages, _html} = live(authed_conn, ~p"/app/mortgages")
+      assert render(mortgages) =~ "Loan Center"
 
       {:ok, transfers, _html} = live(authed_conn, ~p"/app/transfers")
 

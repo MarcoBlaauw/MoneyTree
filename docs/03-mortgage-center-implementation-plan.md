@@ -875,6 +875,19 @@ Decimal values should remain string-encoded to match existing contract patterns.
 
 ## Implementation phases
 
+### Current implementation status
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Phase 0: Loan Center destination | Done | Loan Center navigation, canonical `/app/loans` routes, mortgage compatibility routes, and mortgage-backed overview are in place. |
+| Phase 1: Refinance math foundation | Done | Deterministic amortization, refinance comparisons, warnings, and payoff what-if calculations are implemented with focused tests. |
+| Phase 2: Scenario persistence and API | Done | Refinance scenarios, fee items, analysis snapshots, context functions, controller routes, contracts, and authorization coverage are implemented. |
+| Phase 3: Refinance UI | Partial | Scenario, fee, comparison, benchmark, lender quote bridge, loan tabs, the ephemeral what-if sandbox, a selected-scenario analysis detail panel, labeled range presentation, highlighted decision metrics, warning callouts, progressive disclosure for refinance forms, percentage-based scenario rate inputs, and mortgage-seeded scenario defaults are implemented. Broader UI/UX cleanup remains. |
+| Phase 4: Documents and Ollama extraction | Partial | Document metadata, uploads, extraction candidates, stored text/PDF extraction artifacts, row-level extraction triggers, Ollama/manual extraction, review, and confirmation flows exist. OCR depth and review ergonomics still need refinement. |
+| Phase 5: Rates and lender quotes | Partial | Manual benchmark rates, lender quote tracking, and quote-to-scenario conversion exist. Automated benchmark import and quote freshness polish remain. |
+| Phase 6: Alerts | Partial | Alert rule UI and evaluation foundations exist. Notification delivery, email integration, and anti-noise behavior still need completion. |
+| Phase 7: Expand beyond mortgages | Pending | Mortgage-backed loans remain the only implemented loan type. |
+
 ### Phase 0: Rename product direction and add Loan Center destination
 
 Tasks:
@@ -935,13 +948,16 @@ Tasks:
 - build scenario form
 - build fee/cost editor
 - build scenario comparison table
+- build ephemeral what-if sandbox sliders for rate, term, and extra monthly principal
 - build analysis detail page/drawer
 - highlight monthly payment, break-even, and full-term cost
 - add assumptions and warnings panel
+- continue Loan Center UI/UX cleanup after the backend workflow is complete
 
 Acceptance criteria:
 
 - user can compare at least two scenarios
+- user can adjust rate, term, and extra principal without persisting a scenario
 - UI shows low/expected/high ranges
 - full-term cost is visible without opening advanced settings
 

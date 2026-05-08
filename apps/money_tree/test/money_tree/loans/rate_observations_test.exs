@@ -1,0 +1,123 @@
+defmodule MoneyTree.Loans.RateObservationsTest do
+  use MoneyTree.DataCase, async: true
+
+  import MoneyTree.AccountsFixtures
+  import MoneyTree.MortgagesFixtures
+
+  alias Decimal, as: D
+  alias MoneyTree.Loans
+  alias MoneyTree.Loans.RateObservation
+  alias MoneyTree.Loans.RateSource
+  alias MoneyTree.Loans.RefinanceScenario
+
+  describe "loan rate sources and observations" do
+    test "creates and lists manual benchmark rate observations" do
+      assert {:ok, %RateSource{} = source} = Loans.get_or_create_manual_rate_source()
+      assert source.provider_key == "manual"
+      assert source.source_type == "manual"
+
+      assert {:ok, %RateObservation{} = observation} =
+               Loans.create_rate_observation(source, %{
+                 loan_type: "mortgage",
+                 product_type: "fixed",
+                 term_months: 360,
+                 rate: "0.06125",
+                 apr: "0.06200",
+                 points: "0.2500",
+                 assumptions: %{"credit_score" => "740+", "down_payment" => "20%"},
+                 raw_payload: %{"entered_by" => "test"}
+               })
+
+      assert observation.rate_source_id == source.id
+      assert observation.loan_type == "mortgage"
+      assert observation.product_type == "fixed"
+      assert observation.term_months == 360
+      assert D.equal?(observation.rate, D.new("0.06125"))
+      assert D.equal?(observation.apr, D.new("0.06200"))
+      assert observation.observed_at
+      assert observation.imported_at
+      assert observation.rate_source.provider_key == "manual"
+
+      assert [%RateObservation{id: observation_id}] =
+               Loans.list_rate_observations(
+                 loan_type: "mortgage",
+                 product_type: "fixed",
+                 term_months: 360
+               )
+
+      assert observation_id == observation.id
+    end
+
+    test "normalizes source provider keys and enforces uniqueness" do
+      assert {:ok, %RateSource{provider_key: "example-source"}} =
+               Loans.create_rate_source(%{
+                 provider_key: " Example-Source ",
+                 name: "Example Source",
+                 source_type: "public_benchmark"
+               })
+
+      assert {:error, changeset} =
+               Loans.create_rate_source(%{
+                 provider_key: "example-source",
+                 name: "Duplicate Source",
+                 source_type: "manual"
+               })
+
+      assert %{provider_key: ["has already been taken"]} = errors_on(changeset)
+    end
+
+    test "rejects invalid rate observation values" do
+      assert {:ok, source} = Loans.get_or_create_manual_rate_source()
+
+      assert {:error, changeset} =
+               Loans.create_rate_observation(source, %{
+                 loan_type: "mortgage",
+                 term_months: 0,
+                 rate: "-0.0100",
+                 assumptions: []
+               })
+
+      assert "must be greater than 0" in errors_on(changeset).term_months
+      assert "must be greater than or equal to 0" in errors_on(changeset).rate
+      assert "is invalid" in errors_on(changeset).assumptions
+    end
+
+    test "creates a draft refinance scenario from a benchmark observation" do
+      user = user_fixture()
+
+      mortgage =
+        mortgage_fixture(user, %{
+          current_balance: "375000.00",
+          current_interest_rate: "0.07125",
+          remaining_term_months: 339,
+          monthly_payment_total: "3233.65"
+        })
+
+      assert {:ok, source} = Loans.get_or_create_manual_rate_source()
+
+      assert {:ok, observation} =
+               Loans.create_rate_observation(source, %{
+                 loan_type: "mortgage",
+                 product_type: "fixed",
+                 term_months: 360,
+                 rate: "0.06125",
+                 apr: "0.06200",
+                 points: "0.2500"
+               })
+
+      assert {:ok, %RefinanceScenario{} = scenario} =
+               Loans.create_refinance_scenario_from_rate_observation(
+                 user,
+                 mortgage,
+                 observation
+               )
+
+      assert scenario.name == "30-year benchmark at 6.13%"
+      assert scenario.scenario_type == "rate_observation"
+      assert scenario.rate_source_type == "manual"
+      assert scenario.new_term_months == 360
+      assert D.equal?(scenario.new_interest_rate, D.new("0.06125"))
+      assert D.equal?(scenario.new_principal_amount, D.new("375000.00"))
+    end
+  end
+end

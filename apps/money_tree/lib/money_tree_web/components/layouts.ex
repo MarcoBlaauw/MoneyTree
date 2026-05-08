@@ -11,6 +11,7 @@ defmodule MoneyTreeWeb.Layouts do
       %{label: "Budgets", path: ~p"/app/budgets", page_title: "Budgets"},
       %{label: "Obligations", path: ~p"/app/obligations", page_title: "Obligations"},
       %{label: "Assets", path: ~p"/app/assets", page_title: "Assets"},
+      %{label: "Loan Center", path: ~p"/app/loans", page_title: "Loan Center"},
       %{label: "Transfers", path: ~p"/app/transfers", page_title: "Transfers"},
       %{label: "Settings", path: ~p"/app/settings", page_title: "Settings"}
     ]

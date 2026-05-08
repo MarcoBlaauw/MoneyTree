@@ -125,6 +125,780 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/loans/{loan_id}/refinance_scenarios:
+    parameters:
+      - in: path
+        name: loan_id
+        required: true
+        schema:
+          type: string
+    get:
+      summary: List refinance scenarios for a mortgage-backed loan
+      operationId: listRefinanceScenarios
+      responses:
+        '200':
+          description: Refinance scenarios for the loan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RefinanceScenario'
+                required:
+                  - data
+    post:
+      summary: Create a refinance scenario for a mortgage-backed loan
+      operationId: createRefinanceScenario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRefinanceScenarioRequest'
+      responses:
+        '201':
+          description: Refinance scenario created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RefinanceScenario'
+                required:
+                  - data
+        '404':
+          description: Loan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/refinance_scenarios/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Fetch a refinance scenario by id
+      operationId: getRefinanceScenario
+      responses:
+        '200':
+          description: Refinance scenario found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RefinanceScenario'
+                required:
+                  - data
+        '404':
+          description: Refinance scenario not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update a refinance scenario
+      operationId: updateRefinanceScenario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRefinanceScenarioRequest'
+      responses:
+        '200':
+          description: Refinance scenario updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RefinanceScenario'
+                required:
+                  - data
+        '404':
+          description: Refinance scenario not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Delete a refinance scenario
+      operationId: deleteRefinanceScenario
+      responses:
+        '204':
+          description: Refinance scenario deleted
+        '404':
+          description: Refinance scenario not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/refinance_scenarios/{id}/fee_items:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Add a refinance scenario fee item
+      operationId: createRefinanceFeeItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRefinanceFeeItemRequest'
+      responses:
+        '201':
+          description: Fee item created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RefinanceFeeItem'
+                required:
+                  - data
+
+  /api/refinance_scenarios/{id}/analyze:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Run deterministic refinance analysis for a scenario
+      operationId: analyzeRefinanceScenario
+      responses:
+        '201':
+          description: Analysis snapshot created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RefinanceAnalysisResult'
+                required:
+                  - data
+        '404':
+          description: Refinance scenario not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loans/{loan_id}/documents:
+    parameters:
+      - in: path
+        name: loan_id
+        required: true
+        schema:
+          type: string
+    get:
+      summary: List document metadata for a mortgage-backed loan
+      operationId: listLoanDocuments
+      responses:
+        '200':
+          description: Loan documents for the loan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LoanDocument'
+                required:
+                  - data
+    post:
+      summary: Create document metadata for a mortgage-backed loan
+      operationId: createLoanDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLoanDocumentRequest'
+      responses:
+        '201':
+          description: Loan document metadata created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LoanDocument'
+                required:
+                  - data
+        '404':
+          description: Loan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loan_documents/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Fetch a loan document by id
+      operationId: getLoanDocument
+      responses:
+        '200':
+          description: Loan document found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LoanDocument'
+                required:
+                  - data
+        '404':
+          description: Loan document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loan_documents/{id}/extract:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Create a reviewable extraction candidate for a loan document
+      operationId: createLoanDocumentExtraction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLoanDocumentExtractionRequest'
+      responses:
+        '201':
+          description: Extraction candidate created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LoanDocumentExtraction'
+                required:
+                  - data
+        '404':
+          description: Loan document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loan_document_extractions/{id}/confirm:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Confirm a reviewed loan document extraction candidate
+      operationId: confirmLoanDocumentExtraction
+      responses:
+        '200':
+          description: Extraction candidate confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LoanDocumentExtraction'
+                required:
+                  - data
+        '404':
+          description: Loan document extraction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loan_document_extractions/{id}/reject:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Reject a reviewed loan document extraction candidate
+      operationId: rejectLoanDocumentExtraction
+      responses:
+        '200':
+          description: Extraction candidate rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LoanDocumentExtraction'
+                required:
+                  - data
+        '404':
+          description: Loan document extraction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loan_document_extractions/{id}/apply:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Apply a confirmed extraction candidate to the mortgage baseline
+      operationId: applyLoanDocumentExtraction
+      responses:
+        '200':
+          description: Confirmed extraction applied to the mortgage baseline
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LoanDocumentApplyResult'
+                required:
+                  - data
+        '404':
+          description: Loan document extraction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Extraction cannot be applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loan_document_extractions/{id}/create_lender_quote:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Create a lender quote from a confirmed extraction candidate
+      operationId: createLenderQuoteFromLoanDocumentExtraction
+      responses:
+        '201':
+          description: Lender quote created from confirmed extraction fields
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LenderQuote'
+                required:
+                  - data
+        '404':
+          description: Loan document extraction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Extraction cannot create a lender quote
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loan_document_extractions/{id}/create_scenario:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Create a refinance scenario from a confirmed extraction candidate
+      operationId: createRefinanceScenarioFromLoanDocumentExtraction
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                new_principal_amount:
+                  type: string
+                status:
+                  type: string
+      responses:
+        '201':
+          description: Refinance scenario created from confirmed extraction fields
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RefinanceScenario'
+                required:
+                  - data
+        '404':
+          description: Loan document extraction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Extraction cannot create a refinance scenario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loans/{loan_id}/lender_quotes:
+    parameters:
+      - in: path
+        name: loan_id
+        required: true
+        schema:
+          type: string
+    get:
+      summary: List lender quotes for a mortgage-backed loan
+      operationId: listLenderQuotes
+      responses:
+        '200':
+          description: Lender quotes for the loan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LenderQuote'
+                required:
+                  - data
+    post:
+      summary: Create a lender quote for a mortgage-backed loan
+      operationId: createLenderQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLenderQuoteRequest'
+      responses:
+        '201':
+          description: Lender quote created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LenderQuote'
+                required:
+                  - data
+        '404':
+          description: Loan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/lender_quotes/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get a lender quote
+      operationId: getLenderQuote
+      responses:
+        '200':
+          description: Lender quote
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LenderQuote'
+                required:
+                  - data
+        '404':
+          description: Lender quote not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update a lender quote
+      operationId: updateLenderQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLenderQuoteRequest'
+      responses:
+        '200':
+          description: Lender quote updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LenderQuote'
+                required:
+                  - data
+        '404':
+          description: Lender quote not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/lender_quotes/{id}/convert:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Convert a lender quote into a draft refinance scenario
+      operationId: convertLenderQuoteToScenario
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConvertLenderQuoteRequest'
+      responses:
+        '201':
+          description: Refinance scenario created from lender quote
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RefinanceScenario'
+                required:
+                  - data
+        '404':
+          description: Lender quote not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loans/{loan_id}/alert_rules:
+    parameters:
+      - in: path
+        name: loan_id
+        required: true
+        schema:
+          type: string
+    get:
+      summary: List Loan Center alert rules
+      operationId: listLoanAlertRules
+      responses:
+        '200':
+          description: Loan alert rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LoanAlertRule'
+                required:
+                  - data
+    post:
+      summary: Create a Loan Center alert rule
+      operationId: createLoanAlertRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLoanAlertRuleRequest'
+      responses:
+        '201':
+          description: Loan alert rule created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LoanAlertRule'
+                required:
+                  - data
+        '404':
+          description: Loan not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loans/{loan_id}/alert_rules/evaluate:
+    parameters:
+      - in: path
+        name: loan_id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Evaluate Loan Center alert rules for a loan
+      operationId: evaluateLoanAlertRules
+      responses:
+        '200':
+          description: Alert evaluation summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      evaluated:
+                        type: integer
+                      triggered:
+                        type: integer
+                    required:
+                      - evaluated
+                      - triggered
+                required:
+                  - data
+
+  /api/loan_alert_rules/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    put:
+      summary: Update a Loan Center alert rule
+      operationId: updateLoanAlertRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLoanAlertRuleRequest'
+      responses:
+        '200':
+          description: Loan alert rule updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LoanAlertRule'
+                required:
+                  - data
+        '404':
+          description: Loan alert rule not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Delete a Loan Center alert rule
+      operationId: deleteLoanAlertRule
+      responses:
+        '204':
+          description: Loan alert rule deleted
+        '404':
+          description: Loan alert rule not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/loan_alert_rules/{id}/evaluate:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Evaluate one Loan Center alert rule
+      operationId: evaluateLoanAlertRule
+      responses:
+        '200':
+          description: Alert evaluation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      rule:
+                        $ref: '#/components/schemas/LoanAlertRule'
+                      triggered:
+                        type: boolean
+                    required:
+                      - rule
+                      - triggered
+                required:
+                  - data
+
   /api/ai/settings:
     get:
       summary: Get AI settings for the authenticated user
@@ -639,6 +1413,761 @@ components:
     UpdateMortgageRequest:
       allOf:
         - $ref: '#/components/schemas/CreateMortgageRequest'
+
+    RefinanceScenario:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        mortgage_id:
+          type: string
+        lender_quote_id:
+          type: string
+        name:
+          type: string
+        scenario_type:
+          type: string
+        product_type:
+          type: string
+        new_term_months:
+          type: integer
+        new_interest_rate:
+          type: string
+        new_apr:
+          type: string
+        new_principal_amount:
+          type: string
+        cash_out_amount:
+          type: string
+        cash_in_amount:
+          type: string
+        roll_costs_into_loan:
+          type: boolean
+        points:
+          type: string
+        lender_credit_amount:
+          type: string
+        expected_years_before_sale_or_refi:
+          type: integer
+        closing_date_assumption:
+          type: string
+          format: date
+        rate_source_type:
+          type: string
+        status:
+          type: string
+        fee_items:
+          oneOf:
+            - type: array
+              items:
+                $ref: '#/components/schemas/RefinanceFeeItem'
+            - type: 'null'
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - mortgage_id
+        - name
+        - scenario_type
+        - new_term_months
+        - new_interest_rate
+        - new_principal_amount
+        - roll_costs_into_loan
+        - status
+
+    CreateRefinanceScenarioRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        scenario_type:
+          type: string
+        product_type:
+          type: string
+        new_term_months:
+          type: integer
+        new_interest_rate:
+          type: string
+        new_apr:
+          type: string
+        new_principal_amount:
+          type: string
+        cash_out_amount:
+          type: string
+        cash_in_amount:
+          type: string
+        roll_costs_into_loan:
+          type: boolean
+        points:
+          type: string
+        lender_credit_amount:
+          type: string
+        expected_years_before_sale_or_refi:
+          type: integer
+        closing_date_assumption:
+          type: string
+          format: date
+        rate_source_type:
+          type: string
+        lender_quote_id:
+          type: string
+        status:
+          type: string
+      required:
+        - name
+        - new_term_months
+        - new_interest_rate
+        - new_principal_amount
+
+    UpdateRefinanceScenarioRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateRefinanceScenarioRequest'
+
+    ConvertLenderQuoteRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        new_principal_amount:
+          type: string
+        status:
+          type: string
+
+    RefinanceFeeItem:
+      type: object
+      properties:
+        id:
+          type: string
+        refinance_scenario_id:
+          type: string
+        category:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        low_amount:
+          type: string
+        expected_amount:
+          type: string
+        high_amount:
+          type: string
+        fixed_amount:
+          type: string
+        percentage_of_loan_amount:
+          type: string
+        kind:
+          type: string
+        paid_at_closing:
+          type: boolean
+        financed:
+          type: boolean
+        is_true_cost:
+          type: boolean
+        is_prepaid_or_escrow:
+          type: boolean
+        required:
+          type: boolean
+        sort_order:
+          type: integer
+        notes:
+          type: string
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - refinance_scenario_id
+        - category
+        - name
+        - kind
+        - paid_at_closing
+        - financed
+        - is_true_cost
+        - is_prepaid_or_escrow
+        - required
+        - sort_order
+
+    CreateRefinanceFeeItemRequest:
+      type: object
+      properties:
+        category:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        low_amount:
+          type: string
+        expected_amount:
+          type: string
+        high_amount:
+          type: string
+        fixed_amount:
+          type: string
+        percentage_of_loan_amount:
+          type: string
+        kind:
+          type: string
+        paid_at_closing:
+          type: boolean
+        financed:
+          type: boolean
+        is_true_cost:
+          type: boolean
+        is_prepaid_or_escrow:
+          type: boolean
+        required:
+          type: boolean
+        sort_order:
+          type: integer
+        notes:
+          type: string
+      required:
+        - category
+        - name
+
+    RefinanceAnalysisResult:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        mortgage_id:
+          type: string
+        refinance_scenario_id:
+          type: string
+        analysis_version:
+          type: string
+        current_monthly_payment:
+          type: string
+        new_monthly_payment_low:
+          type: string
+        new_monthly_payment_expected:
+          type: string
+        new_monthly_payment_high:
+          type: string
+        monthly_savings_low:
+          type: string
+        monthly_savings_expected:
+          type: string
+        monthly_savings_high:
+          type: string
+        true_refinance_cost_low:
+          type: string
+        true_refinance_cost_expected:
+          type: string
+        true_refinance_cost_high:
+          type: string
+        cash_to_close_low:
+          type: string
+        cash_to_close_expected:
+          type: string
+        cash_to_close_high:
+          type: string
+        break_even_months_low:
+          type: integer
+        break_even_months_expected:
+          type: integer
+        break_even_months_high:
+          type: integer
+        current_full_term_total_payment:
+          type: string
+        current_full_term_interest_cost:
+          type: string
+        new_full_term_total_payment_expected:
+          type: string
+        new_full_term_interest_cost_expected:
+          type: string
+        full_term_finance_cost_delta_expected:
+          type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        assumptions:
+          type: object
+          additionalProperties: true
+        computed_at:
+          type: string
+          format: date-time
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - mortgage_id
+        - refinance_scenario_id
+        - analysis_version
+        - warnings
+        - assumptions
+        - computed_at
+
+    LoanDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        mortgage_id:
+          type: string
+        document_type:
+          type: string
+        original_filename:
+          type: string
+        content_type:
+          type: string
+        byte_size:
+          type: integer
+        storage_key:
+          type: string
+        checksum_sha256:
+          type: string
+        status:
+          type: string
+        uploaded_at:
+          type: string
+          format: date-time
+        extractions:
+          oneOf:
+            - type: array
+              items:
+                $ref: '#/components/schemas/LoanDocumentExtraction'
+            - type: 'null'
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - mortgage_id
+        - document_type
+        - original_filename
+        - content_type
+        - byte_size
+        - storage_key
+        - status
+        - uploaded_at
+
+    CreateLoanDocumentRequest:
+      type: object
+      properties:
+        document_type:
+          type: string
+        original_filename:
+          type: string
+        content_type:
+          type: string
+        byte_size:
+          type: integer
+        storage_key:
+          type: string
+        checksum_sha256:
+          type: string
+        status:
+          type: string
+        uploaded_at:
+          type: string
+          format: date-time
+      required:
+        - document_type
+        - original_filename
+        - content_type
+        - byte_size
+        - storage_key
+
+    LoanDocumentExtraction:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        mortgage_id:
+          type: string
+        loan_document_id:
+          type: string
+        extraction_method:
+          type: string
+        model_name:
+          type: string
+        status:
+          type: string
+        ocr_text_storage_key:
+          type: string
+        raw_text_excerpt:
+          type: string
+        extracted_payload:
+          type: object
+          additionalProperties: true
+        field_confidence:
+          type: object
+          additionalProperties: true
+        source_citations:
+          type: object
+          additionalProperties: true
+        reviewed_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: string
+          format: date-time
+        rejected_at:
+          type: string
+          format: date-time
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - mortgage_id
+        - loan_document_id
+        - extraction_method
+        - status
+        - extracted_payload
+        - field_confidence
+        - source_citations
+
+    CreateLoanDocumentExtractionRequest:
+      type: object
+      properties:
+        extraction_method:
+          type: string
+          description: Required for manual/prebuilt extraction candidates. Omit when submitting raw_text for Ollama extraction.
+        model_name:
+          type: string
+        status:
+          type: string
+        ocr_text_storage_key:
+          type: string
+        raw_text_excerpt:
+          type: string
+        raw_text:
+          type: string
+          description: OCR or user-entered document text. When present, the backend runs configured Ollama extraction and stores a pending review candidate.
+        extracted_payload:
+          type: object
+          additionalProperties: true
+        field_confidence:
+          type: object
+          additionalProperties: true
+        source_citations:
+          type: object
+          additionalProperties: true
+
+    LoanDocumentApplyResult:
+      type: object
+      properties:
+        id:
+          type: string
+        mortgage_id:
+          type: string
+        source:
+          type: string
+        last_reviewed_at:
+          type: string
+          format: date-time
+        current_balance:
+          type: string
+        current_interest_rate:
+          type: string
+        remaining_term_months:
+          type: integer
+        monthly_payment_total:
+          type: string
+      required:
+        - id
+        - mortgage_id
+
+    LenderQuote:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        mortgage_id:
+          type: string
+        lender_name:
+          type: string
+        quote_source:
+          type: string
+        quote_reference:
+          type: string
+        loan_type:
+          type: string
+        product_type:
+          type: string
+        term_months:
+          type: integer
+        interest_rate:
+          type: string
+        apr:
+          type: string
+        points:
+          type: string
+        lender_credit_amount:
+          type: string
+        estimated_closing_costs_low:
+          type: string
+        estimated_closing_costs_expected:
+          type: string
+        estimated_closing_costs_high:
+          type: string
+        estimated_cash_to_close_low:
+          type: string
+        estimated_cash_to_close_expected:
+          type: string
+        estimated_cash_to_close_high:
+          type: string
+        estimated_monthly_payment_low:
+          type: string
+        estimated_monthly_payment_expected:
+          type: string
+        estimated_monthly_payment_high:
+          type: string
+        lock_available:
+          type: boolean
+        lock_expires_at:
+          type: string
+          format: date-time
+        quote_expires_at:
+          type: string
+          format: date-time
+        raw_payload:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - mortgage_id
+        - lender_name
+        - quote_source
+        - loan_type
+        - term_months
+        - interest_rate
+        - lock_available
+        - raw_payload
+        - status
+
+    CreateLenderQuoteRequest:
+      type: object
+      properties:
+        lender_name:
+          type: string
+        quote_source:
+          type: string
+        quote_reference:
+          type: string
+        loan_type:
+          type: string
+        product_type:
+          type: string
+        term_months:
+          type: integer
+        interest_rate:
+          type: string
+        apr:
+          type: string
+        points:
+          type: string
+        lender_credit_amount:
+          type: string
+        estimated_closing_costs_low:
+          type: string
+        estimated_closing_costs_expected:
+          type: string
+        estimated_closing_costs_high:
+          type: string
+        estimated_cash_to_close_low:
+          type: string
+        estimated_cash_to_close_expected:
+          type: string
+        estimated_cash_to_close_high:
+          type: string
+        estimated_monthly_payment_low:
+          type: string
+        estimated_monthly_payment_expected:
+          type: string
+        estimated_monthly_payment_high:
+          type: string
+        lock_available:
+          type: boolean
+        lock_expires_at:
+          type: string
+          format: date-time
+        quote_expires_at:
+          type: string
+          format: date-time
+        raw_payload:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+      required:
+        - lender_name
+        - term_months
+        - interest_rate
+
+    UpdateLenderQuoteRequest:
+      type: object
+      properties:
+        lender_name:
+          type: string
+        quote_source:
+          type: string
+        quote_reference:
+          type: string
+        loan_type:
+          type: string
+        product_type:
+          type: string
+        term_months:
+          type: integer
+        interest_rate:
+          type: string
+        apr:
+          type: string
+        points:
+          type: string
+        lender_credit_amount:
+          type: string
+        estimated_closing_costs_low:
+          type: string
+        estimated_closing_costs_expected:
+          type: string
+        estimated_closing_costs_high:
+          type: string
+        estimated_cash_to_close_low:
+          type: string
+        estimated_cash_to_close_expected:
+          type: string
+        estimated_cash_to_close_high:
+          type: string
+        estimated_monthly_payment_low:
+          type: string
+        estimated_monthly_payment_expected:
+          type: string
+        estimated_monthly_payment_high:
+          type: string
+        lock_available:
+          type: boolean
+        lock_expires_at:
+          type: string
+          format: date-time
+        quote_expires_at:
+          type: string
+          format: date-time
+        raw_payload:
+          type: object
+          additionalProperties: true
+        status:
+          type: string
+
+    LoanAlertRule:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        loan_id:
+          type: string
+        mortgage_id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        active:
+          type: boolean
+        threshold_config:
+          type: object
+          additionalProperties: true
+        delivery_preferences:
+          type: object
+          additionalProperties: true
+        last_evaluated_at:
+          type: string
+          format: date-time
+        last_triggered_at:
+          type: string
+          format: date-time
+        inserted_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - mortgage_id
+        - name
+        - kind
+        - active
+        - threshold_config
+        - delivery_preferences
+
+    CreateLoanAlertRuleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        active:
+          type: boolean
+        threshold_config:
+          type: object
+          additionalProperties: true
+        delivery_preferences:
+          type: object
+          additionalProperties: true
+        threshold_value:
+          type: string
+          description: Convenience field mapped to threshold_config.threshold.
+        lead_days:
+          type: string
+          description: Convenience field mapped to threshold_config.lead_days.
+      required:
+        - name
+        - kind
+
+    UpdateLoanAlertRuleRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateLoanAlertRuleRequest'
 
     AiSettings:
       type: object
