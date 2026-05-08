@@ -53,7 +53,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
     {:ok,
      allow_upload(socket, :loan_document_file,
-       accept: ~w(.pdf .png .jpg .jpeg .txt text/plain application/pdf image/png image/jpeg),
+       accept:
+         ~w(.pdf .png .jpg .jpeg .txt .md .csv text/plain text/markdown text/csv application/pdf image/png image/jpeg),
        max_entries: 1,
        max_file_size: 20_000_000
      )}
@@ -1377,35 +1378,40 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     </p>
                   </div>
 
-                  <div class="flex gap-2">
+                  <div class="flex flex-wrap justify-end gap-2">
                     <button type="button"
                             class="btn btn-outline"
                             phx-click="confirm-extraction"
-                            phx-value-id={candidate.extraction.id}>
+                            phx-value-id={candidate.extraction.id}
+                            disabled={!extraction_pending_review?(candidate.extraction)}>
                       Confirm extraction
                     </button>
                     <button type="button"
                             class="btn btn-outline"
                             phx-click="reject-extraction"
-                            phx-value-id={candidate.extraction.id}>
+                            phx-value-id={candidate.extraction.id}
+                            disabled={extraction_rejected?(candidate.extraction)}>
                       Reject extraction
                     </button>
                     <button type="button"
                             class="btn btn-outline"
                             phx-click="apply-extraction"
-                            phx-value-id={candidate.extraction.id}>
+                            phx-value-id={candidate.extraction.id}
+                            disabled={!extraction_confirmed?(candidate.extraction)}>
                       Apply to mortgage
                     </button>
                     <button type="button"
                             class="btn btn-outline"
                             phx-click="create-quote-from-extraction"
-                            phx-value-id={candidate.extraction.id}>
+                            phx-value-id={candidate.extraction.id}
+                            disabled={!extraction_confirmed?(candidate.extraction)}>
                       Create lender quote
                     </button>
                     <button type="button"
                             class="btn btn-outline"
                             phx-click="create-scenario-from-extraction"
-                            phx-value-id={candidate.extraction.id}>
+                            phx-value-id={candidate.extraction.id}
+                            disabled={!extraction_confirmed?(candidate.extraction)}>
                       Create scenario
                     </button>
                   </div>
@@ -1433,6 +1439,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <span class="font-semibold uppercase tracking-wide">Stored text artifact</span>
                     <span class="break-all"><%= stored_text_artifact(candidate.extraction) %></span>
                   </div>
+
+                  <details :if={stored_text_excerpt(candidate.extraction)} class="mt-2">
+                    <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      Stored extracted text
+                    </summary>
+                    <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-3 text-xs leading-5 text-zinc-700"><%= stored_text_excerpt(candidate.extraction) %></pre>
+                  </details>
 
                   <details :if={raw_text_excerpt(candidate.extraction)} class="mt-2">
                     <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -3502,16 +3515,58 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp format_citation(_citation), do: []
 
   defp extraction_review_context?(extraction) do
-    stored_text_artifact(extraction) || raw_text_excerpt(extraction)
+    stored_text_artifact(extraction) || stored_text_excerpt(extraction) ||
+      raw_text_excerpt(extraction)
   end
 
   defp stored_text_artifact(%LoanDocumentExtraction{ocr_text_storage_key: storage_key}) do
     blank_to_nil(storage_key)
   end
 
+  defp stored_text_excerpt(%LoanDocumentExtraction{ocr_text_storage_key: storage_key}) do
+    storage_key
+    |> blank_to_nil()
+    |> case do
+      nil ->
+        nil
+
+      storage_key ->
+        storage_key
+        |> stored_document_path()
+        |> read_text_excerpt()
+    end
+  end
+
   defp raw_text_excerpt(%LoanDocumentExtraction{raw_text_excerpt: excerpt}) do
     blank_to_nil(excerpt)
   end
+
+  defp stored_document_path(storage_key) do
+    Path.join([System.tmp_dir!(), "money_tree", "uploads", storage_key])
+  end
+
+  defp read_text_excerpt(path) do
+    with {:ok, text} <- File.read(path),
+         text <- String.trim(text),
+         false <- text == "" do
+      if String.length(text) > 10_000 do
+        String.slice(text, 0, 10_000) <> "\n..."
+      else
+        text
+      end
+    else
+      _ -> nil
+    end
+  end
+
+  defp extraction_pending_review?(%LoanDocumentExtraction{status: "pending_review"}), do: true
+  defp extraction_pending_review?(_extraction), do: false
+
+  defp extraction_confirmed?(%LoanDocumentExtraction{status: "confirmed"}), do: true
+  defp extraction_confirmed?(_extraction), do: false
+
+  defp extraction_rejected?(%LoanDocumentExtraction{status: "rejected"}), do: true
+  defp extraction_rejected?(_extraction), do: false
 
   defp format_payload_value(value) when is_binary(value), do: value
   defp format_payload_value(value) when is_integer(value) or is_float(value), do: to_string(value)

@@ -386,6 +386,10 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     view
     |> element("button", "Add document")
     |> render_click()
+    |> then(fn html ->
+      assert html =~ ".csv"
+      assert html =~ ".md"
+    end)
 
     upload =
       file_input(view, "#loan-document-form", :loan_document_file, [
@@ -480,6 +484,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Current Balance"
     assert html =~ "390000.00"
     assert html =~ "Stored text artifact"
+    assert html =~ "Stored extracted text"
     assert html =~ "Extracted text excerpt"
     assert html =~ "Mortgage statement"
 
@@ -546,31 +551,13 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "0.0575"
     assert html =~ "Confidence 0.91"
     assert html =~ "Source p. 1: Unpaid principal balance"
+    assert html =~ ~s(phx-click="apply-extraction" phx-value-id="#{extraction.id}" disabled)
 
-    html =
-      view
-      |> element(
-        "button[phx-click='create-quote-from-extraction'][phx-value-id='#{extraction.id}']"
-      )
-      |> render_click()
+    assert html =~
+             ~s(phx-click="create-quote-from-extraction" phx-value-id="#{extraction.id}" disabled)
 
-    assert html =~ "Confirm the extraction before creating a quote."
-
-    html =
-      view
-      |> element("button[phx-click='apply-extraction'][phx-value-id='#{extraction.id}']")
-      |> render_click()
-
-    assert html =~ "Confirm the extraction before applying it."
-
-    html =
-      view
-      |> element(
-        "button[phx-click='create-scenario-from-extraction'][phx-value-id='#{extraction.id}']"
-      )
-      |> render_click()
-
-    assert html =~ "Confirm the extraction before creating a scenario."
+    assert html =~
+             ~s(phx-click="create-scenario-from-extraction" phx-value-id="#{extraction.id}" disabled)
 
     html =
       view
