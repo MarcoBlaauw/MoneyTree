@@ -1925,9 +1925,20 @@ defmodule MoneyTreeWeb.LoansLive.Index do
           </table>
         </div>
 
-        <p class="text-xs text-zinc-500">
-          Source: <%= market_snapshot_attribution(@market_snapshot) %>. Your actual offer may vary based on credit score, LTV, points, lender fees, loan size, location, and lock period.
-        </p>
+        <div class="flex flex-col gap-2 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            Source: <%= market_snapshot_attribution(@market_snapshot) %>. Your actual offer may vary based on credit score, LTV, points, lender fees, loan size, location, and lock period.
+          </p>
+          <a
+            :if={market_snapshot_source_url(@market_snapshot)}
+            href={market_snapshot_source_url(@market_snapshot)}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium text-zinc-700 underline underline-offset-2"
+          >
+            View source
+          </a>
+        </div>
 
         <p class="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
           This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis.
@@ -2005,7 +2016,18 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                   </td>
                   <td class="px-3 py-3"><%= format_decimal(observation.points) %></td>
                   <td class="px-3 py-3"><%= format_date(observation.effective_date) %></td>
-                  <td class="px-3 py-3"><%= rate_source_label(observation) %></td>
+                  <td class="px-3 py-3">
+                    <span><%= rate_source_label(observation) %></span>
+                    <a
+                      :if={observation.source_url}
+                      href={observation.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="mt-1 block text-xs font-medium text-zinc-600 underline underline-offset-2"
+                    >
+                      View source
+                    </a>
+                  </td>
                   <td class="px-3 py-3 text-right">
                     <button
                       type="button"
@@ -3940,6 +3962,20 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       labels -> Enum.join(labels, ", ")
     end
   end
+
+  defp market_snapshot_source_url(snapshot) do
+    (snapshot.mortgage_rates ++ snapshot.baseline_rates)
+    |> Enum.map(fn observation ->
+      observation.source_url || rate_source_attribution_url(observation.rate_source)
+    end)
+    |> Enum.find(&present_string?/1)
+  end
+
+  defp rate_source_attribution_url(%RateSource{attribution_url: url}), do: url
+  defp rate_source_attribution_url(_source), do: nil
+
+  defp present_string?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present_string?(_value), do: false
 
   defp rate_source_import_status(%RateSource{last_success_at: %DateTime{} = imported_at}) do
     "Last imported #{format_datetime(imported_at)}"

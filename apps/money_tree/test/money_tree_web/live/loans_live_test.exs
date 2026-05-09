@@ -1110,6 +1110,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
         name: "FRED Test Live",
         source_type: "public_benchmark",
         attribution_label: "Federal Reserve Economic Data (FRED)",
+        attribution_url: "https://fred.stlouisfed.org/",
         config: %{
           "observations" => [
             %{
@@ -1118,7 +1119,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
               "term_months" => 360,
               "rate" => "0.0600",
               "series_key" => "MORTGAGE30US",
-              "effective_date" => "#{Date.utc_today()}"
+              "effective_date" => "#{Date.utc_today()}",
+              "source_url" => "https://fred.stlouisfed.org/series/MORTGAGE30US"
             },
             %{
               "loan_type" => "treasury",
@@ -1142,6 +1144,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "30-year mortgage"
     assert html =~ "10-year Treasury"
     assert html =~ "Federal Reserve Economic Data"
+    assert html =~ "https://fred.stlouisfed.org/series/MORTGAGE30US"
+    assert html =~ "View source"
     assert html =~ "Your actual offer may vary"
   end
 

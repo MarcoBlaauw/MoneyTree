@@ -83,6 +83,7 @@ The Refinance workspace can display:
 - Treasury/Fed baseline indicators
 - 7-day, 30-day, 90-day, and year-over-year trend deltas
 - source attribution and last updated date
+- direct source links when provider/source URLs are available
 - structured market explanation
 - compact trend details for 7-day, 30-day, 90-day, and year-over-year movement
 
