@@ -774,7 +774,7 @@ defmodule MoneyTree.Loans do
     latest = latest_market_rates_for_loan_type("mortgage", opts)
     baseline = latest_baseline_rates(opts)
     direction = benchmark_rate_direction()
-    quality = market_data_quality(latest ++ baseline)
+    quality = market_data_quality(latest ++ baseline, direction: direction)
 
     %{
       mortgage_rates: latest,
@@ -821,10 +821,10 @@ defmodule MoneyTree.Loans do
   @doc """
   Derives lightweight quality warnings for market-rate data.
   """
-  @spec market_data_quality([RateObservation.t()] | keyword()) :: map()
-  def market_data_quality(observations_or_opts \\ [])
+  @spec market_data_quality([RateObservation.t()] | keyword(), keyword()) :: map()
+  def market_data_quality(observations_or_opts \\ [], opts \\ [])
 
-  def market_data_quality(observations_or_opts) when is_list(observations_or_opts) do
+  def market_data_quality(observations_or_opts, opts) when is_list(observations_or_opts) do
     observations =
       if Keyword.keyword?(observations_or_opts) do
         observations_or_opts
@@ -854,12 +854,24 @@ defmodule MoneyTree.Loans do
       |> Enum.filter(&match?(%RateSource{last_error_at: %DateTime{}}, &1))
       |> Enum.uniq_by(& &1.id)
 
+    direction = Keyword.get(opts, :direction, %{})
+    incomplete_trend_windows = incomplete_trend_windows(direction)
+    missing_series = missing_trend_series(direction)
+
     warnings =
       []
       |> maybe_add_warning(stale?, "Market data may be stale.")
       |> maybe_add_warning(
         observations == [],
         "No imported market benchmark rates are available."
+      )
+      |> maybe_add_warning(
+        missing_series != [] and observations != [],
+        "Missing expected market benchmark observations."
+      )
+      |> maybe_add_warning(
+        incomplete_trend_windows != [] and observations != [],
+        "Not enough history for one or more trend windows."
       )
       |> maybe_add_warning(
         failed_sources != [],
@@ -871,6 +883,8 @@ defmodule MoneyTree.Loans do
       latest_effective_date: latest_effective_date,
       stale?: stale?,
       warnings: Enum.reverse(warnings),
+      incomplete_trend_windows: incomplete_trend_windows,
+      missing_series: missing_series,
       failed_sources: failed_sources
     }
   end
@@ -3013,6 +3027,29 @@ defmodule MoneyTree.Loans do
         %{status: :incomplete_window, latest_effective_date: latest.effective_date}
     end
   end
+
+  defp incomplete_trend_windows(direction) when is_map(direction) do
+    direction
+    |> Enum.flat_map(fn {series_key, windows} ->
+      windows
+      |> Enum.filter(fn {_window, result} -> match?(%{status: :incomplete_window}, result) end)
+      |> Enum.map(fn {window, _result} -> %{series_key: series_key, window_days: window} end)
+    end)
+  end
+
+  defp incomplete_trend_windows(_direction), do: []
+
+  defp missing_trend_series(direction) when is_map(direction) do
+    direction
+    |> Enum.filter(fn {_series_key, windows} ->
+      windows
+      |> Map.values()
+      |> Enum.all?(&match?(%{status: :missing_latest}, &1))
+    end)
+    |> Enum.map(fn {series_key, _windows} -> series_key end)
+  end
+
+  defp missing_trend_series(_direction), do: []
 
   defp rate_source_success_changeset(%RateSource{} = source, now) do
     RateSource.changeset(source, %{

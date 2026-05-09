@@ -66,6 +66,7 @@ Market snapshots include lightweight quality signals:
 - provider import failure status
 - incomplete trend windows
 - missing market observations
+- missing expected benchmark series
 
 Stale or incomplete data remains visible but must be labeled. User-facing examples:
 

@@ -295,5 +295,37 @@ defmodule MoneyTree.Loans.RateObservationsTest do
       assert Enum.any?(snapshot.mortgage_rates, &(&1.series_key == "mortgage30us"))
       assert snapshot.quality.status in [:ok, :warning]
     end
+
+    test "quality reports incomplete trend windows and missing expected benchmark series" do
+      assert {:ok, source} =
+               Loans.create_rate_source(%{
+                 provider_key: "incomplete-trend-benchmark",
+                 name: "Incomplete Trend Benchmark",
+                 source_type: "public_benchmark"
+               })
+
+      today = Date.utc_today()
+
+      assert {:ok, _observation} =
+               Loans.create_rate_observation(source, %{
+                 loan_type: "mortgage",
+                 product_type: "fixed",
+                 term_months: 360,
+                 rate: "0.0610",
+                 series_key: "MORTGAGE30US",
+                 effective_date: today,
+                 observed_at: DateTime.new!(today, ~T[00:00:00], "Etc/UTC")
+               })
+
+      snapshot = Loans.mortgage_market_snapshot()
+
+      assert "Not enough history for one or more trend windows." in snapshot.quality.warnings
+      assert "Missing expected market benchmark observations." in snapshot.quality.warnings
+
+      assert %{series_key: "mortgage30us", window_days: 7} in snapshot.quality.incomplete_trend_windows
+
+      assert "mortgage15us" in snapshot.quality.missing_series
+      assert "gs10" in snapshot.quality.missing_series
+    end
   end
 end
