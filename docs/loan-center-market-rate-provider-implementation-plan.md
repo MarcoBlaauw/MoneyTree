@@ -30,6 +30,10 @@ Providers implement a backend adapter under the Loans domain. Adapters fetch and
 
 The first active adapter is `MoneyTree.Loans.RateProviders.Fred`.
 
+Provider registry status is available from the Loans context so UI/admin
+surfaces can show which providers are active, configured, and future-only
+without hard-coding module names.
+
 Initial FRED series:
 
 - `MORTGAGE30US` - 30-year fixed mortgage national average.
@@ -41,6 +45,11 @@ Initial FRED series:
 - `GS2` - 2-year Treasury constant maturity.
 
 Unverified credit-card and auto-loan FRED series are intentionally excluded from v1 mappings.
+
+Manual supplemental imports use the same normalized observation pipeline as API
+providers. Reviewed rows can be imported with source attribution, effective
+date, loan type, term, rate/APR, points, notes, and source URL without storing
+secrets or treating the data as an offer.
 
 ## Data Semantics
 

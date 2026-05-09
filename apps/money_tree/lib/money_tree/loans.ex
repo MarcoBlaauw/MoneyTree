@@ -16,7 +16,10 @@ defmodule MoneyTree.Loans do
   alias MoneyTree.Loans.LoanDocumentExtraction
   alias MoneyTree.Loans.RateProvider
   alias MoneyTree.Loans.RateObservation
+  alias MoneyTree.Loans.RateProviders.ApiNinjas
+  alias MoneyTree.Loans.RateProviders.EconomicIndicators
   alias MoneyTree.Loans.RateProviders.Fred
+  alias MoneyTree.Loans.RateProviders.ManualImport
   alias MoneyTree.Loans.RateSource
   alias MoneyTree.Loans.Workers.AlertEvaluationWorker
   alias MoneyTree.Loans.Workers.DocumentExtractionWorker
@@ -53,6 +56,7 @@ defmodule MoneyTree.Loans do
 
   @default_refinance_preload [:mortgage, :fee_items]
   @analysis_version "2026-05-06-v1"
+  @rate_provider_modules [Fred, ManualImport, ApiNinjas, EconomicIndicators]
   @readable_document_content_types ~w(text/plain text/markdown text/csv application/pdf image/png image/jpeg)
   @readable_document_extensions ~w(.txt .md .csv .pdf .png .jpg .jpeg)
   @mortgage_extraction_fields ~w(
@@ -627,6 +631,54 @@ defmodule MoneyTree.Loans do
 
       nil ->
         create_rate_source(attrs, preload: preload)
+    end
+  end
+
+  @doc """
+  Lists known market-rate provider adapters and whether each is active/configured.
+  """
+  @spec rate_provider_statuses() :: [map()]
+  def rate_provider_statuses do
+    Enum.map(@rate_provider_modules, fn provider ->
+      settings = provider_settings(provider)
+      source_attrs = RateProvider.source_attrs(provider, settings)
+
+      %{
+        provider_key: provider.provider_key(),
+        name: provider.name(),
+        module: provider,
+        active?: provider in [Fred, ManualImport],
+        configured?: provider.configured?(settings),
+        requires_api_key?: Map.get(source_attrs, :requires_api_key, false),
+        source_type: Map.get(source_attrs, :source_type),
+        attribution: provider.attribution()
+      }
+    end)
+  end
+
+  @doc """
+  Imports reviewed supplemental market-rate rows through the shared rate pipeline.
+
+  This supports future JSON/CSV/admin ingestion for non-API sources such as
+  survey summaries, lender range snapshots, or local credit union promotions.
+  """
+  @spec import_manual_market_rates(map(), [map()], keyword()) ::
+          {:ok, %{source: RateSource.t(), imported: [RateObservation.t()]}}
+          | {:error, Ecto.Changeset.t() | :disabled | :no_configured_observations}
+  def import_manual_market_rates(source_attrs, observations, opts \\ [])
+      when is_map(source_attrs) and is_list(observations) do
+    preload = Keyword.get(opts, :preload, [])
+
+    attrs =
+      ManualImport
+      |> RateProvider.source_attrs(%{})
+      |> stringify_keys()
+      |> Map.merge(normalize_attr_map(source_attrs))
+      |> Map.put("requires_api_key", false)
+      |> Map.put("enabled", true)
+
+    with {:ok, source} <- get_or_create_rate_source(attrs, preload: preload) do
+      import_rate_observations(source, observations)
     end
   end
 
@@ -2886,6 +2938,30 @@ defmodule MoneyTree.Loans do
     end
   end
 
+  defp get_or_create_rate_source(attrs, opts) do
+    preload = Keyword.get(opts, :preload, [])
+    attrs = normalize_attr_map(attrs)
+    provider_key = Map.fetch!(attrs, "provider_key")
+
+    RateSource
+    |> where([source], source.provider_key == ^provider_key)
+    |> maybe_preload_query(preload)
+    |> Repo.one()
+    |> case do
+      %RateSource{} = source ->
+        source
+        |> RateSource.changeset(attrs)
+        |> Repo.update()
+        |> case do
+          {:ok, source} -> {:ok, Repo.preload(source, preload)}
+          {:error, changeset} -> {:error, changeset}
+        end
+
+      nil ->
+        create_rate_source(attrs, preload: preload)
+    end
+  end
+
   defp configured_rate_observations(%RateSource{config: config}) when is_map(config) do
     case Map.get(config, "observations") || Map.get(config, :observations) do
       observations when is_list(observations) and observations != [] -> {:ok, observations}
@@ -2980,8 +3056,12 @@ defmodule MoneyTree.Loans do
   defp date_from_observed_at(_observed_at), do: Date.utc_today()
 
   defp fred_settings do
+    provider_settings(Fred)
+  end
+
+  defp provider_settings(provider) do
     :money_tree
-    |> Application.get_env(Fred, [])
+    |> Application.get_env(provider, [])
     |> Map.new()
   end
 
@@ -3192,6 +3272,10 @@ defmodule MoneyTree.Loans do
     |> Enum.reduce(%{}, fn {key, value}, acc ->
       Map.put(acc, normalize_key(key), value)
     end)
+  end
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {normalize_key(key), value} end)
   end
 
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
