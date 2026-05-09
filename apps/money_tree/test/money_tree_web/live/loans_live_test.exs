@@ -66,6 +66,49 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert Decimal.equal?(mortgage.current_interest_rate, Decimal.new("0.0615"))
   end
 
+  test "creates a non-mortgage auto loan baseline from Loan Center", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    {:ok, view, html} = live(authed_conn, ~p"/app/loans")
+
+    assert html =~ "Other loans"
+    assert html =~ "Add non-mortgage loan"
+
+    view
+    |> element("button", "Add non-mortgage loan")
+    |> render_click()
+
+    html =
+      view
+      |> form("#generic-loan-form",
+        loan: %{
+          "loan_type" => "auto",
+          "name" => "Car loan",
+          "lender_name" => "Example Credit Union",
+          "current_balance" => "18500.00",
+          "current_interest_rate_percent" => "7.99",
+          "remaining_term_months" => "48",
+          "monthly_payment_total" => "452.13",
+          "collateral_description" => "2023 hatchback"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Loan added to Loan Center."
+    assert html =~ "Car loan"
+    assert html =~ "Auto"
+    assert html =~ "$18500.00"
+    assert html =~ "Refinance preview"
+    assert html =~ "Expected payment"
+    assert html =~ "Full-term delta"
+    refute html =~ "Escrow"
+    refute html =~ "Property name"
+
+    assert [loan] = Loans.list_loans(user)
+    assert loan.loan_type == "auto"
+    assert Decimal.equal?(loan.current_interest_rate, Decimal.new("0.0799"))
+  end
+
   test "edits an existing loan baseline from Loan Center", %{conn: conn} do
     {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
 

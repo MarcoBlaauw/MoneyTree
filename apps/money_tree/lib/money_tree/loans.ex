@@ -11,6 +11,7 @@ defmodule MoneyTree.Loans do
   alias MoneyTree.AI
   alias MoneyTree.Loans.AlertRule
   alias MoneyTree.Loans.LenderQuote
+  alias MoneyTree.Loans.Loan
   alias MoneyTree.Loans.LoanDocument
   alias MoneyTree.Loans.LoanDocumentExtraction
   alias MoneyTree.Loans.RateObservation
@@ -108,6 +109,121 @@ defmodule MoneyTree.Loans do
     closing_date_assumption
   )
   @default_alert_preload [:mortgage]
+
+  @doc """
+  Lists generic non-mortgage loans owned by the current user.
+  """
+  @spec list_loans(User.t() | binary(), keyword()) :: [Loan.t()]
+  def list_loans(user, opts \\ []) do
+    limit = Keyword.get(opts, :limit)
+
+    Loan
+    |> where([loan], loan.user_id == ^normalize_user_id(user))
+    |> maybe_filter_loan_type(opts)
+    |> order_by([loan], asc: loan.inserted_at)
+    |> maybe_limit(limit)
+    |> Repo.all()
+  end
+
+  @doc """
+  Fetches a generic non-mortgage loan scoped to the current user.
+  """
+  @spec fetch_loan(User.t() | binary(), Loan.t() | binary()) ::
+          {:ok, Loan.t()} | {:error, :not_found}
+  def fetch_loan(user, %Loan{id: id}), do: fetch_loan(user, id)
+
+  def fetch_loan(user, loan_id) when is_binary(loan_id) do
+    case Ecto.UUID.cast(loan_id) do
+      {:ok, id} ->
+        Loan
+        |> where([loan], loan.id == ^id and loan.user_id == ^normalize_user_id(user))
+        |> Repo.one()
+        |> case do
+          nil -> {:error, :not_found}
+          %Loan{} = loan -> {:ok, loan}
+        end
+
+      :error ->
+        {:error, :not_found}
+    end
+  end
+
+  def fetch_loan(_user, _loan_id), do: {:error, :not_found}
+
+  @doc """
+  Creates a generic non-mortgage loan baseline.
+  """
+  @spec create_loan(User.t() | binary(), map()) :: {:ok, Loan.t()} | {:error, Ecto.Changeset.t()}
+  def create_loan(user, attrs) when is_map(attrs) do
+    %Loan{}
+    |> Loan.changeset(
+      attrs
+      |> normalize_attr_map()
+      |> Map.put("user_id", normalize_user_id(user))
+    )
+    |> Repo.insert()
+  end
+
+  @doc """
+  Returns a generic loan changeset for forms and tests.
+  """
+  @spec change_loan(Loan.t(), map()) :: Ecto.Changeset.t()
+  def change_loan(%Loan{} = loan, attrs \\ %{}) do
+    Loan.changeset(loan, normalize_attr_map(attrs))
+  end
+
+  @doc """
+  Builds a deterministic refinance preview for a generic loan.
+
+  The calculation reuses the same refinance analysis engine as mortgage scenarios
+  but does not require or expose mortgage-specific escrow, PMI, or property fields.
+  """
+  @spec generic_loan_refinance_preview(Loan.t(), map()) ::
+          {:ok, map()} | {:error, Ecto.Changeset.t()}
+  def generic_loan_refinance_preview(%Loan{} = loan, attrs) when is_map(attrs) do
+    attrs =
+      attrs
+      |> normalize_attr_map()
+      |> Map.put_new("new_principal_amount", loan.current_balance)
+
+    changeset =
+      {%{},
+       %{new_term_months: :integer, new_interest_rate: :decimal, new_principal_amount: :decimal}}
+      |> Ecto.Changeset.cast(attrs, [:new_term_months, :new_interest_rate, :new_principal_amount])
+      |> Ecto.Changeset.validate_required([
+        :new_term_months,
+        :new_interest_rate,
+        :new_principal_amount
+      ])
+      |> Ecto.Changeset.validate_number(:new_term_months, greater_than: 0)
+      |> Ecto.Changeset.validate_number(:new_interest_rate, greater_than_or_equal_to: 0)
+      |> Ecto.Changeset.validate_number(:new_principal_amount, greater_than_or_equal_to: 0)
+
+    if changeset.valid? do
+      {:ok,
+       RefinanceCalculator.analyze(%{
+         current_principal: loan.current_balance,
+         current_rate: loan.current_interest_rate,
+         current_remaining_term_months: loan.remaining_term_months,
+         current_monthly_payment: loan.monthly_payment_total,
+         new_principal: Ecto.Changeset.get_field(changeset, :new_principal_amount),
+         new_rate: Ecto.Changeset.get_field(changeset, :new_interest_rate),
+         new_term_months: Ecto.Changeset.get_field(changeset, :new_term_months),
+         true_refinance_cost: Decimal.new("0"),
+         cash_to_close_timing_cost: Decimal.new("0")
+       })}
+    else
+      {:error, changeset}
+    end
+  end
+
+  def generic_loan_refinance_template(%Loan{} = loan) do
+    %{
+      "new_term_months" => loan.remaining_term_months,
+      "new_interest_rate" => Decimal.to_string(loan.current_interest_rate, :normal),
+      "new_principal_amount" => Decimal.to_string(loan.current_balance, :normal)
+    }
+  end
 
   @doc """
   Returns human-friendly loan summaries, including autopay details.
@@ -2645,6 +2761,13 @@ defmodule MoneyTree.Loans do
     end
   end
 
+  defp maybe_filter_loan_type(query, opts) do
+    case Keyword.get(opts, :loan_type) do
+      nil -> query
+      loan_type -> where(query, [loan], loan.loan_type == ^loan_type)
+    end
+  end
+
   defp maybe_filter_rate_observation_source(query, opts) do
     case Keyword.get(opts, :rate_source_id) do
       nil -> query
@@ -2694,6 +2817,7 @@ defmodule MoneyTree.Loans do
   defp normalize_id(%Mortgage{id: id}), do: id
   defp normalize_id(%RefinanceScenario{id: id}), do: id
   defp normalize_id(%LoanDocument{id: id}), do: id
+  defp normalize_id(%Loan{id: id}), do: id
   defp normalize_id(%LenderQuote{id: id}), do: id
   defp normalize_id(%RateSource{id: id}), do: id
   defp normalize_id(%RateObservation{id: id}), do: id

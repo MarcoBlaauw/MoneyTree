@@ -9,6 +9,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   alias MoneyTree.Loans.AlertRule
   alias MoneyTree.Loans.Amortization
   alias MoneyTree.Loans.LenderQuote
+  alias MoneyTree.Loans.Loan
   alias MoneyTree.Loans.LoanDocument
   alias MoneyTree.Loans.LoanDocumentExtraction
   alias MoneyTree.Loans.RateObservation
@@ -30,6 +31,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         mortgage_form_mode: :new,
         editing_mortgage: nil,
         mortgage_changeset: mortgage_changeset(current_user),
+        generic_loan_form_open?: false,
+        generic_loan_changeset: generic_loan_changeset(current_user),
         what_if_form: default_what_if_form(nil),
         what_if_summary: nil,
         selected_analysis_scenario_id: nil,
@@ -80,6 +83,71 @@ defmodule MoneyTreeWeb.LoansLive.Index do
        editing_mortgage: nil,
        mortgage_changeset: mortgage_changeset(current_user)
      )}
+  end
+
+  def handle_event(
+        "new-generic-loan",
+        _params,
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    {:noreply,
+     assign(socket,
+       generic_loan_form_open?: true,
+       generic_loan_changeset: generic_loan_changeset(current_user)
+     )}
+  end
+
+  def handle_event(
+        "cancel-generic-loan",
+        _params,
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    {:noreply,
+     assign(socket,
+       generic_loan_form_open?: false,
+       generic_loan_changeset: generic_loan_changeset(current_user)
+     )}
+  end
+
+  def handle_event(
+        "validate-generic-loan",
+        %{"loan" => params},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    changeset =
+      current_user
+      |> base_generic_loan(params)
+      |> Loans.change_loan(normalize_generic_loan_rate_params(params))
+      |> Map.put(:action, :validate)
+
+    {:noreply, assign(socket, generic_loan_form_open?: true, generic_loan_changeset: changeset)}
+  end
+
+  def handle_event(
+        "save-generic-loan",
+        %{"loan" => params},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    params = normalize_generic_loan_rate_params(params)
+
+    case Loans.create_loan(current_user, params) do
+      {:ok, _loan} ->
+        {:noreply,
+         socket
+         |> load_page(current_user)
+         |> assign(
+           generic_loan_form_open?: false,
+           generic_loan_changeset: generic_loan_changeset(current_user)
+         )
+         |> put_flash(:info, "Loan added to Loan Center.")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         assign(socket,
+           generic_loan_form_open?: true,
+           generic_loan_changeset: Map.put(changeset, :action, :validate)
+         )}
+    end
   end
 
   def handle_event(
@@ -1031,8 +1099,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
       <div :if={is_nil(@route_loan_id)} class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Current loans</p>
-        <p class="mt-1 text-2xl font-semibold text-zinc-900"><%= length(@all_mortgages) %></p>
-        <p class="text-xs text-zinc-500">Mortgage records mapped as the first supported loan type</p>
+        <p class="mt-1 text-2xl font-semibold text-zinc-900"><%= length(@all_mortgages) + length(@generic_loans) %></p>
+        <p class="text-xs text-zinc-500">Mortgage records and non-mortgage loan baselines in Loan Center</p>
       </div>
 
       <div :if={@route_loan_id} class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
@@ -2415,6 +2483,68 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div class="flex items-start justify-between gap-3">
             <div>
+              <h2 class="text-lg font-semibold text-zinc-900">Other loans</h2>
+              <p class="text-sm text-zinc-500">Auto, personal, and student loan baselines use generic payoff analysis.</p>
+            </div>
+            <button type="button" class="btn btn-outline" phx-click="new-generic-loan">
+              Add non-mortgage loan
+            </button>
+          </div>
+
+          <ul :if={@generic_loans != []} class="space-y-3">
+            <li :for={loan <- @generic_loans} class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p class="font-semibold text-zinc-900"><%= loan.name %></p>
+                  <p class="text-xs text-zinc-500">
+                    <%= format_label(loan.loan_type) %> • <%= loan.status %>
+                  </p>
+                  <p :if={loan.collateral_description} class="mt-1 text-xs text-zinc-500">
+                    <%= loan.collateral_description %>
+                  </p>
+                </div>
+                <div class="text-left sm:text-right">
+                  <p class="font-semibold text-zinc-900"><%= format_currency(loan.current_balance) %></p>
+                  <p class="text-xs text-zinc-500">
+                    Payment <%= format_currency(loan.monthly_payment_total) %> •
+                    <%= loan.remaining_term_months %> months left
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-4 rounded-lg border border-zinc-200 bg-white p-3">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Refinance preview</p>
+                <%= case generic_loan_preview(loan) do %>
+                  <% {:ok, analysis} -> %>
+                    <dl class="mt-2 grid gap-3 text-sm sm:grid-cols-3">
+                      <div>
+                        <dt class="text-xs text-zinc-500">Expected payment</dt>
+                        <dd class="font-semibold text-zinc-900"><%= format_currency(analysis.payment_range.expected) %></dd>
+                      </div>
+                      <div>
+                        <dt class="text-xs text-zinc-500">Expected savings</dt>
+                        <dd class="font-semibold text-zinc-900"><%= format_currency(analysis.monthly_savings_range.expected) %></dd>
+                      </div>
+                      <div>
+                        <dt class="text-xs text-zinc-500">Full-term delta</dt>
+                        <dd class="font-semibold text-zinc-900"><%= format_currency(analysis.full_term_finance_cost_delta) %></dd>
+                      </div>
+                    </dl>
+                  <% {:error, _changeset} -> %>
+                    <p class="mt-2 text-sm text-zinc-500">Preview unavailable for this loan baseline.</p>
+                <% end %>
+              </div>
+            </li>
+          </ul>
+
+          <div :if={@generic_loans == []} class="rounded-xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500">
+            Add an auto, personal, or student loan baseline to compare payment changes without mortgage-specific fields.
+          </div>
+        </div>
+
+        <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div class="flex items-start justify-between gap-3">
+            <div>
               <h2 class="text-lg font-semibold text-zinc-900"><%= mortgage_form_title(@mortgage_form_mode) %></h2>
               <p class="text-sm text-zinc-500"><%= mortgage_form_description(@mortgage_form_mode) %></p>
             </div>
@@ -2490,6 +2620,62 @@ defmodule MoneyTreeWeb.LoansLive.Index do
             </div>
           </.simple_form>
         </div>
+
+        <div :if={@generic_loan_form_open?} class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold text-zinc-900">Add non-mortgage loan</h2>
+              <p class="text-sm text-zinc-500">Create a generic loan baseline for auto, personal, or student debt.</p>
+            </div>
+            <button type="button" class="btn btn-outline" phx-click="cancel-generic-loan">
+              Cancel
+            </button>
+          </div>
+
+          <.simple_form for={@generic_loan_changeset}
+                        id="generic-loan-form"
+                        phx-change="validate-generic-loan"
+                        phx-submit="save-generic-loan"
+                        :let={f}>
+            <div class="grid gap-4">
+              <.input field={f[:name]} label="Loan name" />
+              <div>
+                <label class="text-sm font-medium text-zinc-700" for="loan_loan_type">Loan type</label>
+                <select id="loan_loan_type" name="loan[loan_type]" class="input">
+                  <%= Phoenix.HTML.Form.options_for_select(generic_loan_type_options(), f[:loan_type].value || "auto") %>
+                </select>
+              </div>
+              <.input field={f[:lender_name]} label="Lender" />
+              <.input field={f[:servicer_name]} label="Servicer" />
+              <.input field={f[:collateral_description]} label="Collateral or note" />
+
+              <div class="grid gap-4 sm:grid-cols-2">
+                <.input field={f[:current_balance]} label="Current balance" type={:number} step="0.01" min="0" />
+                <div>
+                  <label class="text-sm font-medium text-zinc-700" for="loan_current_interest_rate_percent">
+                    Current interest rate (%)
+                  </label>
+                  <input
+                    id="loan_current_interest_rate_percent"
+                    name="loan[current_interest_rate_percent]"
+                    class="input"
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    value={generic_loan_rate_percent_value(@generic_loan_changeset, :current_interest_rate)}
+                  />
+                </div>
+                <.input field={f[:remaining_term_months]} label="Remaining term months" type={:number} min="1" />
+                <.input field={f[:monthly_payment_total]} label="Monthly payment" type={:number} step="0.01" min="0" />
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-2">
+              <button type="button" class="btn btn-outline" phx-click="cancel-generic-loan">Cancel</button>
+              <button type="submit" class="btn">Add loan</button>
+            </div>
+          </.simple_form>
+        </div>
       </div>
     </section>
     """
@@ -2552,6 +2738,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp load_page(socket, current_user) do
     all_mortgages = Mortgages.list_mortgages(current_user)
+    generic_loans = Loans.list_loans(current_user)
     mortgages = scope_mortgages(all_mortgages, socket.assigns.route_loan_id)
 
     selected_mortgage = List.first(mortgages)
@@ -2560,6 +2747,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
     assign(socket,
       all_mortgages: all_mortgages,
+      generic_loans: generic_loans,
       mortgages: mortgages,
       selected_mortgage: selected_mortgage,
       what_if_form: what_if_form,
@@ -2591,7 +2779,26 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     |> Mortgages.change_mortgage()
   end
 
+  defp generic_loan_changeset(current_user) do
+    current_user
+    |> base_generic_loan()
+    |> Loans.change_loan()
+  end
+
+  defp base_generic_loan(current_user, attrs \\ %{}) do
+    %Loan{
+      user_id: current_user.id,
+      loan_type: Map.get(attrs, "loan_type", "auto"),
+      status: "active"
+    }
+  end
+
   defp normalize_mortgage_rate_params(params) do
+    params
+    |> normalize_percent_param("current_interest_rate_percent", "current_interest_rate")
+  end
+
+  defp normalize_generic_loan_rate_params(params) do
     params
     |> normalize_percent_param("current_interest_rate_percent", "current_interest_rate")
   end
@@ -2649,6 +2856,28 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         |> Decimal.to_string(:normal)
         |> trim_trailing_decimal_zeros()
     end
+  end
+
+  defp generic_loan_rate_percent_value(changeset, field) do
+    changeset
+    |> Ecto.Changeset.get_field(field)
+    |> case do
+      nil ->
+        ""
+
+      value ->
+        value
+        |> Decimal.mult(Decimal.new("100"))
+        |> Decimal.round(4)
+        |> Decimal.to_string(:normal)
+        |> trim_trailing_decimal_zeros()
+    end
+  end
+
+  defp generic_loan_preview(%Loan{} = loan) do
+    loan
+    |> Loans.generic_loan_refinance_template()
+    |> then(&Loans.generic_loan_refinance_preview(loan, &1))
   end
 
   defp scenario_rate_percent_value(changeset, field) do
@@ -3394,6 +3623,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp alert_kind_options do
     AlertRule.kinds()
+    |> Enum.map(&{format_label(&1), &1})
+  end
+
+  defp generic_loan_type_options do
+    Loan.loan_types()
     |> Enum.map(&{format_label(&1), &1})
   end
 
