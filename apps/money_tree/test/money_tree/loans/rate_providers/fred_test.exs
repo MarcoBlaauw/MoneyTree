@@ -7,7 +7,16 @@ defmodule MoneyTree.Loans.RateProviders.FredTest do
   describe "configuration" do
     test "requires an API key" do
       refute Fred.configured?(%{})
+      refute Fred.configured?(%{api_key: ""})
       assert Fred.configured?(%{api_key: "abc123"})
+    end
+
+    test "uses default source metadata when base URL is blank" do
+      attrs = Fred.default_source_attrs(%{base_url: ""})
+
+      assert attrs.base_url == "https://api.stlouisfed.org/fred"
+      assert attrs.update_frequency == "daily"
+      assert attrs.reliability_score == "0.9500"
     end
   end
 

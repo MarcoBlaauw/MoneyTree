@@ -13,6 +13,15 @@ Current active provider:
 
 Add these to `.env` for local development and to runtime environment variables in deployed environments. Provider keys are not stored in the database in v1.
 
+Applications using FRED must display this notice prominently:
+
+> This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis.
+
+Keep the notice visible in the authenticated app footer and in Loan Center market-rate context. Link to the FRED API Terms of Use and FRED legal notices where practical:
+
+- https://fred.stlouisfed.org/docs/api/terms_of_use.html
+- https://fred.stlouisfed.org/legal
+
 Future provider keys should be added only when an active provider adapter exists. API Ninjas, FMP, Alpha Vantage, ICE Mortgage Technology, and Optimal Blue are documented future candidates, not active v1 dependencies.
 
 ## Provider Architecture

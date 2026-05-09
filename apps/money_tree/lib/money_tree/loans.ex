@@ -617,7 +617,13 @@ defmodule MoneyTree.Loans do
     |> Repo.one()
     |> case do
       %RateSource{} = source ->
-        {:ok, source}
+        source
+        |> RateSource.changeset(attrs)
+        |> Repo.update()
+        |> case do
+          {:ok, source} -> {:ok, Repo.preload(source, preload)}
+          {:error, changeset} -> {:error, changeset}
+        end
 
       nil ->
         create_rate_source(attrs, preload: preload)

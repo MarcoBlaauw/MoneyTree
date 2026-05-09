@@ -386,7 +386,12 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         {:noreply, put_flash(socket, :error, "Benchmark source has no configured observations.")}
 
       {:error, :missing_api_key} ->
-        {:noreply, put_flash(socket, :error, "FRED_API_KEY is not configured. Add it to the environment before importing FRED benchmarks.")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "FRED_API_KEY is not configured. Add it to the environment before importing FRED benchmarks."
+         )}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Benchmark source not found.")}
@@ -1899,6 +1904,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
         <p class="text-xs text-zinc-500">
           Source: <%= market_snapshot_attribution(@market_snapshot) %>. Your actual offer may vary based on credit score, LTV, points, lender fees, loan size, location, and lock period.
+        </p>
+
+        <p class="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+          This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis.
         </p>
       </div>
 

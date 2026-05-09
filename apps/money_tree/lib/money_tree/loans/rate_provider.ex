@@ -33,6 +33,8 @@ defmodule MoneyTree.Loans.RateProvider do
 
   @spec source_attrs(module(), settings()) :: map()
   def source_attrs(provider, settings) do
+    Code.ensure_loaded(provider)
+
     if function_exported?(provider, :default_source_attrs, 1) do
       provider.default_source_attrs(settings)
     else

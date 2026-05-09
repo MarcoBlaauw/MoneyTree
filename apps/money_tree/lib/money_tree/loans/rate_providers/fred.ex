@@ -239,14 +239,26 @@ defmodule MoneyTree.Loans.RateProviders.Fred do
 
   defp normalize_body(_body), do: %{}
 
-  defp api_key(settings), do: Map.get(settings, :api_key) || Map.get(settings, "api_key")
+  defp api_key(settings),
+    do: present_string(Map.get(settings, :api_key) || Map.get(settings, "api_key"))
 
   defp base_url(settings),
-    do: Map.get(settings, :base_url) || Map.get(settings, "base_url") || @default_base_url
+    do:
+      present_string(Map.get(settings, :base_url) || Map.get(settings, "base_url")) ||
+        @default_base_url
 
   defp timeout_ms(settings) do
     Map.get(settings, :timeout_ms) || Map.get(settings, "timeout_ms") || @default_timeout_ms
   end
 
   defp fetch_limit(settings), do: Map.get(settings, :limit) || Map.get(settings, "limit") || 370
+
+  defp present_string(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      value -> value
+    end
+  end
+
+  defp present_string(value), do: value
 end
