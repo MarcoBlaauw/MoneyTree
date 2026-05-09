@@ -2110,7 +2110,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         </div>
       </div>
 
-      <div :if={@live_action == :refinance} class="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <div :if={@live_action == :refinance} class={refinance_split_class(@scenario_form_open?)}>
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
