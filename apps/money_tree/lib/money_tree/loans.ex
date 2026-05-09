@@ -780,6 +780,16 @@ defmodule MoneyTree.Loans do
   end
 
   @doc """
+  Enqueues scheduled evaluation for every active Loan Center alert rule.
+  """
+  @spec enqueue_all_loan_alert_evaluations() :: {:ok, Oban.Job.t()} | {:error, term()}
+  def enqueue_all_loan_alert_evaluations do
+    %{"scope" => "all_active"}
+    |> AlertEvaluationWorker.new()
+    |> Oban.insert()
+  end
+
+  @doc """
   Evaluates all active Loan Center alert rules for one mortgage-backed loan.
   """
   @spec evaluate_loan_alert_rules(User.t() | binary(), Mortgage.t() | binary()) ::
@@ -800,6 +810,36 @@ defmodule MoneyTree.Loans do
         {:error, reason} -> {:error, reason}
         {evaluated, triggered} -> {:ok, %{evaluated: evaluated, triggered: triggered}}
       end
+    end
+  end
+
+  @doc """
+  Evaluates every active Loan Center alert rule.
+
+  This is the scheduled evaluation entrypoint used by the alert worker. It
+  preserves per-rule cooldown and notification dedupe behavior.
+  """
+  @spec evaluate_all_loan_alert_rules(keyword()) ::
+          {:ok, %{evaluated: non_neg_integer(), triggered: non_neg_integer()}}
+          | {:error, Ecto.Changeset.t()}
+  def evaluate_all_loan_alert_rules(opts \\ []) do
+    limit = Keyword.get(opts, :limit)
+
+    AlertRule
+    |> where([rule], rule.active == true)
+    |> order_by([rule], asc: rule.inserted_at)
+    |> maybe_limit(limit)
+    |> Repo.all()
+    |> Enum.reduce_while({0, 0}, fn rule, {evaluated, triggered} ->
+      case evaluate_loan_alert_rule(rule.user_id, rule) do
+        {:ok, %{triggered?: true}} -> {:cont, {evaluated + 1, triggered + 1}}
+        {:ok, %{triggered?: false}} -> {:cont, {evaluated + 1, triggered}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:error, reason} -> {:error, reason}
+      {evaluated, triggered} -> {:ok, %{evaluated: evaluated, triggered: triggered}}
     end
   end
 

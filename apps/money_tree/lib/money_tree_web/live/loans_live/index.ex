@@ -985,6 +985,31 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     {:noreply, put_flash(socket, :error, "Open a loan workspace before evaluating alerts.")}
   end
 
+  def handle_event(
+        "schedule-alert-evaluation",
+        _params,
+        %{assigns: %{current_user: current_user, route_loan_id: mortgage_id}} = socket
+      )
+      when is_binary(mortgage_id) do
+    case Loans.enqueue_loan_alert_evaluation(current_user, mortgage_id) do
+      {:ok, _job} ->
+        {:noreply,
+         socket
+         |> load_page(current_user)
+         |> put_flash(:info, "Loan alert evaluation queued.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Loan alert workspace not found.")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Unable to queue alert evaluation.")}
+    end
+  end
+
+  def handle_event("schedule-alert-evaluation", _params, socket) do
+    {:noreply, put_flash(socket, :error, "Open a loan workspace before queuing alerts.")}
+  end
+
   def handle_event("select-loan", %{"loan_id" => loan_id}, socket) do
     {:noreply, push_navigate(socket, to: workspace_path(socket.assigns.live_action, loan_id))}
   end
@@ -1096,6 +1121,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 <button type="button" class="btn btn-outline" phx-click="evaluate-alert-rules" disabled={@alert_rows == []}>
                   Evaluate
                 </button>
+                <button type="button" class="btn btn-outline" phx-click="schedule-alert-evaluation" disabled={@alert_rows == []}>
+                  Queue evaluation
+                </button>
                 <button type="button" class="btn btn-outline" phx-click="new-alert-rule" disabled={@mortgages == []}>
                   Add alert
                 </button>
@@ -1114,6 +1142,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <th class="px-3 py-2">Kind</th>
                     <th class="px-3 py-2">Threshold</th>
                     <th class="px-3 py-2">Cooldown</th>
+                    <th class="px-3 py-2">Delivery</th>
                     <th class="px-3 py-2">Last evaluated</th>
                     <th class="px-3 py-2">Last triggered</th>
                     <th class="px-3 py-2">State</th>
@@ -1125,6 +1154,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <td class="px-3 py-3"><%= format_label(row.rule.kind) %></td>
                     <td class="px-3 py-3"><%= alert_threshold_label(row.rule) %></td>
                     <td class="px-3 py-3"><%= alert_cooldown_label(row.rule) %></td>
+                    <td class="px-3 py-3"><%= alert_delivery_label(row.rule) %></td>
                     <td class="px-3 py-3"><%= format_datetime(row.rule.last_evaluated_at) || "Never" %></td>
                     <td class="px-3 py-3"><%= format_datetime(row.rule.last_triggered_at) || "Never" %></td>
                     <td class="px-3 py-3"><%= if row.rule.active, do: "Active", else: "Inactive" %></td>
@@ -3549,6 +3579,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp alert_cooldown_label(%AlertRule{delivery_preferences: preferences}) do
     "#{Map.get(preferences || %{}, "cooldown_hours", 24)} hours"
+  end
+
+  defp alert_delivery_label(%AlertRule{delivery_preferences: preferences}) do
+    cooldown = Map.get(preferences || %{}, "cooldown_hours", 24)
+    "Durable notifications, #{cooldown}h cooldown"
   end
 
   defp extraction_summary(%Ecto.Association.NotLoaded{}), do: "Not loaded"

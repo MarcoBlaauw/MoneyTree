@@ -1088,6 +1088,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Loan alert rule saved."
     assert html =~ "Savings above target"
     assert html =~ "12 hours"
+    assert html =~ "Durable notifications, 12h cooldown"
 
     html =
       view
@@ -1095,6 +1096,13 @@ defmodule MoneyTreeWeb.LoansLiveTest do
       |> render_click()
 
     assert html =~ "Evaluated 1 alert rules; 1 triggered."
+
+    html =
+      view
+      |> element("button", "Queue evaluation")
+      |> render_click()
+
+    assert html =~ "Loan alert evaluation queued."
   end
 
   test "adds refinance fee assumptions and updates break-even outputs", %{conn: conn} do

@@ -157,5 +157,94 @@ defmodule MoneyTree.Loans.AlertRulesTest do
 
       assert {:ok, %{triggered?: true}} = Loans.evaluate_loan_alert_rule(user, rule)
     end
+
+    test "evaluates lender quote expiration rules" do
+      user = user_fixture()
+      mortgage = mortgage_fixture(user)
+
+      {:ok, quote} =
+        Loans.create_lender_quote(user, mortgage, %{
+          lender_name: "Expiring Lender",
+          quote_source: "manual",
+          loan_type: "mortgage",
+          product_type: "fixed",
+          term_months: 360,
+          interest_rate: "0.0550",
+          lock_available: false,
+          quote_expires_at: DateTime.add(DateTime.utc_now(), 2 * 86_400, :second),
+          raw_payload: %{},
+          status: "active"
+        })
+
+      {:ok, rule} =
+        Loans.create_loan_alert_rule(user, mortgage, %{
+          name: "Quote expires soon",
+          kind: "lender_quote_expiring",
+          lead_days: "7"
+        })
+
+      assert {:ok, %{triggered?: true}} = Loans.evaluate_loan_alert_rule(user, rule)
+
+      event =
+        Repo.one!(
+          from event in Event,
+            where:
+              event.user_id == ^user.id and event.kind == "loan_refinance_alert" and
+                event.status == "lender_quote_expiring"
+        )
+
+      assert event.metadata["lender_quote_id"] == quote.id
+    end
+
+    test "scheduled alert evaluation worker evaluates all active loan alerts" do
+      user = user_fixture()
+
+      mortgage =
+        mortgage_fixture(user, %{
+          current_balance: "400000.00",
+          current_interest_rate: "0.0625",
+          remaining_term_months: 360,
+          monthly_payment_total: "2462.87"
+        })
+
+      {:ok, _scenario} =
+        Loans.create_refinance_scenario(user, mortgage, %{
+          name: "Lower rate scenario",
+          new_term_months: 360,
+          new_interest_rate: "0.0550",
+          new_principal_amount: "400000.00"
+        })
+
+      {:ok, active_rule} =
+        Loans.create_loan_alert_rule(user, mortgage, %{
+          name: "Savings above 100",
+          kind: "monthly_savings_above_threshold",
+          threshold_value: "100.00"
+        })
+
+      {:ok, _inactive_rule} =
+        Loans.create_loan_alert_rule(user, mortgage, %{
+          name: "Inactive savings alert",
+          kind: "monthly_savings_above_threshold",
+          threshold_value: "100.00",
+          active: false
+        })
+
+      assert {:ok, _job} = Loans.enqueue_all_loan_alert_evaluations()
+
+      assert {:ok, evaluated_rule} = Loans.fetch_loan_alert_rule(user, active_rule.id)
+      assert evaluated_rule.last_evaluated_at
+      assert evaluated_rule.last_triggered_at
+
+      assert 1 ==
+               Repo.aggregate(
+                 from(event in Event,
+                   where:
+                     event.user_id == ^user.id and event.kind == "loan_refinance_alert" and
+                       event.status == "monthly_savings_above_threshold"
+                 ),
+                 :count
+               )
+    end
   end
 end

@@ -9,6 +9,10 @@ defmodule MoneyTree.Loans.Workers.AlertEvaluationWorker do
   alias Oban.Job
 
   @impl Oban.Worker
+  def perform(%Job{args: %{"scope" => "all_active"}}) do
+    Loans.evaluate_all_loan_alert_rules()
+  end
+
   def perform(%Job{args: %{"rule_id" => rule_id, "user_id" => user_id}}) do
     Loans.evaluate_loan_alert_rule(user_id, rule_id)
   end
@@ -16,4 +20,6 @@ defmodule MoneyTree.Loans.Workers.AlertEvaluationWorker do
   def perform(%Job{args: %{"mortgage_id" => mortgage_id, "user_id" => user_id}}) do
     Loans.evaluate_loan_alert_rules(user_id, mortgage_id)
   end
+
+  def perform(%Job{}), do: :discard
 end
