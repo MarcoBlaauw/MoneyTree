@@ -307,7 +307,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   def handle_event("show-analysis-detail", %{"id" => scenario_id}, socket) do
-    {:noreply, assign(socket, selected_analysis_scenario_id: scenario_id)}
+    {:noreply,
+     socket
+     |> assign(selected_analysis_scenario_id: scenario_id)
+     |> push_event("scroll-into-view", %{id: analysis_detail_dom_id(scenario_id)})}
   end
 
   def handle_event("hide-analysis-detail", _params, socket) do
@@ -2185,7 +2188,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                       <button type="button"
                               class="btn btn-outline"
                               phx-click="show-analysis-detail"
-                              phx-value-id={row.scenario.id}>
+                              phx-value-id={row.scenario.id}
+                              aria-controls={analysis_detail_dom_id(row.scenario.id)}>
                         View details
                       </button>
                       <button type="button"
@@ -2205,7 +2209,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
             Select “View details” on a scenario to review full-term totals, assumptions, and warnings.
           </div>
 
-          <div :for={row <- selected_analysis_rows(@scenario_rows, @selected_analysis_scenario_id)} class="space-y-4 border-t border-zinc-100 pt-4">
+          <div :for={row <- selected_analysis_rows(@scenario_rows, @selected_analysis_scenario_id)}
+               id={analysis_detail_dom_id(row.scenario.id)}
+               tabindex="-1"
+               class="scroll-mt-6 space-y-4 border-t border-zinc-100 pt-4 outline-none">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 class="text-base font-semibold text-zinc-900">Analysis details</h3>
@@ -3252,6 +3259,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp selected_analysis_rows(scenario_rows, scenario_id) do
     Enum.filter(scenario_rows, &(&1.scenario.id == scenario_id))
   end
+
+  defp analysis_detail_dom_id(scenario_id), do: "analysis-detail-#{scenario_id}"
 
   defp default_selected_analysis_scenario_id(current_id, scenario_rows) do
     cond do

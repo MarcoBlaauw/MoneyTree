@@ -1295,7 +1295,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
         remaining_term_months: 120
       })
 
-    {:ok, _scenario} =
+    {:ok, scenario} =
       Loans.create_refinance_scenario(user, mortgage, %{
         name: "Reset term refinance",
         new_term_months: 360,
@@ -1331,6 +1331,17 @@ defmodule MoneyTreeWeb.LoansLiveTest do
       |> render_click()
 
     assert html =~ "Select “View details”"
+
+    analysis_detail_id = "analysis-detail-#{scenario.id}"
+
+    html =
+      view
+      |> element("button[phx-value-id='#{scenario.id}']", "View details")
+      |> render_click()
+
+    assert_push_event(view, "scroll-into-view", %{id: ^analysis_detail_id})
+    assert html =~ ~s(id="#{analysis_detail_id}")
+    assert html =~ ~s(aria-controls="#{analysis_detail_id}")
   end
 
   test "saves deterministic analysis history from a refinance scenario", %{conn: conn} do
