@@ -83,6 +83,7 @@ The Refinance workspace can display:
 - 7-day, 30-day, 90-day, and year-over-year trend deltas
 - source attribution and last updated date
 - structured market explanation
+- compact trend details for 7-day, 30-day, 90-day, and year-over-year movement
 
 Preferred wording:
 

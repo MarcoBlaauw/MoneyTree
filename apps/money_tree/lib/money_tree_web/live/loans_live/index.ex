@@ -1902,6 +1902,29 @@ defmodule MoneyTreeWeb.LoansLive.Index do
           </div>
         </div>
 
+        <div class="overflow-x-auto rounded-xl border border-zinc-100">
+          <table class="min-w-full divide-y divide-zinc-100 text-sm">
+            <thead class="bg-zinc-50">
+              <tr class="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                <th class="px-3 py-2">Benchmark</th>
+                <th class="px-3 py-2">7 days</th>
+                <th class="px-3 py-2">30 days</th>
+                <th class="px-3 py-2">90 days</th>
+                <th class="px-3 py-2">YoY</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-100 bg-white">
+              <tr :for={row <- market_trend_rows(@market_snapshot)} class="text-zinc-700">
+                <td class="px-3 py-3 font-medium text-zinc-900"><%= row.label %></td>
+                <td class="px-3 py-3"><%= row.day_7 %></td>
+                <td class="px-3 py-3"><%= row.day_30 %></td>
+                <td class="px-3 py-3"><%= row.day_90 %></td>
+                <td class="px-3 py-3"><%= row.yoy %></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
         <p class="text-xs text-zinc-500">
           Source: <%= market_snapshot_attribution(@market_snapshot) %>. Your actual offer may vary based on credit score, LTV, points, lender fees, loan size, location, and lock period.
         </p>
@@ -3858,6 +3881,32 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
       _value ->
         "Trend unavailable"
+    end
+  end
+
+  defp market_trend_rows(snapshot) do
+    [
+      {"30-year mortgage", "mortgage30us"},
+      {"15-year mortgage", "mortgage15us"},
+      {"10-year Treasury", "gs10"}
+    ]
+    |> Enum.map(fn {label, series_key} ->
+      %{
+        label: label,
+        day_7: market_trend_cell(snapshot, series_key, 7),
+        day_30: market_trend_cell(snapshot, series_key, 30),
+        day_90: market_trend_cell(snapshot, series_key, 90),
+        yoy: market_trend_cell(snapshot, series_key, 365)
+      }
+    end)
+  end
+
+  defp market_trend_cell(snapshot, series_key, window) do
+    case get_in(snapshot.direction, [series_key, window]) do
+      %{status: :ok, delta: delta} -> format_signed_percent(delta)
+      %{status: :incomplete_window} -> "Insufficient history"
+      %{status: :missing_latest} -> "Not imported"
+      _value -> "Unavailable"
     end
   end
 

@@ -976,6 +976,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "National benchmarks provide context"
     assert html =~ "No imported market benchmark rates are available."
     assert html =~ "This product uses the FRED® API"
+    assert html =~ "Benchmark"
+    assert html =~ "YoY"
     assert html =~ "Benchmark rates"
     assert html =~ "Rate observations are estimates"
     refute html =~ ~s(id="rate-observation-form")
@@ -1137,6 +1139,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Market rate snapshot"
     assert html =~ "6.00%"
     assert html =~ "4.10%"
+    assert html =~ "30-year mortgage"
+    assert html =~ "10-year Treasury"
     assert html =~ "Federal Reserve Economic Data"
     assert html =~ "Your actual offer may vary"
   end
