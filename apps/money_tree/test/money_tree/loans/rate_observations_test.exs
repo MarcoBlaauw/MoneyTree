@@ -35,6 +35,7 @@ defmodule MoneyTree.Loans.RateObservationsTest do
       assert D.equal?(observation.rate, D.new("0.06125"))
       assert D.equal?(observation.apr, D.new("0.06200"))
       assert observation.observed_at
+      assert observation.effective_date == DateTime.to_date(observation.observed_at)
       assert observation.imported_at
       assert observation.rate_source.provider_key == "manual"
 
@@ -135,7 +136,8 @@ defmodule MoneyTree.Loans.RateObservationsTest do
                        "rate" => "0.0600",
                        "apr" => "0.0610",
                        "points" => "0.1250",
-                       "series_key" => "30-year-fixed"
+                       "series_key" => "30-year-fixed",
+                       "effective_date" => "2026-05-01"
                      },
                      %{
                        "loan_type" => "mortgage",
@@ -143,7 +145,8 @@ defmodule MoneyTree.Loans.RateObservationsTest do
                        "term_months" => 180,
                        "rate" => "0.0525",
                        "apr" => "0.0530",
-                       "series_key" => "15-year-fixed"
+                       "series_key" => "15-year-fixed",
+                       "effective_date" => "2026-05-01"
                      }
                    ]
                  }
@@ -200,6 +203,97 @@ defmodule MoneyTree.Loans.RateObservationsTest do
                  provider_key: "public-test-benchmark",
                  name: "Ignored Name"
                })
+    end
+
+    test "creates configured FRED source metadata" do
+      assert {:ok, %RateSource{} = source} = Loans.get_or_create_fred_rate_source()
+
+      assert source.provider_key == "fred"
+      assert source.source_type == "public_benchmark"
+      assert source.requires_api_key
+      assert source.update_frequency == "daily"
+      assert source.attribution_label =~ "Federal Reserve Economic Data"
+    end
+
+    test "provider import reports missing FRED key without crashing" do
+      assert {:ok, source} = Loans.get_or_create_fred_rate_source()
+
+      assert {:error, :missing_api_key} = Loans.process_rate_import_job(source.id)
+
+      assert {:ok, updated_source} = Loans.fetch_rate_source(source.id)
+      assert updated_source.last_error_at
+      assert updated_source.last_error_message =~ "missing_api_key"
+    end
+
+    test "deduplicates configured imports by source, series, and effective date" do
+      assert {:ok, %RateSource{} = source} =
+               Loans.create_rate_source(%{
+                 provider_key: "dedupe-benchmark",
+                 name: "Dedupe Benchmark",
+                 source_type: "public_benchmark",
+                 config: %{
+                   "observations" => [
+                     %{
+                       "loan_type" => "mortgage",
+                       "product_type" => "fixed",
+                       "term_months" => 360,
+                       "rate" => "0.0600",
+                       "series_key" => "dedupe-30-year",
+                       "effective_date" => "2026-05-01"
+                     }
+                   ]
+                 }
+               })
+
+      assert {:ok, %{imported: [_]}} = Loans.process_rate_import_job(source.id)
+      assert {:ok, %{imported: [_]}} = Loans.process_rate_import_job(source.id)
+
+      assert [%RateObservation{rate: rate, effective_date: ~D[2026-05-01]}] =
+               Loans.historical_rates("dedupe-30-year")
+
+      assert D.equal?(rate, D.new("0.0600"))
+    end
+
+    test "returns latest mortgage snapshot with trends and quality warnings" do
+      assert {:ok, source} =
+               Loans.create_rate_source(%{
+                 provider_key: "snapshot-benchmark",
+                 name: "Snapshot Benchmark",
+                 source_type: "public_benchmark"
+               })
+
+      for {date, rate} <- [
+            {"2025-05-01", "0.0700"},
+            {"2026-02-01", "0.0660"},
+            {"2026-04-01", "0.0630"},
+            {"2026-04-24", "0.0620"},
+            {"2026-05-01", "0.0610"}
+          ] do
+        assert {:ok, _observation} =
+                 Loans.create_rate_observation(source, %{
+                   loan_type: "mortgage",
+                   product_type: "fixed",
+                   term_months: 360,
+                   rate: rate,
+                   series_key: "MORTGAGE30US",
+                   effective_date: date,
+                   observed_at: DateTime.new!(Date.from_iso8601!(date), ~T[00:00:00], "Etc/UTC")
+                 })
+      end
+
+      assert [%RateObservation{effective_date: ~D[2026-05-01]}] =
+               Loans.latest_market_rates_for_loan_type("mortgage")
+               |> Enum.filter(&(&1.series_key == "mortgage30us"))
+
+      direction = Loans.benchmark_rate_direction(series_keys: ["mortgage30us"])
+      assert direction["mortgage30us"][7].status == :ok
+      assert direction["mortgage30us"][30].status == :ok
+      assert direction["mortgage30us"][90].status == :ok
+      assert direction["mortgage30us"][365].status == :ok
+
+      snapshot = Loans.mortgage_market_snapshot()
+      assert Enum.any?(snapshot.mortgage_rates, &(&1.series_key == "mortgage30us"))
+      assert snapshot.quality.status in [:ok, :warning]
     end
   end
 end

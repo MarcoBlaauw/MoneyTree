@@ -25,6 +25,10 @@ defmodule MoneyTree.Loans.RateObservation do
     field :points, :decimal
     field :assumptions, :map, default: %{}
     field :source_url, :string
+    field :geography, :string
+    field :confidence_score, :decimal
+    field :notes, :string
+    field :effective_date, :date
     field :published_at, :utc_datetime_usec
     field :observed_at, :utc_datetime_usec
     field :imported_at, :utc_datetime_usec
@@ -50,6 +54,10 @@ defmodule MoneyTree.Loans.RateObservation do
       :points,
       :assumptions,
       :source_url,
+      :geography,
+      :confidence_score,
+      :notes,
+      :effective_date,
       :published_at,
       :observed_at,
       :imported_at,
@@ -63,6 +71,8 @@ defmodule MoneyTree.Loans.RateObservation do
       :observed_at,
       :imported_at
     ])
+    |> put_effective_date()
+    |> validate_required([:effective_date])
     |> put_default_map(:assumptions)
     |> put_default_map(:raw_payload)
     |> update_change(:loan_type, &normalize_downcase/1)
@@ -73,19 +83,42 @@ defmodule MoneyTree.Loans.RateObservation do
     |> validate_length(:loan_type, min: 1, max: 80)
     |> validate_length(:product_type, max: 120)
     |> validate_length(:source_url, max: 500)
+    |> validate_length(:geography, max: 120)
+    |> validate_length(:notes, max: 2_000)
     |> validate_number(:term_months, greater_than: 0)
     |> validate_non_negative_decimal(:rate)
     |> validate_non_negative_decimal(:apr)
     |> validate_non_negative_decimal(:points)
+    |> validate_non_negative_decimal(:confidence_score)
+    |> validate_number(:confidence_score, less_than_or_equal_to: 1)
     |> validate_map(:assumptions)
     |> validate_map(:raw_payload)
     |> foreign_key_constraint(:rate_source_id)
+    |> unique_constraint(:effective_date,
+      name: :loan_rate_observations_source_series_effective_date_index
+    )
   end
 
   defp put_default_map(changeset, field) do
     case get_field(changeset, field) do
       nil -> put_change(changeset, field, %{})
       _value -> changeset
+    end
+  end
+
+  defp put_effective_date(changeset) do
+    case get_field(changeset, :effective_date) do
+      %Date{} ->
+        changeset
+
+      _value ->
+        case get_field(changeset, :observed_at) do
+          %DateTime{} = observed_at ->
+            put_change(changeset, :effective_date, DateTime.to_date(observed_at))
+
+          _value ->
+            changeset
+        end
     end
   end
 

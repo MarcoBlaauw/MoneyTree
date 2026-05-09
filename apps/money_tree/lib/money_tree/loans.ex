@@ -14,7 +14,9 @@ defmodule MoneyTree.Loans do
   alias MoneyTree.Loans.Loan
   alias MoneyTree.Loans.LoanDocument
   alias MoneyTree.Loans.LoanDocumentExtraction
+  alias MoneyTree.Loans.RateProvider
   alias MoneyTree.Loans.RateObservation
+  alias MoneyTree.Loans.RateProviders.Fred
   alias MoneyTree.Loans.RateSource
   alias MoneyTree.Loans.Workers.AlertEvaluationWorker
   alias MoneyTree.Loans.Workers.DocumentExtractionWorker
@@ -601,6 +603,28 @@ defmodule MoneyTree.Loans do
   end
 
   @doc """
+  Creates or returns the FRED market benchmark source.
+  """
+  @spec get_or_create_fred_rate_source(keyword()) ::
+          {:ok, RateSource.t()} | {:error, Ecto.Changeset.t()}
+  def get_or_create_fred_rate_source(opts \\ []) do
+    preload = Keyword.get(opts, :preload, [])
+    attrs = RateProvider.source_attrs(Fred, fred_settings())
+
+    RateSource
+    |> where([source], source.provider_key == "fred")
+    |> maybe_preload_query(preload)
+    |> Repo.one()
+    |> case do
+      %RateSource{} = source ->
+        {:ok, source}
+
+      nil ->
+        create_rate_source(attrs, preload: preload)
+    end
+  end
+
+  @doc """
   Lists benchmark or manually entered loan rate observations.
   """
   @spec list_rate_observations(keyword()) :: [RateObservation.t()]
@@ -613,7 +637,7 @@ defmodule MoneyTree.Loans do
     |> maybe_filter_rate_observation_loan_type(opts)
     |> maybe_filter_rate_observation_product_type(opts)
     |> maybe_filter_rate_observation_term(opts)
-    |> order_by([observation], desc: observation.observed_at)
+    |> order_by([observation], desc: observation.effective_date, desc: observation.observed_at)
     |> maybe_limit(limit)
     |> maybe_preload_query(preload)
     |> Repo.all()
@@ -637,6 +661,7 @@ defmodule MoneyTree.Loans do
         |> normalize_attr_map()
         |> Map.put("rate_source_id", source.id)
         |> Map.put_new("observed_at", now)
+        |> Map.put_new("effective_date", DateTime.to_date(now))
         |> Map.put_new("imported_at", now)
       )
       |> Repo.insert()
@@ -672,10 +697,176 @@ defmodule MoneyTree.Loans do
           | {:error, Ecto.Changeset.t()}
   def process_rate_import_job(source_id) when is_binary(source_id) do
     with {:ok, source} <- fetch_rate_source(source_id, preload: []),
-         :ok <- ensure_rate_source_enabled(source),
-         {:ok, observations} <- configured_rate_observations(source) do
-      import_rate_observations(source, observations)
+         :ok <- ensure_rate_source_enabled(source) do
+      process_rate_import_source(source)
     end
+  end
+
+  @doc """
+  Imports FRED market benchmark observations for the configured source.
+  """
+  @spec import_fred_market_rates() ::
+          {:ok, %{source: RateSource.t(), imported: [RateObservation.t()]}}
+          | {:error, term()}
+  def import_fred_market_rates do
+    with {:ok, source} <- get_or_create_fred_rate_source() do
+      process_rate_import_job(source.id)
+    end
+  end
+
+  @doc """
+  Returns the latest benchmark observations for a loan type, one per series.
+  """
+  @spec latest_market_rates_for_loan_type(String.t(), keyword()) :: [RateObservation.t()]
+  def latest_market_rates_for_loan_type(loan_type, opts \\ []) when is_binary(loan_type) do
+    preload = Keyword.get(opts, :preload, [:rate_source])
+
+    latest_dates =
+      RateObservation
+      |> where([observation], observation.loan_type == ^String.downcase(loan_type))
+      |> where([observation], not is_nil(observation.series_key))
+      |> group_by([observation], [observation.rate_source_id, observation.series_key])
+      |> select([observation], %{
+        rate_source_id: observation.rate_source_id,
+        series_key: observation.series_key,
+        effective_date: max(observation.effective_date)
+      })
+
+    RateObservation
+    |> join(:inner, [observation], latest in subquery(latest_dates),
+      on:
+        observation.rate_source_id == latest.rate_source_id and
+          observation.series_key == latest.series_key and
+          observation.effective_date == latest.effective_date
+    )
+    |> order_by([observation], asc: observation.term_months, asc: observation.series_key)
+    |> maybe_preload_query(preload)
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns historical observations for a series within an optional date range.
+  """
+  @spec historical_rates(String.t(), keyword()) :: [RateObservation.t()]
+  def historical_rates(series_key, opts \\ []) when is_binary(series_key) do
+    preload = Keyword.get(opts, :preload, [:rate_source])
+
+    RateObservation
+    |> where([observation], observation.series_key == ^String.downcase(String.trim(series_key)))
+    |> maybe_filter_effective_date_from(opts)
+    |> maybe_filter_effective_date_to(opts)
+    |> order_by([observation], asc: observation.effective_date)
+    |> maybe_preload_query(preload)
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns a mortgage-oriented market snapshot for Loan Center.
+  """
+  @spec mortgage_market_snapshot(keyword()) :: map()
+  def mortgage_market_snapshot(opts \\ []) do
+    latest = latest_market_rates_for_loan_type("mortgage", opts)
+    baseline = latest_baseline_rates(opts)
+    direction = benchmark_rate_direction()
+    quality = market_data_quality(latest ++ baseline)
+
+    %{
+      mortgage_rates: latest,
+      baseline_rates: baseline,
+      direction: direction,
+      quality: quality,
+      generated_at: DateTime.utc_now() |> DateTime.truncate(:second),
+      disclaimer:
+        "Market benchmarks are national averages or observed indicators, not personalized loan offers."
+    }
+  end
+
+  @doc """
+  Returns market context for a refinance comparison.
+  """
+  @spec refinance_rate_context(Mortgage.t()) :: map()
+  def refinance_rate_context(%Mortgage{} = mortgage) do
+    snapshot = mortgage_market_snapshot()
+
+    %{
+      current_rate: mortgage.current_interest_rate,
+      snapshot: snapshot,
+      latest_mortgage_rates: snapshot.mortgage_rates,
+      benchmark_direction: snapshot.direction,
+      quality: snapshot.quality
+    }
+  end
+
+  @doc """
+  Returns rate direction deltas for key trend windows.
+  """
+  @spec benchmark_rate_direction(keyword()) :: map()
+  def benchmark_rate_direction(opts \\ []) do
+    series_keys = Keyword.get(opts, :series_keys, ["mortgage30us", "mortgage15us", "gs10"])
+    windows = Keyword.get(opts, :windows, [7, 30, 90, 365])
+
+    series_keys
+    |> Enum.map(fn series_key ->
+      {series_key, trend_deltas_for_series(series_key, windows)}
+    end)
+    |> Map.new()
+  end
+
+  @doc """
+  Derives lightweight quality warnings for market-rate data.
+  """
+  @spec market_data_quality([RateObservation.t()] | keyword()) :: map()
+  def market_data_quality(observations_or_opts \\ [])
+
+  def market_data_quality(observations_or_opts) when is_list(observations_or_opts) do
+    observations =
+      if Keyword.keyword?(observations_or_opts) do
+        observations_or_opts
+        |> Keyword.get(:loan_type, "mortgage")
+        |> latest_market_rates_for_loan_type(preload: [:rate_source])
+      else
+        observations_or_opts
+      end
+
+    now = Date.utc_today()
+
+    latest_effective_date =
+      observations
+      |> Enum.map(& &1.effective_date)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.max_by(&Date.to_gregorian_days/1, fn -> nil end)
+
+    stale? =
+      case latest_effective_date do
+        %Date{} = date -> Date.diff(now, date) > 14
+        nil -> true
+      end
+
+    failed_sources =
+      observations
+      |> Enum.map(& &1.rate_source)
+      |> Enum.filter(&match?(%RateSource{last_error_at: %DateTime{}}, &1))
+      |> Enum.uniq_by(& &1.id)
+
+    warnings =
+      []
+      |> maybe_add_warning(stale?, "Market data may be stale.")
+      |> maybe_add_warning(
+        observations == [],
+        "No imported market benchmark rates are available."
+      )
+      |> maybe_add_warning(
+        failed_sources != [],
+        "Latest provider import failed; showing last available benchmark."
+      )
+
+    %{
+      status: if(warnings == [], do: :ok, else: :warning),
+      latest_effective_date: latest_effective_date,
+      stale?: stale?,
+      warnings: Enum.reverse(warnings),
+      failed_sources: failed_sources
+    }
   end
 
   @doc """
@@ -2657,6 +2848,24 @@ defmodule MoneyTree.Loans do
   defp ensure_rate_source_enabled(%RateSource{enabled: true}), do: :ok
   defp ensure_rate_source_enabled(%RateSource{}), do: {:error, :disabled}
 
+  defp process_rate_import_source(%RateSource{provider_key: "fred"} = source) do
+    settings = RateProvider.settings_from_source(source, fred_settings())
+
+    with {:ok, observations} <- Fred.fetch_rates(settings) do
+      import_rate_observations(source, observations)
+    else
+      {:error, reason} ->
+        mark_rate_source_import_error(source, rate_import_error_message(reason))
+        {:error, reason}
+    end
+  end
+
+  defp process_rate_import_source(%RateSource{} = source) do
+    with {:ok, observations} <- configured_rate_observations(source) do
+      import_rate_observations(source, observations)
+    end
+  end
+
   defp configured_rate_observations(%RateSource{config: config}) when is_map(config) do
     case Map.get(config, "observations") || Map.get(config, :observations) do
       observations when is_list(observations) and observations != [] -> {:ok, observations}
@@ -2673,7 +2882,26 @@ defmodule MoneyTree.Loans do
       observations
       |> Enum.with_index()
       |> Enum.reduce(Multi.new(), fn {attrs, index}, multi ->
-        Multi.insert(multi, {:observation, index}, rate_import_changeset(source, attrs, now))
+        Multi.insert(multi, {:observation, index}, rate_import_changeset(source, attrs, now),
+          on_conflict:
+            {:replace,
+             [
+               :rate,
+               :apr,
+               :points,
+               :assumptions,
+               :source_url,
+               :published_at,
+               :observed_at,
+               :imported_at,
+               :raw_payload,
+               :geography,
+               :confidence_score,
+               :notes,
+               :updated_at
+             ]},
+          conflict_target: [:rate_source_id, :series_key, :effective_date]
+        )
       end)
       |> Multi.update(:source, rate_source_success_changeset(source, now))
 
@@ -2695,19 +2923,89 @@ defmodule MoneyTree.Loans do
 
   defp rate_import_changeset(source, attrs, now) do
     attrs = normalize_attr_map(attrs)
+    observed_at = Map.get(attrs, "observed_at") || now
 
     RateObservation.changeset(
       %RateObservation{},
       attrs
       |> Map.put("rate_source_id", source.id)
       |> Map.put_new("provider_key", source.provider_key)
-      |> Map.put_new("observed_at", now)
+      |> Map.put_new("observed_at", observed_at)
+      |> Map.put_new("effective_date", effective_date_from_attrs(attrs, observed_at))
       |> Map.put_new("imported_at", now)
       |> Map.update("raw_payload", attrs, fn
         payload when is_map(payload) -> payload
         _value -> attrs
       end)
     )
+  end
+
+  defp effective_date_from_attrs(attrs, observed_at) do
+    cond do
+      match?(%Date{}, Map.get(attrs, "effective_date")) ->
+        Map.get(attrs, "effective_date")
+
+      is_binary(Map.get(attrs, "effective_date")) ->
+        case Date.from_iso8601(Map.get(attrs, "effective_date")) do
+          {:ok, date} -> date
+          _error -> date_from_observed_at(observed_at)
+        end
+
+      true ->
+        date_from_observed_at(observed_at)
+    end
+  end
+
+  defp date_from_observed_at(%DateTime{} = observed_at), do: DateTime.to_date(observed_at)
+  defp date_from_observed_at(_observed_at), do: Date.utc_today()
+
+  defp fred_settings do
+    :money_tree
+    |> Application.get_env(Fred, [])
+    |> Map.new()
+  end
+
+  defp rate_import_error_message(reason) do
+    reason
+    |> inspect()
+    |> String.slice(0, 2_000)
+  end
+
+  defp trend_deltas_for_series(series_key, windows) do
+    rates = historical_rates(series_key, preload: [])
+    latest = List.last(rates)
+
+    windows
+    |> Enum.map(fn window ->
+      {window, trend_delta(latest, rates, window)}
+    end)
+    |> Map.new()
+  end
+
+  defp trend_delta(nil, _rates, _window), do: %{status: :missing_latest}
+
+  defp trend_delta(%RateObservation{} = latest, rates, window) do
+    target_date = Date.add(latest.effective_date, -window)
+
+    comparison =
+      rates
+      |> Enum.filter(fn rate -> Date.compare(rate.effective_date, target_date) in [:lt, :eq] end)
+      |> List.last()
+
+    case comparison do
+      %RateObservation{} ->
+        %{
+          status: :ok,
+          latest_rate: latest.rate,
+          comparison_rate: comparison.rate,
+          delta: Decimal.sub(latest.rate, comparison.rate),
+          latest_effective_date: latest.effective_date,
+          comparison_effective_date: comparison.effective_date
+        }
+
+      nil ->
+        %{status: :incomplete_window, latest_effective_date: latest.effective_date}
+    end
   end
 
   defp rate_source_success_changeset(%RateSource{} = source, now) do
@@ -2796,6 +3094,48 @@ defmodule MoneyTree.Loans do
       term_months -> where(query, [observation], observation.term_months == ^term_months)
     end
   end
+
+  defp maybe_filter_effective_date_from(query, opts) do
+    case Keyword.get(opts, :date_from) || Keyword.get(opts, :from) do
+      %Date{} = date ->
+        where(query, [observation], observation.effective_date >= ^date)
+
+      nil ->
+        query
+
+      value when is_binary(value) ->
+        maybe_filter_effective_date_from(query, from: parse_date(value))
+
+      _value ->
+        query
+    end
+  end
+
+  defp maybe_filter_effective_date_to(query, opts) do
+    case Keyword.get(opts, :date_to) || Keyword.get(opts, :to) do
+      %Date{} = date -> where(query, [observation], observation.effective_date <= ^date)
+      nil -> query
+      value when is_binary(value) -> maybe_filter_effective_date_to(query, to: parse_date(value))
+      _value -> query
+    end
+  end
+
+  defp parse_date(value) when is_binary(value) do
+    case Date.from_iso8601(value) do
+      {:ok, date} -> date
+      _error -> nil
+    end
+  end
+
+  defp latest_baseline_rates(opts) do
+    preload = Keyword.get(opts, :preload, [:rate_source])
+
+    ["prime", "fed_funds", "sofr", "treasury"]
+    |> Enum.flat_map(&latest_market_rates_for_loan_type(&1, preload: preload))
+  end
+
+  defp maybe_add_warning(warnings, true, warning), do: [warning | warnings]
+  defp maybe_add_warning(warnings, _condition, _warning), do: warnings
 
   defp maybe_limit(query, limit) when is_integer(limit) and limit > 0 do
     limit(query, ^limit)

@@ -20,6 +20,10 @@ defmodule MoneyTree.Loans.RateSource do
     field :name, :string
     field :source_type, :string, default: "manual"
     field :base_url, :string
+    field :update_frequency, :string
+    field :reliability_score, :decimal
+    field :attribution_label, :string
+    field :attribution_url, :string
     field :enabled, :boolean, default: true
     field :requires_api_key, :boolean, default: false
     field :config, :map, default: %{}
@@ -40,6 +44,10 @@ defmodule MoneyTree.Loans.RateSource do
       :name,
       :source_type,
       :base_url,
+      :update_frequency,
+      :reliability_score,
+      :attribution_label,
+      :attribution_url,
       :enabled,
       :requires_api_key,
       :config,
@@ -55,7 +63,11 @@ defmodule MoneyTree.Loans.RateSource do
     |> validate_length(:name, min: 1, max: 160)
     |> validate_length(:source_type, min: 1, max: 80)
     |> validate_length(:base_url, max: 500)
+    |> validate_length(:update_frequency, max: 80)
+    |> validate_length(:attribution_label, max: 160)
+    |> validate_length(:attribution_url, max: 500)
     |> validate_length(:last_error_message, max: 2_000)
+    |> validate_number(:reliability_score, greater_than_or_equal_to: 0, less_than_or_equal_to: 1)
     |> validate_inclusion(:source_type, @source_types)
     |> validate_map(:config)
     |> unique_constraint(:provider_key)

@@ -385,10 +385,16 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       {:error, :no_configured_observations} ->
         {:noreply, put_flash(socket, :error, "Benchmark source has no configured observations.")}
 
+      {:error, :missing_api_key} ->
+        {:noreply, put_flash(socket, :error, "FRED_API_KEY is not configured. Add it to the environment before importing FRED benchmarks.")}
+
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Benchmark source not found.")}
 
       {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Unable to import benchmark source.")}
+
+      {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Unable to import benchmark source.")}
     end
   end
@@ -1851,6 +1857,51 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         </form>
       </div>
 
+      <div :if={@live_action == :refinance} class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-zinc-900">Market rate snapshot</h2>
+            <p class="text-sm text-zinc-500">
+              National benchmarks provide context for refinance assumptions. They are not personalized lender offers.
+            </p>
+          </div>
+          <p class="text-xs text-zinc-500">
+            Updated <%= format_date(@market_snapshot.quality.latest_effective_date) || "Not imported" %>
+          </p>
+        </div>
+
+        <div :if={@market_snapshot.quality.warnings != []} class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <p :for={warning <- @market_snapshot.quality.warnings}><%= warning %></p>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">30-year national average</p>
+            <p class="mt-1 text-xl font-semibold text-zinc-900"><%= market_rate_value(@market_snapshot, "mortgage30us") %></p>
+            <p class="text-xs text-zinc-500"><%= market_trend_label(@market_snapshot, "mortgage30us", 90) %></p>
+          </div>
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">15-year national average</p>
+            <p class="mt-1 text-xl font-semibold text-zinc-900"><%= market_rate_value(@market_snapshot, "mortgage15us") %></p>
+            <p class="text-xs text-zinc-500"><%= market_trend_label(@market_snapshot, "mortgage15us", 90) %></p>
+          </div>
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">10-year treasury</p>
+            <p class="mt-1 text-xl font-semibold text-zinc-900"><%= market_rate_value(@market_snapshot, "gs10") %></p>
+            <p class="text-xs text-zinc-500"><%= market_trend_label(@market_snapshot, "gs10", 30) %></p>
+          </div>
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Market explanation</p>
+            <p class="mt-1 text-sm font-medium text-zinc-900"><%= market_explanation(@market_snapshot) %></p>
+            <p class="text-xs text-zinc-500">Structured benchmark interpretation</p>
+          </div>
+        </div>
+
+        <p class="text-xs text-zinc-500">
+          Source: <%= market_snapshot_attribution(@market_snapshot) %>. Your actual offer may vary based on credit score, LTV, points, lender fees, loan size, location, and lock period.
+        </p>
+      </div>
+
       <div :if={@live_action == :refinance} class={refinance_split_class(@rate_observation_form_open?)}>
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1921,7 +1972,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     </span>
                   </td>
                   <td class="px-3 py-3"><%= format_decimal(observation.points) %></td>
-                  <td class="px-3 py-3"><%= format_datetime(observation.observed_at) %></td>
+                  <td class="px-3 py-3"><%= format_date(observation.effective_date) %></td>
                   <td class="px-3 py-3"><%= rate_source_label(observation) %></td>
                   <td class="px-3 py-3 text-right">
                     <button
@@ -2760,6 +2811,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       scenario_rows: scenario_rows,
       rate_source_rows: rate_source_rows(),
       rate_observation_rows: rate_observation_rows(),
+      market_snapshot: Loans.mortgage_market_snapshot(),
       analysis_history_rows: analysis_history_rows(current_user, mortgages),
       document_rows: document_rows(current_user, mortgages),
       quote_rows: quote_rows(current_user, mortgages),
@@ -3073,6 +3125,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   defp rate_source_rows do
+    _ = Loans.get_or_create_fred_rate_source()
+
     [enabled: true]
     |> Loans.list_rate_sources()
     |> Enum.reject(&(&1.source_type == "manual"))
@@ -3744,6 +3798,18 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     |> then(&"#{&1}%")
   end
 
+  defp format_signed_percent(nil), do: "0.00%"
+
+  defp format_signed_percent(value) do
+    sign =
+      case Decimal.compare(value, Decimal.new("0")) do
+        :lt -> ""
+        _ -> "+"
+      end
+
+    sign <> format_percent(value)
+  end
+
   defp format_decimal(nil), do: "Not set"
 
   defp format_decimal(value) do
@@ -3758,6 +3824,64 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   defp rate_source_label(_observation), do: "Rate source"
+
+  defp market_rate_value(snapshot, series_key) do
+    snapshot
+    |> market_rate_observation(series_key)
+    |> case do
+      %RateObservation{rate: rate} -> format_percent(rate)
+      _value -> "Not imported"
+    end
+  end
+
+  defp market_rate_observation(snapshot, series_key) do
+    (snapshot.mortgage_rates ++ snapshot.baseline_rates)
+    |> Enum.find(&(&1.series_key == series_key))
+  end
+
+  defp market_trend_label(snapshot, series_key, window) do
+    case get_in(snapshot.direction, [series_key, window]) do
+      %{status: :ok, delta: delta} ->
+        "#{format_signed_percent(delta)} vs #{window} days ago"
+
+      %{status: :incomplete_window} ->
+        "Not enough history for #{window}-day trend"
+
+      _value ->
+        "Trend unavailable"
+    end
+  end
+
+  defp market_explanation(snapshot) do
+    case get_in(snapshot.direction, ["gs10", 30]) do
+      %{status: :ok, delta: delta} ->
+        case Decimal.compare(delta, Decimal.new("0")) do
+          :gt -> "Treasury yields increased over the last 30 days."
+          :lt -> "Treasury yields declined over the last 30 days."
+          :eq -> "Treasury yields are roughly unchanged over the last 30 days."
+        end
+
+      _value ->
+        "Import market benchmarks to explain rate movement."
+    end
+  end
+
+  defp market_snapshot_attribution(snapshot) do
+    (snapshot.mortgage_rates ++ snapshot.baseline_rates)
+    |> Enum.map(fn observation ->
+      case observation.rate_source do
+        %RateSource{attribution_label: label} when is_binary(label) and label != "" -> label
+        %RateSource{name: name} when is_binary(name) -> name
+        _value -> nil
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> case do
+      [] -> "Market data provider attribution will appear after import"
+      labels -> Enum.join(labels, ", ")
+    end
+  end
 
   defp rate_source_import_status(%RateSource{last_success_at: %DateTime{} = imported_at}) do
     "Last imported #{format_datetime(imported_at)}"
@@ -3974,6 +4098,12 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp format_datetime(%DateTime{} = value) do
     Calendar.strftime(value, "%b %-d, %Y %-I:%M %p")
+  end
+
+  defp format_date(nil), do: nil
+
+  defp format_date(%Date{} = value) do
+    Calendar.strftime(value, "%b %-d, %Y")
   end
 
   defp errors_on(changeset, field) do

@@ -972,6 +972,9 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
 
+    assert html =~ "Market rate snapshot"
+    assert html =~ "National benchmarks provide context"
+    assert html =~ "No imported market benchmark rates are available."
     assert html =~ "Benchmark rates"
     assert html =~ "Rate observations are estimates"
     refute html =~ ~s(id="rate-observation-form")
@@ -1085,6 +1088,56 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
                scenario
              end)
+  end
+
+  test "shows imported market snapshot context in refinance workspace", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    mortgage =
+      mortgage_fixture(user, %{
+        current_balance: "400000.00",
+        current_interest_rate: "0.07125",
+        monthly_payment_total: "3233.65",
+        remaining_term_months: 339
+      })
+
+    {:ok, source} =
+      Loans.create_rate_source(%{
+        provider_key: "fred-test-live",
+        name: "FRED Test Live",
+        source_type: "public_benchmark",
+        attribution_label: "Federal Reserve Economic Data (FRED)",
+        config: %{
+          "observations" => [
+            %{
+              "loan_type" => "mortgage",
+              "product_type" => "fixed",
+              "term_months" => 360,
+              "rate" => "0.0600",
+              "series_key" => "MORTGAGE30US",
+              "effective_date" => "#{Date.utc_today()}"
+            },
+            %{
+              "loan_type" => "treasury",
+              "product_type" => "10_year_treasury",
+              "term_months" => 120,
+              "rate" => "0.0410",
+              "series_key" => "GS10",
+              "effective_date" => "#{Date.utc_today()}"
+            }
+          ]
+        }
+      })
+
+    assert {:ok, %{imported: [_mortgage, _treasury]}} = Loans.process_rate_import_job(source.id)
+
+    {:ok, _view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
+
+    assert html =~ "Market rate snapshot"
+    assert html =~ "6.00%"
+    assert html =~ "4.10%"
+    assert html =~ "Federal Reserve Economic Data"
+    assert html =~ "Your actual offer may vary"
   end
 
   test "creates and evaluates alert rules in the alerts workspace", %{conn: conn} do
