@@ -28,6 +28,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       |> assign(
         page_title: "Loan Center",
         route_loan_id: Map.get(params, "loan_id"),
+        loan_form_open?: false,
+        loan_form_kind: "mortgage",
         mortgage_form_open?: false,
         mortgage_form_mode: :new,
         editing_mortgage: nil,
@@ -61,6 +63,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         quote_fee_line_form_mode: :new,
         editing_quote_fee_line: nil,
         quote_fee_line_form: default_quote_fee_line_form([]),
+        quote_fee_type_options: [],
         alert_form_open?: false,
         alert_form: default_alert_form([])
       )
@@ -76,12 +79,37 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   @impl true
-  def handle_event("new-mortgage", _params, %{assigns: %{current_user: current_user}} = socket) do
+  def handle_event("new-loan", _params, %{assigns: %{current_user: current_user}} = socket) do
     {:noreply,
      assign(socket,
+       loan_form_open?: true,
+       loan_form_kind: "mortgage",
        mortgage_form_open?: true,
        mortgage_form_mode: :new,
        editing_mortgage: nil,
+       mortgage_changeset: mortgage_changeset(current_user),
+       generic_loan_form_open?: false,
+       generic_loan_changeset: generic_loan_changeset(current_user)
+     )}
+  end
+
+  def handle_event(
+        "select-loan-form-kind",
+        %{"loan_form" => %{"kind" => kind}},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    {:noreply, assign_loan_form_kind(socket, current_user, kind)}
+  end
+
+  def handle_event("new-mortgage", _params, %{assigns: %{current_user: current_user}} = socket) do
+    {:noreply,
+     assign(socket,
+       loan_form_open?: true,
+       loan_form_kind: "mortgage",
+       mortgage_form_open?: true,
+       mortgage_form_mode: :new,
+       editing_mortgage: nil,
+       generic_loan_form_open?: false,
        mortgage_changeset: mortgage_changeset(current_user)
      )}
   end
@@ -89,6 +117,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   def handle_event("cancel-mortgage", _params, %{assigns: %{current_user: current_user}} = socket) do
     {:noreply,
      assign(socket,
+       loan_form_open?: false,
+       loan_form_kind: "mortgage",
        mortgage_form_open?: false,
        mortgage_form_mode: :new,
        editing_mortgage: nil,
@@ -103,6 +133,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       ) do
     {:noreply,
      assign(socket,
+       loan_form_open?: true,
+       loan_form_kind: "auto",
+       mortgage_form_open?: false,
        generic_loan_form_open?: true,
        generic_loan_changeset: generic_loan_changeset(current_user)
      )}
@@ -115,6 +148,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       ) do
     {:noreply,
      assign(socket,
+       loan_form_open?: false,
+       loan_form_kind: "mortgage",
        generic_loan_form_open?: false,
        generic_loan_changeset: generic_loan_changeset(current_user)
      )}
@@ -131,7 +166,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       |> Loans.change_loan(normalize_generic_loan_rate_params(params))
       |> Map.put(:action, :validate)
 
-    {:noreply, assign(socket, generic_loan_form_open?: true, generic_loan_changeset: changeset)}
+    {:noreply,
+     assign(socket,
+       loan_form_open?: true,
+       loan_form_kind: Map.get(params, "loan_type", socket.assigns.loan_form_kind),
+       generic_loan_form_open?: true,
+       generic_loan_changeset: changeset
+     )}
   end
 
   def handle_event(
@@ -147,6 +188,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
          socket
          |> load_page(current_user)
          |> assign(
+           loan_form_open?: false,
+           loan_form_kind: "mortgage",
            generic_loan_form_open?: false,
            generic_loan_changeset: generic_loan_changeset(current_user)
          )
@@ -155,6 +198,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply,
          assign(socket,
+           loan_form_open?: true,
            generic_loan_form_open?: true,
            generic_loan_changeset: Map.put(changeset, :action, :validate)
          )}
@@ -170,6 +214,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       {:ok, mortgage} ->
         {:noreply,
          assign(socket,
+           loan_form_open?: false,
            mortgage_form_open?: true,
            mortgage_form_mode: :edit,
            editing_mortgage: mortgage,
@@ -219,6 +264,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
          socket
          |> load_page(current_user)
          |> assign(
+           loan_form_open?: false,
+           loan_form_kind: "mortgage",
            mortgage_form_open?: false,
            mortgage_form_mode: :new,
            editing_mortgage: nil,
@@ -1143,6 +1190,26 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   def handle_event(
+        "new-missing-quote-fee-line",
+        %{"quote-id" => quote_id, "fee-type-id" => fee_type_id},
+        socket
+      ) do
+    {:noreply,
+     assign(socket,
+       quote_fee_line_form_open?: true,
+       quote_fee_line_form_mode: :new,
+       editing_quote_fee_line: nil,
+       quote_fee_line_form:
+         missing_quote_fee_line_form(
+           socket.assigns.quote_rows,
+           socket.assigns.quote_fee_type_options,
+           quote_id,
+           fee_type_id
+         )
+     )}
+  end
+
+  def handle_event(
         "edit-quote-fee-line",
         %{"id" => fee_line_id},
         %{assigns: %{current_user: current_user}} = socket
@@ -1176,7 +1243,12 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     {:noreply,
      assign(socket,
        quote_fee_line_form_open?: true,
-       quote_fee_line_form: merge_quote_fee_line_form(socket.assigns.quote_fee_line_form, params)
+       quote_fee_line_form:
+         merge_quote_fee_line_form(
+           socket.assigns.quote_fee_line_form,
+           params,
+           socket.assigns.quote_fee_type_options
+         )
      )}
   end
 
@@ -1185,12 +1257,18 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         %{"quote_fee_line" => params},
         %{assigns: %{current_user: current_user}} = socket
       ) do
-    form = merge_quote_fee_line_form(socket.assigns.quote_fee_line_form, params)
+    form =
+      merge_quote_fee_line_form(
+        socket.assigns.quote_fee_line_form,
+        params,
+        socket.assigns.quote_fee_type_options
+      )
 
     quote_id = Map.get(form, "lender_quote_id")
+    original_label = quote_fee_line_original_label(form, socket.assigns.quote_fee_type_options)
 
     attrs = %{
-      original_label: Map.get(form, "original_label"),
+      original_label: original_label,
       amount: Map.get(form, "amount")
     }
 
@@ -1402,8 +1480,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         subtitle="Mortgage loans are supported first. Additional loan types will be added incrementally."
       >
         <:actions>
-          <button type="button" class="btn btn-outline" phx-click="new-mortgage">
-            Add mortgage
+          <button type="button" class="btn btn-outline" phx-click="new-loan">
+            Add loan
           </button>
         </:actions>
       </.header>
@@ -1753,8 +1831,21 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                   </div>
                   <ul class="mt-2 grid gap-2 md:grid-cols-2">
                     <li :for={missing <- quote_missing_required_fees(row)} class="rounded-md border border-amber-100 bg-white/70 px-3 py-2">
-                      <p class="font-medium"><%= missing.display_name %></p>
-                      <p class="text-xs text-amber-700"><%= missing.review_note %></p>
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <p class="font-medium"><%= missing.display_name %></p>
+                          <p class="text-xs text-amber-700"><%= missing.review_note %></p>
+                        </div>
+                        <button type="button"
+                                class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-amber-300 bg-white text-amber-800 hover:bg-amber-100"
+                                phx-click="new-missing-quote-fee-line"
+                                phx-value-quote-id={row.quote.id}
+                                phx-value-fee-type-id={missing.loan_fee_type_id}
+                                aria-label={"Add missing #{missing.display_name}"}
+                                title={"Add missing #{missing.display_name}"}>
+                          <span class="material-icons text-base" aria-hidden="true">playlist_add</span>
+                        </button>
+                      </div>
                     </li>
                   </ul>
                 </section>
@@ -1872,7 +1963,14 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
                 <div class="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label class="text-sm font-medium text-zinc-700" for="quote_fee_line_original_label">Fee label</label>
+                    <label class="text-sm font-medium text-zinc-700" for="quote_fee_line_loan_fee_type_id">Fee type</label>
+                    <select id="quote_fee_line_loan_fee_type_id" name="quote_fee_line[loan_fee_type_id]" class="input">
+                      <%= Phoenix.HTML.Form.options_for_select(quote_fee_type_select_options(@quote_fee_type_options), @quote_fee_line_form["loan_fee_type_id"]) %>
+                    </select>
+                    <p class="mt-1 text-xs text-zinc-500">Choose a modeled fee type, or use a custom lender label.</p>
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-zinc-700" for="quote_fee_line_original_label">Lender label</label>
                     <input id="quote_fee_line_original_label" class="input" name="quote_fee_line[original_label]" value={@quote_fee_line_form["original_label"]} />
                   </div>
                   <div>
@@ -3147,23 +3245,6 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <.link navigate={~p"/app/loans/#{mortgage.id}"} class="rounded-full border border-zinc-200 bg-white px-3 py-1 font-medium text-zinc-700 hover:bg-zinc-50">
                       Open workspace
                     </.link>
-                    <.link navigate={~p"/app/loans/#{mortgage.id}/refinance"} class="rounded-full border border-zinc-200 bg-white px-3 py-1 font-medium text-zinc-700 hover:bg-zinc-50">
-                      Refinance
-                    </.link>
-                    <.link navigate={~p"/app/loans/#{mortgage.id}/quotes"} class="rounded-full border border-zinc-200 bg-white px-3 py-1 font-medium text-zinc-700 hover:bg-zinc-50">
-                      Lender quotes
-                    </.link>
-                    <.link navigate={~p"/app/loans/#{mortgage.id}/documents"} class="rounded-full border border-zinc-200 bg-white px-3 py-1 font-medium text-zinc-700 hover:bg-zinc-50">
-                      Documents
-                    </.link>
-                    <button
-                      type="button"
-                      class="rounded-full border border-zinc-200 bg-white px-3 py-1 font-medium text-zinc-700 hover:bg-zinc-50"
-                      phx-click="edit-mortgage"
-                      phx-value-id={mortgage.id}
-                    >
-                      Edit loan
-                    </button>
                   </div>
                 </div>
 
@@ -3180,9 +3261,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
           <div :if={@mortgages == []} class="rounded-xl border border-dashed border-zinc-200 p-6 text-center">
             <p class="text-sm text-zinc-500">
-              No mortgage records yet. Add a mortgage baseline to start Loan Center analysis.
+              No mortgage records yet. Use Add loan to create a mortgage baseline and start Loan Center analysis.
             </p>
-            <button type="button" class="btn mt-4" phx-click="new-mortgage">Add mortgage baseline</button>
           </div>
         </div>
 
@@ -3192,9 +3272,6 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <h2 class="text-lg font-semibold text-zinc-900">Other loans</h2>
               <p class="text-sm text-zinc-500">Auto, personal, and student loan baselines use generic payoff analysis.</p>
             </div>
-            <button type="button" class="btn btn-outline" phx-click="new-generic-loan">
-              Add non-mortgage loan
-            </button>
           </div>
 
           <ul :if={@generic_loans != []} class="space-y-3">
@@ -3244,11 +3321,14 @@ defmodule MoneyTreeWeb.LoansLive.Index do
           </ul>
 
           <div :if={@generic_loans == []} class="rounded-xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500">
-            Add an auto, personal, or student loan baseline to compare payment changes without mortgage-specific fields.
+            Use Add loan to create an auto, personal, or student loan baseline and compare payment changes without mortgage-specific fields.
           </div>
         </div>
+      </div>
 
-        <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div :if={@mortgage_form_open?} class={modal_backdrop_class()} phx-click="cancel-mortgage"></div>
+      <div :if={@mortgage_form_open?} class={modal_panel_class(:lg)}>
+        <div class="space-y-4">
           <div class="flex items-start justify-between gap-3">
             <div>
               <h2 class="text-lg font-semibold text-zinc-900"><%= mortgage_form_title(@mortgage_form_mode) %></h2>
@@ -3259,12 +3339,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
             </button>
           </div>
 
-          <div :if={!@mortgage_form_open?} class="rounded-xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500">
-            Select “Edit loan” on an existing loan or add a new mortgage baseline here.
-          </div>
-
-          <div :if={@mortgage_form_open?} class={modal_backdrop_class()} phx-click="cancel-mortgage"></div>
-          <div :if={@mortgage_form_open?} class={modal_panel_class(:lg)}>
+          <.loan_form_kind_selector :if={@loan_form_open?} selected={@loan_form_kind} />
           <.simple_form
                         for={@mortgage_changeset}
                         id="mortgage-form"
@@ -3332,14 +3407,15 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <button type="submit" class="btn"><%= mortgage_form_submit_label(@mortgage_form_mode) %></button>
             </div>
           </.simple_form>
-          </div>
         </div>
+      </div>
 
-        <div :if={@generic_loan_form_open?} class={modal_backdrop_class()} phx-click="cancel-generic-loan"></div>
-        <div :if={@generic_loan_form_open?} class={modal_panel_class(:md)}>
+      <div :if={@generic_loan_form_open?} class={modal_backdrop_class()} phx-click="cancel-generic-loan"></div>
+      <div :if={@generic_loan_form_open?} class={modal_panel_class(:md)}>
+        <div class="space-y-4">
           <div class="flex items-start justify-between gap-3">
             <div>
-              <h2 class="text-lg font-semibold text-zinc-900">Add non-mortgage loan</h2>
+              <h2 class="text-lg font-semibold text-zinc-900">Add loan</h2>
               <p class="text-sm text-zinc-500">Create a generic loan baseline for auto, personal, or student debt.</p>
             </div>
             <button type="button" class="btn btn-outline" phx-click="cancel-generic-loan">
@@ -3347,6 +3423,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
             </button>
           </div>
 
+          <.loan_form_kind_selector :if={@loan_form_open?} selected={@loan_form_kind} />
           <.simple_form for={@generic_loan_changeset}
                         id="generic-loan-form"
                         phx-change="validate-generic-loan"
@@ -3354,7 +3431,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                         :let={f}>
             <div class="grid gap-4">
               <.input field={f[:name]} label="Loan name" />
-              <div>
+              <input :if={@loan_form_open?} type="hidden" name="loan[loan_type]" value={@loan_form_kind} />
+              <div :if={!@loan_form_open?}>
                 <label class="text-sm font-medium text-zinc-700" for="loan_loan_type">Loan type</label>
                 <select id="loan_loan_type" name="loan[loan_type]" class="input">
                   <%= Phoenix.HTML.Form.options_for_select(generic_loan_type_options(), f[:loan_type].value || "auto") %>
@@ -3419,6 +3497,31 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         <span class={"font-medium #{range_value_class(@range.high, @tone)}"}>
         <%= format_range_value(@range.high, @kind) %>
         </span>
+      </div>
+    </div>
+    """
+  end
+
+  defp loan_form_kind_selector(assigns) do
+    ~H"""
+    <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+      <form phx-change="select-loan-form-kind" class="space-y-3">
+        <div>
+          <label class="text-sm font-medium text-zinc-700" for="loan_form_kind">Loan type</label>
+          <select id="loan_form_kind" name="loan_form[kind]" class="input">
+            <%= Phoenix.HTML.Form.options_for_select(loan_form_kind_options(), @selected) %>
+          </select>
+        </div>
+      </form>
+
+      <div class="mt-3 rounded-lg border border-dashed border-zinc-200 bg-white p-3 text-sm text-zinc-500">
+        <div class="flex items-start gap-3">
+          <input type="radio" disabled class="mt-1" />
+          <div>
+            <p class="font-medium text-zinc-700">Import from document</p>
+            <p>Document import will extract and prefill loan details for review before saving.</p>
+          </div>
+        </div>
       </div>
     </div>
     """
@@ -3533,6 +3636,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       analysis_history_rows: analysis_history_rows(current_user, mortgages),
       document_rows: document_rows(current_user, mortgages),
       quote_rows: quote_rows(current_user, mortgages),
+      quote_fee_type_options: quote_fee_type_options(),
       alert_rows: alert_rows(current_user, mortgages)
     )
   end
@@ -3553,6 +3657,43 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     current_user
     |> base_generic_loan()
     |> Loans.change_loan()
+  end
+
+  defp generic_loan_changeset(current_user, loan_type) do
+    current_user
+    |> base_generic_loan(%{"loan_type" => loan_type})
+    |> Loans.change_loan()
+  end
+
+  defp assign_loan_form_kind(socket, current_user, "mortgage") do
+    assign(socket,
+      loan_form_open?: true,
+      loan_form_kind: "mortgage",
+      mortgage_form_open?: true,
+      mortgage_form_mode: :new,
+      editing_mortgage: nil,
+      mortgage_changeset: mortgage_changeset(current_user),
+      generic_loan_form_open?: false,
+      generic_loan_changeset: generic_loan_changeset(current_user)
+    )
+  end
+
+  defp assign_loan_form_kind(socket, current_user, kind)
+       when kind in ["auto", "personal", "student"] do
+    assign(socket,
+      loan_form_open?: true,
+      loan_form_kind: kind,
+      mortgage_form_open?: false,
+      mortgage_form_mode: :new,
+      editing_mortgage: nil,
+      mortgage_changeset: mortgage_changeset(current_user),
+      generic_loan_form_open?: true,
+      generic_loan_changeset: generic_loan_changeset(current_user, kind)
+    )
+  end
+
+  defp assign_loan_form_kind(socket, current_user, _kind) do
+    assign_loan_form_kind(socket, current_user, "mortgage")
   end
 
   defp base_generic_loan(current_user, attrs \\ %{}) do
@@ -4443,27 +4584,80 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     "rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-semibold text-zinc-700"
   end
 
+  defp quote_fee_type_options do
+    Loans.list_loan_fee_types(loan_type: "mortgage", transaction_type: "refinance", enabled: true)
+    |> Enum.map(&{&1.display_name, &1.id})
+  end
+
+  defp quote_fee_type_select_options(options) do
+    [{"Custom lender label", ""} | options]
+  end
+
   defp default_quote_fee_line_form(quote_rows, quote_id \\ nil) do
     %{
       "lender_quote_id" => quote_id || first_quote_id(quote_rows),
+      "loan_fee_type_id" => "",
       "original_label" => "",
       "amount" => ""
     }
   end
 
-  defp merge_quote_fee_line_form(form, params) do
-    Map.merge(
-      form || default_quote_fee_line_form([]),
-      Map.take(params, Map.keys(default_quote_fee_line_form([])))
-    )
+  defp missing_quote_fee_line_form(quote_rows, fee_type_options, quote_id, fee_type_id) do
+    quote_rows
+    |> default_quote_fee_line_form(quote_id)
+    |> Map.put("loan_fee_type_id", fee_type_id)
+    |> Map.put("original_label", quote_fee_type_label(fee_type_id, fee_type_options) || "")
+  end
+
+  defp merge_quote_fee_line_form(form, params, fee_type_options) do
+    merged =
+      Map.merge(
+        form || default_quote_fee_line_form([]),
+        Map.take(params, Map.keys(default_quote_fee_line_form([])))
+      )
+
+    maybe_fill_quote_fee_line_label(merged, fee_type_options)
   end
 
   defp quote_fee_line_form_from_line(line) do
     %{
       "lender_quote_id" => line.lender_quote_id,
+      "loan_fee_type_id" => line.loan_fee_type_id || "",
       "original_label" => line.original_label || "",
       "amount" => decimal_form_value(line.amount)
     }
+  end
+
+  defp maybe_fill_quote_fee_line_label(%{"original_label" => label} = form, fee_type_options)
+       when label in [nil, ""] do
+    case quote_fee_type_label(form["loan_fee_type_id"], fee_type_options) do
+      nil -> form
+      label -> Map.put(form, "original_label", label)
+    end
+  end
+
+  defp maybe_fill_quote_fee_line_label(form, _fee_type_options), do: form
+
+  defp quote_fee_line_original_label(form, fee_type_options) do
+    case Map.get(form, "original_label") do
+      label when is_binary(label) and label != "" ->
+        label
+
+      _value ->
+        quote_fee_type_label(Map.get(form, "loan_fee_type_id"), fee_type_options) || ""
+    end
+  end
+
+  defp quote_fee_type_label(nil, _fee_type_options), do: nil
+  defp quote_fee_type_label("", _fee_type_options), do: nil
+
+  defp quote_fee_type_label(fee_type_id, fee_type_options) do
+    fee_type_options
+    |> Enum.find(fn {_label, id} -> id == fee_type_id end)
+    |> case do
+      {label, _id} -> label
+      nil -> nil
+    end
   end
 
   defp quote_fee_line_form_title(:edit), do: "Edit quote fee"
@@ -4846,6 +5040,15 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp generic_loan_type_options do
     Loan.loan_types()
     |> Enum.map(&{format_label(&1), &1})
+  end
+
+  defp loan_form_kind_options do
+    [
+      {"Mortgage", "mortgage"},
+      {"Auto", "auto"},
+      {"Personal", "personal"},
+      {"Student", "student"}
+    ]
   end
 
   defp alert_uses_threshold?(kind) do

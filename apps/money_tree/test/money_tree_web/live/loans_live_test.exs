@@ -9,13 +9,14 @@ defmodule MoneyTreeWeb.LoansLiveTest do
   test "renders mortgage-first overview and current mortgage records", %{conn: conn} do
     {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
 
-    mortgage_fixture(user, %{
-      property_name: "Maple Residence",
-      loan_type: "conventional",
-      current_balance: "350000.00",
-      monthly_payment_total: "2400.22",
-      remaining_term_months: 300
-    })
+    mortgage =
+      mortgage_fixture(user, %{
+        property_name: "Maple Residence",
+        loan_type: "conventional",
+        current_balance: "350000.00",
+        monthly_payment_total: "2400.22",
+        remaining_term_months: 300
+      })
 
     {:ok, _view, html} = live(authed_conn, ~p"/app/loans")
 
@@ -25,7 +26,13 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "$350000.00"
     assert html =~ "Payment $2400.22"
     assert html =~ "Open workspace"
-    assert html =~ "Lender quotes"
+    assert html =~ "Add loan"
+    refute html =~ "Add mortgage"
+    refute html =~ "Add mortgage baseline"
+    refute html =~ "Add non-mortgage loan"
+    refute html =~ ~p"/app/loans/#{mortgage.id}/refinance"
+    refute html =~ ~p"/app/loans/#{mortgage.id}/quotes"
+    refute html =~ ~p"/app/loans/#{mortgage.id}/documents"
     refute html =~ "Refinance analysis"
     refute html =~ "Add fee item"
   end
@@ -36,11 +43,13 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     {:ok, view, html} = live(authed_conn, ~p"/app/loans")
 
     assert html =~ "No mortgage records yet"
-    assert html =~ "Add mortgage baseline"
+    assert html =~ "Use Add loan to create a mortgage baseline"
 
     view
-    |> element("button", "Add mortgage baseline")
+    |> element("button", "Add loan")
     |> render_click()
+
+    assert render(view) =~ "Import from document"
 
     html =
       view
@@ -72,11 +81,15 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     {:ok, view, html} = live(authed_conn, ~p"/app/loans")
 
     assert html =~ "Other loans"
-    assert html =~ "Add non-mortgage loan"
+    assert html =~ "Use Add loan to create an auto, personal, or student loan baseline"
 
     view
-    |> element("button", "Add non-mortgage loan")
+    |> element("button", "Add loan")
     |> render_click()
+
+    view
+    |> form("form[phx-change='select-loan-form-kind']", loan_form: %{kind: "auto"})
+    |> render_change()
 
     html =
       view
@@ -326,12 +339,20 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     )
     |> render_click()
 
+    appraisal_fee_type =
+      [loan_type: "mortgage", transaction_type: "refinance", enabled: true]
+      |> Loans.list_loan_fee_types()
+      |> Enum.find(&(&1.code == "appraisal_fee"))
+
+    assert appraisal_fee_type
+
     html =
       view
       |> form("#quote-fee-line-form",
         quote_fee_line: %{
           "lender_quote_id" => quote_id,
-          "original_label" => "Appraisal fee",
+          "loan_fee_type_id" => appraisal_fee_type.id,
+          "original_label" => "",
           "amount" => "650.00"
         }
       )
@@ -342,6 +363,35 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Acceptable or low"
     assert html =~ "Acceptable"
     assert html =~ "Expected but not listed"
+
+    credit_report_fee_type =
+      [loan_type: "mortgage", transaction_type: "refinance", enabled: true]
+      |> Loans.list_loan_fee_types()
+      |> Enum.find(&(&1.code == "credit_report_fee"))
+
+    assert credit_report_fee_type
+
+    html =
+      view
+      |> element("button[aria-label='Add missing Credit report fee']")
+      |> render_click()
+
+    assert html =~ "Credit report fee"
+
+    html =
+      view
+      |> form("#quote-fee-line-form",
+        quote_fee_line: %{
+          "lender_quote_id" => quote_id,
+          "loan_fee_type_id" => credit_report_fee_type.id,
+          "original_label" => "Credit report fee",
+          "amount" => "50.00"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Quote fee line added and classified."
+    assert html =~ "Credit report fee"
 
     [%{fee_lines: fee_lines}] = Loans.list_lender_quotes(user, mortgage, preload: [:fee_lines])
     fee_line = Enum.find(fee_lines, &(&1.original_label == "Appraisal fee"))
