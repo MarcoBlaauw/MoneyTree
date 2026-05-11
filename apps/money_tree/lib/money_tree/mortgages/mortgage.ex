@@ -24,6 +24,7 @@ defmodule MoneyTree.Mortgages.Mortgage do
     field :street_line_2, :string
     field :city, :string
     field :state_region, :string
+    field :county_or_parish, :string
     field :postal_code, :string
     field :country_code, :string, default: "US"
     field :occupancy_type, :string
@@ -66,6 +67,7 @@ defmodule MoneyTree.Mortgages.Mortgage do
       :street_line_2,
       :city,
       :state_region,
+      :county_or_parish,
       :postal_code,
       :country_code,
       :occupancy_type,
@@ -109,6 +111,7 @@ defmodule MoneyTree.Mortgages.Mortgage do
     |> validate_length(:street_line_2, max: 255)
     |> validate_length(:city, max: 120)
     |> validate_length(:state_region, max: 120)
+    |> validate_length(:county_or_parish, max: 160)
     |> validate_length(:postal_code, max: 20)
     |> validate_length(:country_code, is: 2)
     |> validate_length(:occupancy_type, max: 120)

@@ -16,6 +16,25 @@ The goal is to replace loose, free-form fee entry with predefined, loan-type-awa
 
 This plan builds on `docs/loan-fee-regulatory-research.md` and the existing Loan Center refinance fee strategy.
 
+## Implementation status
+
+Status as of May 11, 2026:
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Persistent fee configuration | Done for v1 | Added fee types, jurisdiction profiles, jurisdiction rules, and default seed helpers. |
+| Louisiana starter profile | Done for v1 | State-level Louisiana refinance overrides are available; Orleans, St. Charles, Jefferson, St. John the Baptist, St. Tammany, and East Baton Rouge parish profiles are seeded from the deep research report. |
+| Sparse non-mortgage shell | Done for v1 | Auto, personal, and student placeholder fee types exist with very-low confidence. |
+| Prediction engine | Done for v1 | Computes low / expected / high ranges, true costs, timing costs, offsets, confidence, and warnings. |
+| Quote fee-line model | Done for v1 | Lender quote fee lines persist classification, confidence, required/review flags, and notes. |
+| Quote analyzer | Done for v1 | Maps labels to canonical fee types, classifies known/unknown/high/duplicate lines, and reports missing required fees. |
+| Loan Center integration | Partial | Refinance workspace shows prediction ranges, “Add common fees,” editable/removable fee items, grouped fee assumptions, manual quote fee-line entry, and quote fee review. Remaining UX refinement is mostly deeper quote review workflows and localized data expansion. |
+| Credit score support | Metadata only | Fee types can be marked credit-score-sensitive, but no pricing adjustment is applied. |
+| Deferred future work | Pending | Parish source URL hardening, exact endorsement pricing, prediction snapshots, opportunity scoring, and enterprise providers remain out of v1. |
+
+Louisiana verification details are tracked in `docs/loan-fee-louisiana-verification-notes.md`.
+The deep research source report is tracked in `docs/deep-research-report.md`.
+
 ## Core product principle
 
 MoneyTree should help users understand and compare loan/refinance costs without pretending to be a lender, broker, underwriter, compliance system, or legal disclosure generator.

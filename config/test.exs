@@ -54,6 +54,11 @@ config :money_tree, MoneyTree.AI,
     timeout_ms: 5000
   ]
 
+config :money_tree, MoneyTree.Loans.RateProviders.Fred,
+  base_url: "https://api.stlouisfed.org/fred",
+  api_key: nil,
+  timeout_ms: 5000
+
 config :money_tree, :disable_oban_tracing, true
 
 config :logger, level: :warning

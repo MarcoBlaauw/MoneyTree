@@ -26,6 +26,42 @@ defmodule MoneyTree.AI do
   @import_retry_row_limit 25
   @import_prompt_category_limit 60
   @import_prompt_text_max_chars 160
+  @loan_document_text_max_chars 20_000
+  @loan_document_excerpt_max_chars 10_000
+
+  @loan_document_extraction_fields ~w(
+    current_balance
+    current_interest_rate
+    remaining_term_months
+    original_loan_amount
+    original_term_months
+    monthly_payment_total
+    monthly_principal_interest
+    escrow_monthly
+    pmi_monthly
+    servicer_name
+    lender_name
+    product_type
+    term_months
+    interest_rate
+    apr
+    points
+    lender_credit_amount
+    estimated_closing_costs_low
+    estimated_closing_costs_expected
+    estimated_closing_costs_high
+    estimated_cash_to_close_low
+    estimated_cash_to_close_expected
+    estimated_cash_to_close_high
+    estimated_monthly_payment_low
+    estimated_monthly_payment_expected
+    estimated_monthly_payment_high
+    quote_expires_at
+    lock_expires_at
+    statement_date
+    next_payment_due_date
+    payoff_good_through_date
+  )
 
   @default_categories [
     "Groceries",
@@ -120,6 +156,37 @@ defmodule MoneyTree.AI do
        }}
     end
   end
+
+  @spec extract_loan_document_fields(User.t() | binary(), String.t(), map()) ::
+          {:ok, map()} | {:error, term()}
+  def extract_loan_document_fields(user, text, opts \\ %{})
+
+  def extract_loan_document_fields(user, text, opts) when is_binary(text) and is_map(opts) do
+    opts = stringify_keys(opts)
+
+    runtime =
+      user
+      |> runtime_settings(opts)
+      |> ensure_min_timeout(@import_timeout_ms)
+
+    with :ok <- ensure_ai_enabled(runtime),
+         {:ok, prompt_text} <- normalize_document_text(text),
+         prompt <- loan_document_extraction_prompt(prompt_text, opts),
+         {:ok, response} <- provider_module(runtime.provider).generate_json(runtime, prompt, []),
+         {:ok, normalized} <- normalize_loan_document_extraction_output(response) do
+      {:ok,
+       %{
+         extraction_method: "ollama",
+         model_name: runtime.model,
+         raw_text_excerpt: String.slice(prompt_text, 0, @loan_document_excerpt_max_chars),
+         extracted_payload: normalized.extracted_payload,
+         field_confidence: normalized.field_confidence,
+         source_citations: normalized.source_citations
+       }}
+    end
+  end
+
+  def extract_loan_document_fields(_user, _text, _opts), do: {:error, :invalid_text}
 
   @spec create_categorization_run(User.t() | binary(), map()) ::
           {:ok, SuggestionRun.t()} | {:error, term()}
@@ -552,6 +619,161 @@ defmodule MoneyTree.AI do
   defp normalize_import_categorization_suggestions(_suggestions, _rows, _categories),
     do: {:error, :invalid_output}
 
+  defp normalize_loan_document_extraction_output(response) when is_map(response) do
+    payload =
+      response
+      |> first_map_value(["fields", "extracted_payload", "payload"])
+      |> normalize_loan_document_payload()
+
+    if payload == %{} do
+      {:error, :no_extracted_fields}
+    else
+      {:ok,
+       %{
+         extracted_payload: payload,
+         field_confidence:
+           response
+           |> first_map_value(["confidence", "field_confidence", "confidences"])
+           |> normalize_field_confidence(Map.keys(payload)),
+         source_citations:
+           response
+           |> first_map_value(["citations", "source_citations", "evidence"])
+           |> normalize_source_citations(Map.keys(payload))
+       }}
+    end
+  end
+
+  defp normalize_loan_document_extraction_output(_response), do: {:error, :invalid_output}
+
+  defp normalize_loan_document_payload(value) when is_map(value) do
+    Enum.reduce(value, %{}, fn {key, value}, acc ->
+      field = normalize_loan_document_field(key)
+
+      if field in @loan_document_extraction_fields and not blank_value?(value) do
+        Map.put(acc, field, normalize_document_field_value(field, value))
+      else
+        acc
+      end
+    end)
+  end
+
+  defp normalize_loan_document_payload(_value), do: %{}
+
+  defp normalize_field_confidence(value, fields) when is_map(value) do
+    fields = MapSet.new(fields)
+
+    Enum.reduce(value, %{}, fn {key, value}, acc ->
+      field = normalize_loan_document_field(key)
+
+      if MapSet.member?(fields, field) do
+        case normalize_confidence(value) do
+          nil -> acc
+          confidence -> Map.put(acc, field, Decimal.to_float(confidence))
+        end
+      else
+        acc
+      end
+    end)
+  end
+
+  defp normalize_field_confidence(_value, _fields), do: %{}
+
+  defp normalize_source_citations(value, fields) when is_map(value) do
+    fields = MapSet.new(fields)
+
+    Enum.reduce(value, %{}, fn {key, value}, acc ->
+      field = normalize_loan_document_field(key)
+
+      if MapSet.member?(fields, field) do
+        Map.put(acc, field, normalize_citation_value(value))
+      else
+        acc
+      end
+    end)
+  end
+
+  defp normalize_source_citations(_value, _fields), do: %{}
+
+  defp normalize_citation_value(value) when is_list(value) do
+    value
+    |> Enum.map(&normalize_citation_item/1)
+    |> Enum.reject(&(&1 == %{}))
+  end
+
+  defp normalize_citation_value(value), do: normalize_citation_value([value])
+
+  defp normalize_citation_item(value) when is_binary(value),
+    do: %{"text" => String.slice(value, 0, 500)}
+
+  defp normalize_citation_item(value) when is_map(value) do
+    Enum.reduce(value, %{}, fn {key, value}, acc ->
+      key = to_string(key)
+
+      if key in ["text", "page", "label"] and not blank_value?(value) do
+        Map.put(acc, key, value)
+      else
+        acc
+      end
+    end)
+  end
+
+  defp normalize_citation_item(_value), do: %{}
+
+  defp normalize_loan_document_field(key) do
+    key
+    |> to_string()
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace(~r/[\s-]+/, "_")
+    |> loan_document_field_alias()
+  end
+
+  defp loan_document_field_alias("interest_rate"), do: "current_interest_rate"
+  defp loan_document_field_alias("principal_balance"), do: "current_balance"
+  defp loan_document_field_alias("unpaid_principal_balance"), do: "current_balance"
+  defp loan_document_field_alias("monthly_payment"), do: "monthly_payment_total"
+  defp loan_document_field_alias("pmi_mip_monthly"), do: "pmi_monthly"
+  defp loan_document_field_alias("new_term_months"), do: "term_months"
+  defp loan_document_field_alias("new_interest_rate"), do: "interest_rate"
+  defp loan_document_field_alias("closing_costs"), do: "estimated_closing_costs_expected"
+  defp loan_document_field_alias("cash_to_close"), do: "estimated_cash_to_close_expected"
+  defp loan_document_field_alias("new_monthly_payment"), do: "estimated_monthly_payment_expected"
+  defp loan_document_field_alias(field), do: field
+
+  defp normalize_document_field_value(field, value)
+       when field in ["remaining_term_months", "original_term_months"] do
+    case value do
+      value when is_integer(value) -> value
+      value when is_binary(value) -> String.trim(value)
+      value -> value
+    end
+  end
+
+  defp normalize_document_field_value(_field, value) when is_binary(value), do: String.trim(value)
+  defp normalize_document_field_value(_field, value), do: value
+
+  defp first_map_value(map, keys) when is_map(map) do
+    Enum.find_value(keys, fn key ->
+      case get(map, key) do
+        value when is_map(value) -> value
+        _ -> nil
+      end
+    end) || %{}
+  end
+
+  defp normalize_document_text(text) when is_binary(text) do
+    text =
+      text
+      |> String.trim()
+      |> String.slice(0, @loan_document_text_max_chars)
+
+    if text == "", do: {:error, :empty_text}, else: {:ok, text}
+  end
+
+  defp blank_value?(nil), do: true
+  defp blank_value?(value) when is_binary(value), do: String.trim(value) == ""
+  defp blank_value?(_value), do: false
+
   defp normalize_confidence(nil), do: nil
 
   defp normalize_confidence(value) do
@@ -641,6 +863,49 @@ defmodule MoneyTree.AI do
             reason: "brief reason"
           }
         ]
+      }
+    })
+  end
+
+  defp loan_document_extraction_prompt(text, opts) do
+    Jason.encode!(%{
+      instructions: [
+        "You extract mortgage document fields for user review.",
+        "Return JSON only with shape {\"fields\":{},\"confidence\":{},\"citations\":{}}.",
+        "Only include fields that are explicitly supported by the document text.",
+        "Do not calculate, estimate, or infer missing financial values.",
+        "Use decimal strings for money and rates. Use ISO-8601 dates when dates are present.",
+        "Confidence values must be between 0 and 1.",
+        "Citations should include short source snippets from the document text."
+      ],
+      document_type: get(opts, "document_type"),
+      supported_fields: @loan_document_extraction_fields,
+      field_aliases: %{
+        interest_rate: "current_interest_rate",
+        principal_balance: "current_balance",
+        unpaid_principal_balance: "current_balance",
+        monthly_payment: "monthly_payment_total",
+        pmi_mip_monthly: "pmi_monthly"
+      },
+      loan_document_text: text,
+      output_schema: %{
+        fields: %{
+          current_balance: "decimal string",
+          current_interest_rate: "decimal rate, such as 0.0575",
+          remaining_term_months: "integer",
+          monthly_payment_total: "decimal string"
+        },
+        confidence: %{
+          current_balance: 0.0
+        },
+        citations: %{
+          current_balance: [
+            %{
+              text: "short supporting source snippet",
+              page: "page number when known"
+            }
+          ]
+        }
       }
     })
   end

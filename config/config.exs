@@ -72,6 +72,11 @@ config :money_tree, MoneyTree.AI,
     timeout_ms: 60_000
   ]
 
+config :money_tree, MoneyTree.Loans.RateProviders.Fred,
+  base_url: "https://api.stlouisfed.org/fred",
+  api_key: nil,
+  timeout_ms: 15_000
+
 config :money_tree, Oban,
   repo: MoneyTree.Repo,
   queues: [
@@ -85,7 +90,8 @@ config :money_tree, Oban,
     {Oban.Plugins.Cron,
      crontab: [
        {"*/30 * * * *", MoneyTree.Teller.SyncWorker, args: %{"mode" => "dispatch"}},
-       {"0 7 * * *", MoneyTree.Obligations.CheckWorker, args: %{}}
+       {"0 7 * * *", MoneyTree.Obligations.CheckWorker, args: %{}},
+       {"30 7 * * *", MoneyTree.Loans.Workers.RateImportWorker, args: %{"provider" => "fred"}}
      ]}
   ]
 

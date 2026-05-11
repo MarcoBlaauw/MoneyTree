@@ -875,6 +875,19 @@ Decimal values should remain string-encoded to match existing contract patterns.
 
 ## Implementation phases
 
+### Current implementation status
+
+| Phase | Status | Notes |
+| --- | --- | --- |
+| Phase 0: Loan Center destination | Done | Loan Center navigation, canonical `/app/loans` routes, mortgage compatibility routes, and mortgage-backed overview are in place. |
+| Phase 1: Refinance math foundation | Done | Deterministic amortization, refinance comparisons, warnings, and payoff what-if calculations are implemented with focused tests. |
+| Phase 2: Scenario persistence and API | Done | Refinance scenarios, fee items, analysis snapshots, context functions, controller routes, contracts, and authorization coverage are implemented. |
+| Phase 3: Refinance UI | Done | Scenario, fee, comparison, benchmark, lender quote bridge, loan tabs, the ephemeral what-if sandbox, default-visible analysis details, labeled range presentation, decision metric highlights, warning callouts, progressive disclosure for refinance forms, percentage-based scenario rate inputs, mortgage-seeded scenario defaults, and the planned Loan Center workspace cleanup are implemented. Broader polish can continue outside Phase 3. |
+| Phase 4: Documents and Ollama extraction | Done | Document metadata, uploads, extraction candidates, text/PDF/image OCR extraction artifacts, row-level extraction triggers, stored-text review context, Ollama/manual extraction, confirmation-gated apply actions, and quote/scenario creation from confirmed candidates are implemented. Broader import UX polish can continue outside Phase 4. |
+| Phase 5: Rates and lender quotes | Done | Manual benchmark rates, configured public benchmark sources, FRED external market-rate provider automation, benchmark import actions, market snapshots, trend/context data quality labels, lender quote tracking, deterministic quote expiration refresh, quote freshness labels, and quote-to-scenario conversion are implemented. Broader provider expansion can continue outside Phase 5. |
+| Phase 6: Alerts | Done | Alert rule UI, threshold and review/quote rule evaluation, per-loan and scheduled all-active evaluation worker paths, durable notification delivery integration, email delivery through existing notification infrastructure, and per-rule cooldown anti-noise behavior are implemented. |
+| Phase 7: Expand beyond mortgages | Done | Generic non-mortgage loan records, auto/personal/student input support, auto-loan refinance preview through the shared deterministic refinance engine, and mortgage-specific field isolation are implemented. |
+
 ### Phase 0: Rename product direction and add Loan Center destination
 
 Tasks:
@@ -935,13 +948,16 @@ Tasks:
 - build scenario form
 - build fee/cost editor
 - build scenario comparison table
+- build ephemeral what-if sandbox sliders for rate, term, and extra monthly principal
 - build analysis detail page/drawer
 - highlight monthly payment, break-even, and full-term cost
 - add assumptions and warnings panel
+- continue Loan Center UI/UX cleanup after the backend workflow is complete
 
 Acceptance criteria:
 
 - user can compare at least two scenarios
+- user can adjust rate, term, and extra principal without persisting a scenario
 - UI shows low/expected/high ranges
 - full-term cost is visible without opening advanced settings
 

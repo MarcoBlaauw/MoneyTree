@@ -237,6 +237,34 @@ liveSocket.connect();
 window.LiveSocket = liveSocket;
 window.MoneyTreeHooks = Hooks;
 
+const scrollIntoViewById = (id, attempt = 0) => {
+  const target = document.getElementById(id);
+
+  if (!target) {
+    if (attempt < 5) {
+      window.requestAnimationFrame(() => scrollIntoViewById(id, attempt + 1));
+    }
+
+    return;
+  }
+
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  try {
+    target.focus({ preventScroll: true });
+  } catch (_error) {
+    target.focus();
+  }
+};
+
+window.addEventListener("phx:scroll-into-view", (event) => {
+  const id = event.detail?.id;
+
+  if (id) {
+    scrollIntoViewById(id);
+  }
+});
+
 const mountLoginPasskeys = () => {
   const root = document.querySelector("[data-webauthn-login]");
 

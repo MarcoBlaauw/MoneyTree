@@ -79,6 +79,7 @@ defmodule MoneyTreeWeb.MortgageController do
       street_line_2: mortgage.street_line_2,
       city: mortgage.city,
       state_region: mortgage.state_region,
+      county_or_parish: mortgage.county_or_parish,
       postal_code: mortgage.postal_code,
       country_code: mortgage.country_code,
       occupancy_type: mortgage.occupancy_type,

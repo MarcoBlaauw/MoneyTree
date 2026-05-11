@@ -202,6 +202,27 @@ plaid_runtime_config =
 
 config :money_tree, MoneyTree.Plaid, Keyword.merge(base_plaid_config, plaid_runtime_config)
 
+fred_env = fn key ->
+  case System.get_env(key) do
+    nil -> nil
+    "" -> nil
+    value -> value
+  end
+end
+
+base_fred_config = Application.get_env(:money_tree, MoneyTree.Loans.RateProviders.Fred, [])
+
+fred_runtime_config =
+  [
+    api_key: fred_env.("FRED_API_KEY"),
+    base_url: fred_env.("FRED_BASE_URL")
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+config :money_tree,
+       MoneyTree.Loans.RateProviders.Fred,
+       Keyword.merge(base_fred_config, fred_runtime_config)
+
 ai_env = fn key ->
   case System.get_env(key) do
     nil -> nil

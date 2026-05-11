@@ -154,4 +154,5 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
     assert rendered =~ "Asset added successfully."
     assert rendered =~ "Collector Car"
   end
+
 end

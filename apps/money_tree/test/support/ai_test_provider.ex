@@ -13,35 +13,58 @@ defmodule MoneyTree.AI.TestProvider do
   def generate_json(_settings, prompt, _opts) do
     case next_queued_response() || Process.get(:ai_test_provider_response) do
       nil ->
-        if String.contains?(prompt, "\"rows\"") do
-          row_id = extract_row_id(prompt)
-
+        if String.contains?(prompt, "\"loan_document_text\"") do
           {:ok,
            %{
-             "suggestions" => [
-               %{
-                 "row_id" => row_id,
-                 "category" => "Groceries",
-                 "confidence" => 0.82,
-                 "reason" => "merchant appears grocery related"
-               }
-             ]
+             "fields" => %{
+               "principal_balance" => "390000.00",
+               "interest_rate" => "0.0575",
+               "remaining_term_months" => 348,
+               "monthly_payment" => "2275.41"
+             },
+             "confidence" => %{
+               "principal_balance" => 0.91,
+               "interest_rate" => 0.84,
+               "remaining_term_months" => 0.72,
+               "monthly_payment" => 0.88
+             },
+             "citations" => %{
+               "principal_balance" => [
+                 %{"page" => 1, "text" => "Unpaid principal balance $390,000.00"}
+               ]
+             }
            }}
         else
-          transaction_id =
-            Process.get(:ai_test_provider_transaction_id) || extract_transaction_id(prompt)
+          if String.contains?(prompt, "\"rows\"") do
+            row_id = extract_row_id(prompt)
 
-          {:ok,
-           %{
-             "suggestions" => [
-               %{
-                 "transaction_id" => transaction_id,
-                 "category" => "Groceries",
-                 "confidence" => 0.82,
-                 "reason" => "merchant appears grocery related"
-               }
-             ]
-           }}
+            {:ok,
+             %{
+               "suggestions" => [
+                 %{
+                   "row_id" => row_id,
+                   "category" => "Groceries",
+                   "confidence" => 0.82,
+                   "reason" => "merchant appears grocery related"
+                 }
+               ]
+             }}
+          else
+            transaction_id =
+              Process.get(:ai_test_provider_transaction_id) || extract_transaction_id(prompt)
+
+            {:ok,
+             %{
+               "suggestions" => [
+                 %{
+                   "transaction_id" => transaction_id,
+                   "category" => "Groceries",
+                   "confidence" => 0.82,
+                   "reason" => "merchant appears grocery related"
+                 }
+               ]
+             }}
+          end
         end
 
       response ->

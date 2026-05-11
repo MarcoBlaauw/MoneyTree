@@ -15,8 +15,22 @@ defmodule MoneyTree.Notifications.Event do
   @foreign_key_type :binary_id
   @timestamps_opts [type: :utc_datetime_usec]
 
-  @kinds ~w(payment_obligation)
-  @statuses ~w(upcoming due_today overdue recovered)
+  @kinds ~w(payment_obligation loan_refinance_alert)
+  @statuses ~w(
+    upcoming
+    due_today
+    overdue
+    recovered
+    triggered
+    rate_below_threshold
+    monthly_payment_below_threshold
+    monthly_savings_above_threshold
+    break_even_below_months
+    full_term_cost_savings_above_threshold
+    expected_horizon_savings_above_threshold
+    lender_quote_expiring
+    document_review_needed
+  )
   @severities ~w(info warning critical)
   @delivery_statuses ~w(pending delivered failed suppressed)
 

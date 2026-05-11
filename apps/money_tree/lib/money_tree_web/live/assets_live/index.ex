@@ -204,7 +204,7 @@ defmodule MoneyTreeWeb.AssetsLive.Index do
                   <p class="text-xs text-zinc-500">
                     <%= summary.asset.asset_type %>
                     <%= if summary.asset.category, do: " • #{summary.asset.category}" %>
-                    • <%= summary.asset.account.name %>
+                    • <%= asset_account_name(summary.asset) %>
                   </p>
                 </div>
 
@@ -346,6 +346,9 @@ defmodule MoneyTreeWeb.AssetsLive.Index do
   defp asset_account_options(accounts) do
     Enum.map(accounts, &{&1.name, &1.id})
   end
+
+  defp asset_account_name(%Asset{account: %{name: name}}) when is_binary(name), do: name
+  defp asset_account_name(%Asset{}), do: "Unlinked account"
 
   defp errors_on(changeset, field) do
     changeset

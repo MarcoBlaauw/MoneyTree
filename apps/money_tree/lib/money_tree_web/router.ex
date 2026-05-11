@@ -96,6 +96,40 @@ defmodule MoneyTreeWeb.Router do
       get "/mortgages/:id", MortgageController, :show
       put "/mortgages/:id", MortgageController, :update
       delete "/mortgages/:id", MortgageController, :delete
+      get "/loans/:loan_id/refinance_scenarios", RefinanceScenarioController, :index
+      post "/loans/:loan_id/refinance_scenarios", RefinanceScenarioController, :create
+      get "/refinance_scenarios/:id", RefinanceScenarioController, :show
+      put "/refinance_scenarios/:id", RefinanceScenarioController, :update
+      delete "/refinance_scenarios/:id", RefinanceScenarioController, :delete
+      post "/refinance_scenarios/:id/fee_items", RefinanceScenarioController, :create_fee_item
+      post "/refinance_scenarios/:id/analyze", RefinanceScenarioController, :analyze
+      get "/loans/:loan_id/documents", LoanDocumentController, :index
+      post "/loans/:loan_id/documents", LoanDocumentController, :create
+      get "/loan_documents/:id", LoanDocumentController, :show
+      post "/loan_documents/:id/extract", LoanDocumentController, :extract
+      post "/loan_document_extractions/:id/confirm", LoanDocumentController, :confirm_extraction
+      post "/loan_document_extractions/:id/reject", LoanDocumentController, :reject_extraction
+      post "/loan_document_extractions/:id/apply", LoanDocumentController, :apply_extraction
+
+      post "/loan_document_extractions/:id/create_lender_quote",
+           LoanDocumentController,
+           :create_lender_quote
+
+      post "/loan_document_extractions/:id/create_scenario",
+           LoanDocumentController,
+           :create_scenario
+
+      get "/loans/:loan_id/lender_quotes", LenderQuoteController, :index
+      post "/loans/:loan_id/lender_quotes", LenderQuoteController, :create
+      get "/lender_quotes/:id", LenderQuoteController, :show
+      put "/lender_quotes/:id", LenderQuoteController, :update
+      post "/lender_quotes/:id/convert", LenderQuoteController, :convert
+      get "/loans/:loan_id/alert_rules", LoanAlertRuleController, :index
+      post "/loans/:loan_id/alert_rules", LoanAlertRuleController, :create
+      post "/loans/:loan_id/alert_rules/evaluate", LoanAlertRuleController, :evaluate_all
+      put "/loan_alert_rules/:id", LoanAlertRuleController, :update
+      delete "/loan_alert_rules/:id", LoanAlertRuleController, :delete
+      post "/loan_alert_rules/:id/evaluate", LoanAlertRuleController, :evaluate
       post "/accounts/:account_id/invitations", InvitationController, :create
       delete "/accounts/:account_id/invitations/:id", InvitationController, :revoke
       get "/categorization/rules", CategorizationController, :list_rules
@@ -192,6 +226,14 @@ defmodule MoneyTreeWeb.Router do
       live "/app/transactions/categorization", CategorizationLive.Index
       live "/app/obligations", ObligationsLive.Index
       live "/app/assets", AssetsLive.Index
+      live "/app/loans", LoansLive.Index, :index
+      live "/app/loans/:loan_id", LoansLive.Index, :detail
+      live "/app/loans/:loan_id/refinance", LoansLive.Index, :refinance
+      live "/app/loans/:loan_id/documents", LoansLive.Index, :documents
+      live "/app/loans/:loan_id/quotes", LoansLive.Index, :quotes
+      live "/app/loans/:loan_id/alerts", LoansLive.Index, :alerts
+      live "/app/mortgages", LoansLive.Index, :index
+      live "/app/mortgages/:loan_id", LoansLive.Index, :detail
       live "/app/transfers", TransfersLive
       live "/app/budgets", BudgetLive.Index
       live "/app/import-export", ImportExportLive.Index

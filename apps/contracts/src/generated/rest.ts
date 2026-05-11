@@ -60,6 +60,375 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/loans/{loan_id}/refinance_scenarios": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        /** List refinance scenarios for a mortgage-backed loan */
+        get: operations["listRefinanceScenarios"];
+        put?: never;
+        /** Create a refinance scenario for a mortgage-backed loan */
+        post: operations["createRefinanceScenario"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/refinance_scenarios/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Fetch a refinance scenario by id */
+        get: operations["getRefinanceScenario"];
+        /** Update a refinance scenario */
+        put: operations["updateRefinanceScenario"];
+        post?: never;
+        /** Delete a refinance scenario */
+        delete: operations["deleteRefinanceScenario"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/refinance_scenarios/{id}/fee_items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a refinance scenario fee item */
+        post: operations["createRefinanceFeeItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/refinance_scenarios/{id}/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run deterministic refinance analysis for a scenario */
+        post: operations["analyzeRefinanceScenario"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loans/{loan_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        /** List document metadata for a mortgage-backed loan */
+        get: operations["listLoanDocuments"];
+        put?: never;
+        /** Create document metadata for a mortgage-backed loan */
+        post: operations["createLoanDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loan_documents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Fetch a loan document by id */
+        get: operations["getLoanDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loan_documents/{id}/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a reviewable extraction candidate for a loan document */
+        post: operations["createLoanDocumentExtraction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loan_document_extractions/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm a reviewed loan document extraction candidate */
+        post: operations["confirmLoanDocumentExtraction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loan_document_extractions/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a reviewed loan document extraction candidate */
+        post: operations["rejectLoanDocumentExtraction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loan_document_extractions/{id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply a confirmed extraction candidate to the mortgage baseline */
+        post: operations["applyLoanDocumentExtraction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loan_document_extractions/{id}/create_lender_quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a lender quote from a confirmed extraction candidate */
+        post: operations["createLenderQuoteFromLoanDocumentExtraction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loan_document_extractions/{id}/create_scenario": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a refinance scenario from a confirmed extraction candidate */
+        post: operations["createRefinanceScenarioFromLoanDocumentExtraction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loans/{loan_id}/lender_quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        /** List lender quotes for a mortgage-backed loan */
+        get: operations["listLenderQuotes"];
+        put?: never;
+        /** Create a lender quote for a mortgage-backed loan */
+        post: operations["createLenderQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lender_quotes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** Get a lender quote */
+        get: operations["getLenderQuote"];
+        /** Update a lender quote */
+        put: operations["updateLenderQuote"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lender_quotes/{id}/convert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Convert a lender quote into a draft refinance scenario */
+        post: operations["convertLenderQuoteToScenario"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loans/{loan_id}/alert_rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        /** List Loan Center alert rules */
+        get: operations["listLoanAlertRules"];
+        put?: never;
+        /** Create a Loan Center alert rule */
+        post: operations["createLoanAlertRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loans/{loan_id}/alert_rules/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Evaluate Loan Center alert rules for a loan */
+        post: operations["evaluateLoanAlertRules"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loan_alert_rules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Update a Loan Center alert rule */
+        put: operations["updateLoanAlertRule"];
+        post?: never;
+        /** Delete a Loan Center alert rule */
+        delete: operations["deleteLoanAlertRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loan_alert_rules/{id}/evaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Evaluate one Loan Center alert rule */
+        post: operations["evaluateLoanAlertRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/settings": {
         parameters: {
             query?: never;
@@ -360,6 +729,366 @@ export interface components {
             escrow_profile?: components["schemas"]["MortgageEscrowProfileInput"];
         };
         UpdateMortgageRequest: components["schemas"]["CreateMortgageRequest"];
+        RefinanceScenario: {
+            id: string;
+            user_id: string;
+            mortgage_id: string;
+            lender_quote_id?: string;
+            name: string;
+            scenario_type: string;
+            product_type?: string;
+            new_term_months: number;
+            new_interest_rate: string;
+            new_apr?: string;
+            new_principal_amount: string;
+            cash_out_amount?: string;
+            cash_in_amount?: string;
+            roll_costs_into_loan: boolean;
+            points?: string;
+            lender_credit_amount?: string;
+            expected_years_before_sale_or_refi?: number;
+            /** Format: date */
+            closing_date_assumption?: string;
+            rate_source_type?: string;
+            status: string;
+            fee_items?: components["schemas"]["RefinanceFeeItem"][] | null;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        CreateRefinanceScenarioRequest: {
+            name: string;
+            scenario_type?: string;
+            product_type?: string;
+            new_term_months: number;
+            new_interest_rate: string;
+            new_apr?: string;
+            new_principal_amount: string;
+            cash_out_amount?: string;
+            cash_in_amount?: string;
+            roll_costs_into_loan?: boolean;
+            points?: string;
+            lender_credit_amount?: string;
+            expected_years_before_sale_or_refi?: number;
+            /** Format: date */
+            closing_date_assumption?: string;
+            rate_source_type?: string;
+            lender_quote_id?: string;
+            status?: string;
+        };
+        UpdateRefinanceScenarioRequest: components["schemas"]["CreateRefinanceScenarioRequest"];
+        ConvertLenderQuoteRequest: {
+            name?: string;
+            new_principal_amount?: string;
+            status?: string;
+        };
+        RefinanceFeeItem: {
+            id: string;
+            refinance_scenario_id: string;
+            category: string;
+            code?: string;
+            name: string;
+            low_amount?: string;
+            expected_amount?: string;
+            high_amount?: string;
+            fixed_amount?: string;
+            percentage_of_loan_amount?: string;
+            kind: string;
+            paid_at_closing: boolean;
+            financed: boolean;
+            is_true_cost: boolean;
+            is_prepaid_or_escrow: boolean;
+            required: boolean;
+            sort_order: number;
+            notes?: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        CreateRefinanceFeeItemRequest: {
+            category: string;
+            code?: string;
+            name: string;
+            low_amount?: string;
+            expected_amount?: string;
+            high_amount?: string;
+            fixed_amount?: string;
+            percentage_of_loan_amount?: string;
+            kind?: string;
+            paid_at_closing?: boolean;
+            financed?: boolean;
+            is_true_cost?: boolean;
+            is_prepaid_or_escrow?: boolean;
+            required?: boolean;
+            sort_order?: number;
+            notes?: string;
+        };
+        RefinanceAnalysisResult: {
+            id: string;
+            user_id: string;
+            mortgage_id: string;
+            refinance_scenario_id: string;
+            analysis_version: string;
+            current_monthly_payment?: string;
+            new_monthly_payment_low?: string;
+            new_monthly_payment_expected?: string;
+            new_monthly_payment_high?: string;
+            monthly_savings_low?: string;
+            monthly_savings_expected?: string;
+            monthly_savings_high?: string;
+            true_refinance_cost_low?: string;
+            true_refinance_cost_expected?: string;
+            true_refinance_cost_high?: string;
+            cash_to_close_low?: string;
+            cash_to_close_expected?: string;
+            cash_to_close_high?: string;
+            break_even_months_low?: number;
+            break_even_months_expected?: number;
+            break_even_months_high?: number;
+            current_full_term_total_payment?: string;
+            current_full_term_interest_cost?: string;
+            new_full_term_total_payment_expected?: string;
+            new_full_term_interest_cost_expected?: string;
+            full_term_finance_cost_delta_expected?: string;
+            warnings: string[];
+            assumptions: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            computed_at: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        LoanDocument: {
+            id: string;
+            user_id: string;
+            mortgage_id: string;
+            document_type: string;
+            original_filename: string;
+            content_type: string;
+            byte_size: number;
+            storage_key: string;
+            checksum_sha256?: string;
+            status: string;
+            /** Format: date-time */
+            uploaded_at: string;
+            extractions?: components["schemas"]["LoanDocumentExtraction"][] | null;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        CreateLoanDocumentRequest: {
+            document_type: string;
+            original_filename: string;
+            content_type: string;
+            byte_size: number;
+            storage_key: string;
+            checksum_sha256?: string;
+            status?: string;
+            /** Format: date-time */
+            uploaded_at?: string;
+        };
+        LoanDocumentExtraction: {
+            id: string;
+            user_id: string;
+            mortgage_id: string;
+            loan_document_id: string;
+            extraction_method: string;
+            model_name?: string;
+            status: string;
+            ocr_text_storage_key?: string;
+            raw_text_excerpt?: string;
+            extracted_payload: {
+                [key: string]: unknown;
+            };
+            field_confidence: {
+                [key: string]: unknown;
+            };
+            source_citations: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            reviewed_at?: string;
+            /** Format: date-time */
+            confirmed_at?: string;
+            /** Format: date-time */
+            rejected_at?: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        CreateLoanDocumentExtractionRequest: {
+            /** @description Required for manual/prebuilt extraction candidates. Omit when submitting raw_text for Ollama extraction. */
+            extraction_method?: string;
+            model_name?: string;
+            status?: string;
+            ocr_text_storage_key?: string;
+            raw_text_excerpt?: string;
+            /** @description OCR or user-entered document text. When present, the backend runs configured Ollama extraction and stores a pending review candidate. */
+            raw_text?: string;
+            extracted_payload?: {
+                [key: string]: unknown;
+            };
+            field_confidence?: {
+                [key: string]: unknown;
+            };
+            source_citations?: {
+                [key: string]: unknown;
+            };
+        };
+        LoanDocumentApplyResult: {
+            id: string;
+            mortgage_id: string;
+            source?: string;
+            /** Format: date-time */
+            last_reviewed_at?: string;
+            current_balance?: string;
+            current_interest_rate?: string;
+            remaining_term_months?: number;
+            monthly_payment_total?: string;
+        };
+        LenderQuote: {
+            id: string;
+            user_id: string;
+            mortgage_id: string;
+            lender_name: string;
+            quote_source: string;
+            quote_reference?: string;
+            loan_type: string;
+            product_type?: string;
+            term_months: number;
+            interest_rate: string;
+            apr?: string;
+            points?: string;
+            lender_credit_amount?: string;
+            estimated_closing_costs_low?: string;
+            estimated_closing_costs_expected?: string;
+            estimated_closing_costs_high?: string;
+            estimated_cash_to_close_low?: string;
+            estimated_cash_to_close_expected?: string;
+            estimated_cash_to_close_high?: string;
+            estimated_monthly_payment_low?: string;
+            estimated_monthly_payment_expected?: string;
+            estimated_monthly_payment_high?: string;
+            lock_available: boolean;
+            /** Format: date-time */
+            lock_expires_at?: string;
+            /** Format: date-time */
+            quote_expires_at?: string;
+            raw_payload: {
+                [key: string]: unknown;
+            };
+            status: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        CreateLenderQuoteRequest: {
+            lender_name: string;
+            quote_source?: string;
+            quote_reference?: string;
+            loan_type?: string;
+            product_type?: string;
+            term_months: number;
+            interest_rate: string;
+            apr?: string;
+            points?: string;
+            lender_credit_amount?: string;
+            estimated_closing_costs_low?: string;
+            estimated_closing_costs_expected?: string;
+            estimated_closing_costs_high?: string;
+            estimated_cash_to_close_low?: string;
+            estimated_cash_to_close_expected?: string;
+            estimated_cash_to_close_high?: string;
+            estimated_monthly_payment_low?: string;
+            estimated_monthly_payment_expected?: string;
+            estimated_monthly_payment_high?: string;
+            lock_available?: boolean;
+            /** Format: date-time */
+            lock_expires_at?: string;
+            /** Format: date-time */
+            quote_expires_at?: string;
+            raw_payload?: {
+                [key: string]: unknown;
+            };
+            status?: string;
+        };
+        UpdateLenderQuoteRequest: {
+            lender_name?: string;
+            quote_source?: string;
+            quote_reference?: string;
+            loan_type?: string;
+            product_type?: string;
+            term_months?: number;
+            interest_rate?: string;
+            apr?: string;
+            points?: string;
+            lender_credit_amount?: string;
+            estimated_closing_costs_low?: string;
+            estimated_closing_costs_expected?: string;
+            estimated_closing_costs_high?: string;
+            estimated_cash_to_close_low?: string;
+            estimated_cash_to_close_expected?: string;
+            estimated_cash_to_close_high?: string;
+            estimated_monthly_payment_low?: string;
+            estimated_monthly_payment_expected?: string;
+            estimated_monthly_payment_high?: string;
+            lock_available?: boolean;
+            /** Format: date-time */
+            lock_expires_at?: string;
+            /** Format: date-time */
+            quote_expires_at?: string;
+            raw_payload?: {
+                [key: string]: unknown;
+            };
+            status?: string;
+        };
+        LoanAlertRule: {
+            id: string;
+            user_id: string;
+            loan_id?: string;
+            mortgage_id: string;
+            name: string;
+            kind: string;
+            active: boolean;
+            threshold_config: {
+                [key: string]: unknown;
+            };
+            delivery_preferences: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            last_evaluated_at?: string;
+            /** Format: date-time */
+            last_triggered_at?: string;
+            /** Format: date-time */
+            inserted_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        CreateLoanAlertRuleRequest: {
+            name: string;
+            kind: string;
+            active?: boolean;
+            threshold_config?: {
+                [key: string]: unknown;
+            };
+            delivery_preferences?: {
+                [key: string]: unknown;
+            };
+            /** @description Convenience field mapped to threshold_config.threshold. */
+            threshold_value?: string;
+            /** @description Convenience field mapped to threshold_config.lead_days. */
+            lead_days?: string;
+        };
+        UpdateLoanAlertRuleRequest: components["schemas"]["CreateLoanAlertRuleRequest"];
         AiSettings: {
             enabled_globally?: boolean;
             require_confirmation?: boolean;
@@ -616,6 +1345,907 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listRefinanceScenarios: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Refinance scenarios for the loan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RefinanceScenario"][];
+                    };
+                };
+            };
+        };
+    };
+    createRefinanceScenario: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRefinanceScenarioRequest"];
+            };
+        };
+        responses: {
+            /** @description Refinance scenario created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RefinanceScenario"];
+                    };
+                };
+            };
+            /** @description Loan not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getRefinanceScenario: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Refinance scenario found */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RefinanceScenario"];
+                    };
+                };
+            };
+            /** @description Refinance scenario not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateRefinanceScenario: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRefinanceScenarioRequest"];
+            };
+        };
+        responses: {
+            /** @description Refinance scenario updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RefinanceScenario"];
+                    };
+                };
+            };
+            /** @description Refinance scenario not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteRefinanceScenario: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Refinance scenario deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Refinance scenario not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createRefinanceFeeItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRefinanceFeeItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Fee item created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RefinanceFeeItem"];
+                    };
+                };
+            };
+        };
+    };
+    analyzeRefinanceScenario: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Analysis snapshot created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RefinanceAnalysisResult"];
+                    };
+                };
+            };
+            /** @description Refinance scenario not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listLoanDocuments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Loan documents for the loan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanDocument"][];
+                    };
+                };
+            };
+        };
+    };
+    createLoanDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLoanDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Loan document metadata created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanDocument"];
+                    };
+                };
+            };
+            /** @description Loan not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getLoanDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Loan document found */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanDocument"];
+                    };
+                };
+            };
+            /** @description Loan document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createLoanDocumentExtraction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLoanDocumentExtractionRequest"];
+            };
+        };
+        responses: {
+            /** @description Extraction candidate created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanDocumentExtraction"];
+                    };
+                };
+            };
+            /** @description Loan document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    confirmLoanDocumentExtraction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Extraction candidate confirmed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanDocumentExtraction"];
+                    };
+                };
+            };
+            /** @description Loan document extraction not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rejectLoanDocumentExtraction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Extraction candidate rejected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanDocumentExtraction"];
+                    };
+                };
+            };
+            /** @description Loan document extraction not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    applyLoanDocumentExtraction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Confirmed extraction applied to the mortgage baseline */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanDocumentApplyResult"];
+                    };
+                };
+            };
+            /** @description Loan document extraction not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Extraction cannot be applied */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createLenderQuoteFromLoanDocumentExtraction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lender quote created from confirmed extraction fields */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LenderQuote"];
+                    };
+                };
+            };
+            /** @description Loan document extraction not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Extraction cannot create a lender quote */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createRefinanceScenarioFromLoanDocumentExtraction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    new_principal_amount?: string;
+                    status?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Refinance scenario created from confirmed extraction fields */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RefinanceScenario"];
+                    };
+                };
+            };
+            /** @description Loan document extraction not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Extraction cannot create a refinance scenario */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listLenderQuotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lender quotes for the loan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LenderQuote"][];
+                    };
+                };
+            };
+        };
+    };
+    createLenderQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLenderQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Lender quote created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LenderQuote"];
+                    };
+                };
+            };
+            /** @description Loan not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getLenderQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lender quote */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LenderQuote"];
+                    };
+                };
+            };
+            /** @description Lender quote not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateLenderQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLenderQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Lender quote updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LenderQuote"];
+                    };
+                };
+            };
+            /** @description Lender quote not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    convertLenderQuoteToScenario: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConvertLenderQuoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Refinance scenario created from lender quote */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["RefinanceScenario"];
+                    };
+                };
+            };
+            /** @description Lender quote not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listLoanAlertRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Loan alert rules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanAlertRule"][];
+                    };
+                };
+            };
+        };
+    };
+    createLoanAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLoanAlertRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Loan alert rule created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanAlertRule"];
+                    };
+                };
+            };
+            /** @description Loan not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    evaluateLoanAlertRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                loan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Alert evaluation summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            evaluated: number;
+                            triggered: number;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    updateLoanAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLoanAlertRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Loan alert rule updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["LoanAlertRule"];
+                    };
+                };
+            };
+            /** @description Loan alert rule not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteLoanAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Loan alert rule deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Loan alert rule not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    evaluateLoanAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Alert evaluation result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: {
+                            rule: components["schemas"]["LoanAlertRule"];
+                            triggered: boolean;
+                        };
+                    };
                 };
             };
         };
