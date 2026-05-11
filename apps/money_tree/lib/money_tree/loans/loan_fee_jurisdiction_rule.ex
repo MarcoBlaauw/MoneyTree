@@ -15,7 +15,7 @@ defmodule MoneyTree.Loans.LoanFeeJurisdictionRule do
   @foreign_key_type :binary_id
   @timestamps_opts [type: :utc_datetime_usec]
 
-  @calculation_methods ~w(fixed_amount percent_of_loan_amount fixed_plus_percent computed_prepaid_interest computed_escrow_deposit manual_only)
+  @calculation_methods ~w(fixed_amount percent_of_loan_amount fixed_plus_percent computed_prepaid_interest computed_escrow_deposit louisiana_title_insurance_refinance manual_only)
 
   schema "loan_fee_jurisdiction_rules" do
     field :amount_calculation_method, :string

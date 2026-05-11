@@ -49,12 +49,15 @@ Orleans Parish is modeled as a special case. For normal residential refinance am
 
 ## Louisiana Title Insurance
 
-Louisiana lender title policy cost is still modeled as a percentage estimate until a verified Louisiana rate table is added:
+Louisiana lender title policy cost is modeled from the filed-rate tier schedule summarized in `docs/deep-research-report.md`.
 
-- low: `0.20%`
-- expected: `0.50%`
-- high: `1.00%`
-- local verification required
+V1 behavior:
+
+- low: filed-rate premium with the refinance/reissue credit applied
+- expected: filed-rate premium with the refinance/reissue credit applied
+- high: standard filed-rate premium before reissue credit
+
+MoneyTree still asks users to confirm refinance/reissue eligibility with the lender or title company because the lower modeled amount depends on prior title-policy eligibility.
 
 ## Settlement And Notary Costs
 
@@ -80,7 +83,7 @@ Orleans Parish documentary transaction tax has been included because the propert
 For Louisiana title insurance:
 
 ```text
-Louisiana title insurance is modeled from a generic percentage range until a verified Louisiana rate table or lender quote is available.
+Louisiana title insurance is modeled from the reported filed-rate tiers. Confirm refinance/reissue eligibility with the lender or title company.
 ```
 
 For statewide mortgage tax:
@@ -91,15 +94,30 @@ MoneyTree did not apply a statewide percentage-based Louisiana mortgage tax. Par
 
 ## Roadmap
 
-MoneyTree seeds low-confidence parish profile shells for:
+MoneyTree seeds researched parish profiles for:
 
-- St. Charles Parish
-- Jefferson Parish
-- Orleans Parish
-- St. John the Baptist Parish
-- St. Tammany Parish
-- East Baton Rouge Parish
+| Parish | Confidence | Current localized rules |
+| --- | --- | --- |
+| Orleans Parish | High | Recording, release, Orleans documentary transaction tax |
+| St. Charles Parish | Moderate | Recording |
+| Jefferson Parish | Moderate | Recording |
+| St. John the Baptist Parish | Moderate | Recording, release |
+| St. Tammany Parish | High | Recording, release |
+| East Baton Rouge Parish | High | Recording, release |
 
-Only Orleans Parish has a parish-specific fee override in v1. Other parish shells inherit Louisiana statewide modeled assumptions until parish-specific recording, tax, and title data is verified.
+All Louisiana parish profiles still inherit statewide title, settlement, notary, origination, and escrow/prepaid assumptions unless a parish-specific rule overrides them.
 
 Use `docs/loan-fee-parish-research-template.md` to collect recording base fees, per-page fees, indexing fees, mortgage certificate fees, cancellation/release fees, e-recording surcharges, local documentary taxes, source URLs, last verified dates, and confidence level.
+
+## Parish Recording Rules Added From Deep Research
+
+The following rules are seeded from `docs/deep-research-report.md`:
+
+| Parish | Recording low / expected / high | Release low / expected / high | Notes |
+| --- | ---: | ---: | --- |
+| Orleans | `$130 / $230 / $330` | `$50 / $50 / $60` | Recording includes reported `$30` building fund; documentary tax remains separate. |
+| St. Charles | `$105 / $205 / $305` | Inherits statewide `$55 / $55 / $105` | Direct clerk cancellation detail still pending. |
+| Jefferson | `$105 / $205 / $305` | Inherits statewide `$55 / $55 / $105` | Direct clerk cancellation detail still pending. |
+| St. John the Baptist | `$105 / $205 / $305` | `$15 / $15 / $40` | High allows room for related cancellation/clear-lien certificate handling. |
+| St. Tammany | `$110 / $210 / $310` | `$60 / $60 / $60` | Official clerk fee sheet. |
+| East Baton Rouge | `$135 / $235 / $335` | `$85 / $85 / $85` | Official clerk fee schedule. |

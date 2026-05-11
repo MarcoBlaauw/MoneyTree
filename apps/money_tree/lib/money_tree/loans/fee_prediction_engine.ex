@@ -176,7 +176,61 @@ defmodule MoneyTree.Loans.FeePredictionEngine do
     fixed |> add_range(percent) |> apply_bounds(fee)
   end
 
+  defp default_amount_range(
+         %{amount_calculation_method: "louisiana_title_insurance_refinance"},
+         scenario
+       ) do
+    standard_premium = louisiana_lender_title_policy_premium(scenario.new_principal_amount)
+    reissue_premium = D.mult(standard_premium, D.new("0.40")) |> D.round(2)
+
+    range(reissue_premium, reissue_premium, standard_premium)
+  end
+
   defp default_amount_range(_fee, _scenario), do: range(@zero, @zero, @zero)
+
+  defp louisiana_lender_title_policy_premium(amount) do
+    amount
+    |> rounded_thousands()
+    |> louisiana_title_premium_for_thousands()
+    |> D.round(2)
+  end
+
+  defp rounded_thousands(amount) do
+    amount
+    |> D.div(D.new("1000"))
+    |> D.round(0, :ceiling)
+    |> D.to_integer()
+  end
+
+  defp louisiana_title_premium_for_thousands(thousands) when thousands <= 0, do: @zero
+
+  defp louisiana_title_premium_for_thousands(thousands) do
+    [
+      {12, "100.00"},
+      {50, "4.20"},
+      {100, "3.60"},
+      {500, "3.30"},
+      {1_000, "2.70"},
+      {2_000, "2.40"},
+      {5_000, "2.10"},
+      {10_000, "1.80"},
+      {15_000, "1.50"},
+      {:infinity, "1.20"}
+    ]
+    |> Enum.reduce_while({thousands, 0, @zero}, fn
+      {_limit, _rate}, {remaining, _previous_limit, total} when remaining <= 0 ->
+        {:halt, {remaining, nil, total}}
+
+      {:infinity, rate}, {remaining, _previous_limit, total} ->
+        {:halt, {0, nil, D.add(total, D.mult(D.new(remaining), D.new(rate)))}}
+
+      {limit, rate}, {remaining, previous_limit, total} ->
+        band_size = min(remaining, limit - previous_limit)
+        band_total = D.mult(D.new(band_size), D.new(rate))
+        {:cont, {remaining - band_size, limit, D.add(total, band_total)}}
+    end)
+    |> elem(2)
+  end
 
   defp fee_item_attrs(%{
          fee_type: fee_type,
@@ -238,13 +292,14 @@ defmodule MoneyTree.Loans.FeePredictionEngine do
       "Orleans Parish documentary transaction tax has been included because the property is located in Orleans Parish."
     )
     |> maybe_add(
-      louisiana_profile?(profile) && county_or_parish not in [nil, "Orleans"],
+      louisiana_profile?(profile) && county_or_parish not in [nil, "Orleans"] &&
+        profile.confidence_level != "high",
       "Parish-specific recording fees should be verified."
     )
     |> maybe_add(
       louisiana_profile?(profile) &&
         Enum.any?(rows, &(&1.fee_type.code == "title_insurance_lender_policy")),
-      "Louisiana title insurance is modeled from a generic percentage range until a verified Louisiana rate table or lender quote is available."
+      "Louisiana title insurance is modeled from the reported filed-rate tiers. Confirm refinance/reissue eligibility with the lender or title company."
     )
     |> maybe_add(
       louisiana_profile?(profile),

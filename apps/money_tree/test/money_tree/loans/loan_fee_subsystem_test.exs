@@ -43,12 +43,12 @@ defmodule MoneyTree.Loans.LoanFeeSubsystemTest do
                transaction_type: "refinance"
              )
 
-      for parish <- [
-            "St. Charles",
-            "Jefferson",
-            "St. John the Baptist",
-            "St. Tammany",
-            "East Baton Rouge"
+      for {parish, confidence} <- [
+            {"St. Charles", "moderate"},
+            {"Jefferson", "moderate"},
+            {"St. John the Baptist", "moderate"},
+            {"St. Tammany", "high"},
+            {"East Baton Rouge", "high"}
           ] do
         assert Repo.get_by(LoanFeeJurisdictionProfile,
                  country_code: "US",
@@ -56,7 +56,7 @@ defmodule MoneyTree.Loans.LoanFeeSubsystemTest do
                  county_or_parish: parish,
                  loan_type: "mortgage",
                  transaction_type: "refinance",
-                 confidence_level: "low"
+                 confidence_level: confidence
                )
       end
     end
@@ -138,11 +138,16 @@ defmodule MoneyTree.Loans.LoanFeeSubsystemTest do
 
       assert Enum.any?(prediction.rows, fn row ->
                row.fee_type.code == "recording_fee" &&
-                 D.equal?(row.amount_range.expected, D.new("205.00"))
+                 D.equal?(row.amount_range.expected, D.new("230.00"))
+             end)
+
+      assert Enum.any?(prediction.rows, fn row ->
+               row.fee_type.code == "release_fee" &&
+                 D.equal?(row.amount_range.expected, D.new("50.00"))
              end)
     end
 
-    test "uses low-confidence parish shells while inheriting Louisiana statewide rules" do
+    test "uses researched parish profiles while inheriting statewide title rules" do
       assert :ok = Loans.ensure_default_loan_fee_configuration()
 
       user = user_fixture()
@@ -167,15 +172,26 @@ defmodule MoneyTree.Loans.LoanFeeSubsystemTest do
       assert {:ok, prediction} = Loans.predict_loan_fee_range(scenario)
 
       assert prediction.profile.county_or_parish == "St. Tammany"
-      assert prediction.profile.confidence_level == "low"
+      assert prediction.profile.confidence_level == "high"
 
       assert Enum.any?(prediction.rows, fn row ->
                row.fee_type.code == "recording_fee" &&
-                 D.equal?(row.amount_range.expected, D.new("205.00"))
+                 D.equal?(row.amount_range.expected, D.new("210.00"))
              end)
 
-      assert "Modeled fee range has low confidence." in prediction.warnings
-      assert "Parish-specific recording fees should be verified." in prediction.warnings
+      assert Enum.any?(prediction.rows, fn row ->
+               row.fee_type.code == "release_fee" &&
+                 D.equal?(row.amount_range.expected, D.new("60.00"))
+             end)
+
+      assert Enum.any?(prediction.rows, fn row ->
+               row.fee_type.code == "title_insurance_lender_policy" &&
+                 D.equal?(row.amount_range.expected, D.new("1011.84")) &&
+                 D.equal?(row.amount_range.high, D.new("2529.60"))
+             end)
+
+      assert "Modeled fee range has low confidence." not in prediction.warnings
+      assert "Parish-specific recording fees should be verified." not in prediction.warnings
     end
 
     test "adds editable generic refinance fee items without overwriting existing items" do

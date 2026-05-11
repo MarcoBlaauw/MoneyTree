@@ -19,7 +19,7 @@ defmodule MoneyTree.Loans.LoanFeeType do
   @trid_sections ~w(origination_charges services_cannot_shop_for services_can_shop_for taxes_and_government_fees prepaids initial_escrow_payment other lender_credits payoffs_and_payments not_applicable)
   @tolerance_buckets ~w(zero_tolerance ten_percent_aggregate no_limit_best_information not_applicable unknown)
   @finance_charge_treatments ~w(included excluded conditional unknown)
-  @calculation_methods ~w(fixed_amount percent_of_loan_amount fixed_plus_percent computed_prepaid_interest computed_escrow_deposit manual_only)
+  @calculation_methods ~w(fixed_amount percent_of_loan_amount fixed_plus_percent computed_prepaid_interest computed_escrow_deposit louisiana_title_insurance_refinance manual_only)
   @confidence_levels ~w(very_low low moderate high verified)
 
   schema "loan_fee_types" do

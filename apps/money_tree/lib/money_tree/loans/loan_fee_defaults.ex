@@ -39,7 +39,7 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
         confidence_score: "0.7500",
         source_label: "Orleans Parish documentary transaction tax verification",
         notes:
-          "Orleans Parish v1 profile. Includes the Orleans documentary transaction tax for normal residential refinance amounts over $9,000.",
+          "Orleans Parish v1 profile. Uses official Orleans land-record fee schedules checked May 2026 and includes the Orleans documentary transaction tax for normal residential refinance amounts over $9,000.",
         enabled: true
       }
     ]
@@ -53,13 +53,11 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
        %{percent_low: "0.000000", percent_expected: "0.007500", percent_high: "0.015000"}},
       {"US", "LA", "mortgage", "refinance", "title_insurance_lender_policy",
        %{
-         percent_low: "0.002000",
-         percent_expected: "0.005000",
-         percent_high: "0.010000",
+         amount_calculation_method: "louisiana_title_insurance_refinance",
          requires_local_verification: true,
-         source_label: "Louisiana title insurance v1 estimate",
+         source_label: "Louisiana title insurance rate manual",
          notes:
-           "Louisiana title insurance is modeled from a generic percentage range until a verified Louisiana rate table or lender quote is available."
+           "Louisiana lender title policy estimate uses the filed title-rate tier schedule reported effective August 2024. Low and expected assume the refinance/reissue credit; high uses the standard premium until prior title-policy eligibility is confirmed."
        }},
       {"US", "LA", "mortgage", "refinance", "recording_fee",
        %{
@@ -89,14 +87,105 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          notes:
            "Louisiana civil-law notary and local closing customs support a non-zero document/notary expectation."
        }},
-      {%{
-         country_code: "US",
-         state_code: "LA",
-         county_or_parish: "Orleans",
-         municipality: nil,
-         loan_type: "mortgage",
-         transaction_type: "refinance"
-       }, "orleans_documentary_transaction_tax",
+      {la_parish_profile("St. Charles"), "recording_fee",
+       %{
+         fixed_low_amount: "105.00",
+         fixed_expected_amount: "205.00",
+         fixed_high_amount: "305.00",
+         requires_local_verification: true,
+         source_label: "St. Charles Parish Clerk fee schedule via deeds.com",
+         notes:
+           "St. Charles Parish recording schedule checked May 2026: $105 / $205 / $305 page-tier model, including standard LCRAA practice. Direct clerk verification is still recommended."
+       }},
+      {la_parish_profile("Jefferson"), "recording_fee",
+       %{
+         fixed_low_amount: "105.00",
+         fixed_expected_amount: "205.00",
+         fixed_high_amount: "305.00",
+         requires_local_verification: true,
+         source_label: "Jefferson Parish Clerk fee schedule via deeds.com",
+         notes:
+           "Jefferson Parish recording schedule checked May 2026: $105 / $205 / $305 page-tier model. Cancellation fee still needs direct clerk confirmation."
+       }},
+      {la_parish_profile("St. John the Baptist"), "recording_fee",
+       %{
+         fixed_low_amount: "105.00",
+         fixed_expected_amount: "205.00",
+         fixed_high_amount: "305.00",
+         requires_local_verification: true,
+         source_label: "St. John the Baptist Parish Clerk fee schedule via deeds.com",
+         notes:
+           "St. John the Baptist Parish recording schedule checked May 2026: $105 / $205 / $305 page-tier model."
+       }},
+      {la_parish_profile("St. John the Baptist"), "release_fee",
+       %{
+         fixed_low_amount: "15.00",
+         fixed_expected_amount: "15.00",
+         fixed_high_amount: "40.00",
+         requires_local_verification: true,
+         source_label: "St. John the Baptist Parish Clerk fee schedule via deeds.com",
+         notes:
+           "St. John the Baptist cancellation with original note is reported at $15; high includes related cancellation/clear-lien certificate room."
+       }},
+      {la_parish_profile("St. Tammany"), "recording_fee",
+       %{
+         fixed_low_amount: "110.00",
+         fixed_expected_amount: "210.00",
+         fixed_high_amount: "310.00",
+         requires_local_verification: false,
+         source_label: "St. Tammany Parish Clerk fee sheet",
+         notes:
+           "St. Tammany Parish official fee sheet checked May 2026: $110 / $210 / $310 recording tiers, including LCRAA and parish council fees."
+       }},
+      {la_parish_profile("St. Tammany"), "release_fee",
+       %{
+         fixed_low_amount: "60.00",
+         fixed_expected_amount: "60.00",
+         fixed_high_amount: "60.00",
+         requires_local_verification: false,
+         source_label: "St. Tammany Parish Clerk fee sheet",
+         notes: "St. Tammany Parish single mortgage release reported at $60."
+       }},
+      {la_parish_profile("East Baton Rouge"), "recording_fee",
+       %{
+         fixed_low_amount: "135.00",
+         fixed_expected_amount: "235.00",
+         fixed_high_amount: "335.00",
+         requires_local_verification: false,
+         source_label: "East Baton Rouge Clerk fee schedule",
+         notes:
+           "East Baton Rouge mortgage-recording schedule checked May 2026: $135 / $235 / $335 page-tier model including judicial building fund."
+       }},
+      {la_parish_profile("East Baton Rouge"), "release_fee",
+       %{
+         fixed_low_amount: "85.00",
+         fixed_expected_amount: "85.00",
+         fixed_high_amount: "85.00",
+         requires_local_verification: false,
+         source_label: "East Baton Rouge Clerk fee schedule",
+         notes: "East Baton Rouge mortgage or lien cancellation reported at $85."
+       }},
+      {la_parish_profile("Orleans"), "recording_fee",
+       %{
+         fixed_low_amount: "130.00",
+         fixed_expected_amount: "230.00",
+         fixed_high_amount: "330.00",
+         requires_local_verification: false,
+         source_label: "Orleans Civil District Court land records fee schedule",
+         notes:
+           "Orleans Parish recording schedule checked May 2026: $100 / $200 / $300 recording tiers plus reported $30 building fund fee."
+       }},
+      {la_parish_profile("Orleans"), "release_fee",
+       %{
+         fixed_low_amount: "50.00",
+         fixed_expected_amount: "50.00",
+         fixed_high_amount: "60.00",
+         requires_local_verification: false,
+         source_label: "Orleans Civil District Court land records fee schedule",
+         notes:
+           "Orleans Parish single-mortgage cancellation reported at $50, with lower original-note handling noted separately in the clerk schedule."
+       }},
+      {la_parish_profile("Orleans"), "orleans_documentary_transaction_tax",
        %{
          fixed_low_amount: "325.00",
          fixed_expected_amount: "325.00",
@@ -299,27 +388,42 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
 
   defp louisiana_parish_profile_shells do
     [
-      "St. Charles",
-      "Jefferson",
-      "St. John the Baptist",
-      "St. Tammany",
-      "East Baton Rouge"
+      {"St. Charles", "moderate", "0.5500",
+       "St. Charles Parish profile. Uses parish recording fee schedule checked May 2026 through aggregated clerk data; direct clerk verification is still recommended."},
+      {"Jefferson", "moderate", "0.5500",
+       "Jefferson Parish profile. Uses parish recording and mortgage-certificate schedule checked May 2026 through published clerk data; cancellation fee still needs direct confirmation."},
+      {"St. John the Baptist", "moderate", "0.5500",
+       "St. John the Baptist Parish profile. Uses parish recording, mortgage-certificate, and cancellation schedule checked May 2026 through published clerk data."},
+      {"St. Tammany", "high", "0.7000",
+       "St. Tammany Parish profile. Uses official clerk fee sheet checked May 2026, including parish council recording fee."},
+      {"East Baton Rouge", "high", "0.7000",
+       "East Baton Rouge Parish profile. Uses official clerk fee schedule checked May 2026, including judicial building fund."}
     ]
-    |> Enum.map(fn parish ->
+    |> Enum.map(fn {parish, confidence_level, confidence_score, notes} ->
       %{
         country_code: "US",
         state_code: "LA",
         county_or_parish: parish,
         loan_type: "mortgage",
         transaction_type: "refinance",
-        confidence_level: "low",
-        confidence_score: "0.4000",
-        source_label: "Louisiana parish profile shell",
-        notes:
-          "#{parish} Parish v1 shell. Inherits Louisiana statewide modeled assumptions until parish-specific recording, tax, and title data is verified.",
+        confidence_level: confidence_level,
+        confidence_score: confidence_score,
+        source_label: "Louisiana parish recording fee research",
+        notes: notes,
         enabled: true
       }
     end)
+  end
+
+  defp la_parish_profile(county_or_parish) do
+    %{
+      country_code: "US",
+      state_code: "LA",
+      county_or_parish: county_or_parish,
+      municipality: nil,
+      loan_type: "mortgage",
+      transaction_type: "refinance"
+    }
   end
 
   defp generic_loan_fee_types do
