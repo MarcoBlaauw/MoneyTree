@@ -1,5 +1,5 @@
 defmodule MoneyTree.Teller.ClientTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias MoneyTree.Teller.Client
 

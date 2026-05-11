@@ -10,8 +10,15 @@ defmodule MoneyTree.Loans do
   alias MoneyTree.Accounts
   alias MoneyTree.AI
   alias MoneyTree.Loans.AlertRule
+  alias MoneyTree.Loans.FeePredictionEngine
+  alias MoneyTree.Loans.FeeQuoteAnalyzer
+  alias MoneyTree.Loans.LenderQuoteFeeLine
   alias MoneyTree.Loans.LenderQuote
   alias MoneyTree.Loans.Loan
+  alias MoneyTree.Loans.LoanFeeDefaults
+  alias MoneyTree.Loans.LoanFeeJurisdictionProfile
+  alias MoneyTree.Loans.LoanFeeJurisdictionRule
+  alias MoneyTree.Loans.LoanFeeType
   alias MoneyTree.Loans.LoanDocument
   alias MoneyTree.Loans.LoanDocumentExtraction
   alias MoneyTree.Loans.RateProvider
@@ -21,6 +28,7 @@ defmodule MoneyTree.Loans do
   alias MoneyTree.Loans.RateProviders.Fred
   alias MoneyTree.Loans.RateProviders.ManualImport
   alias MoneyTree.Loans.RateSource
+  alias MoneyTree.Loans.EscrowPaymentDisplay
   alias MoneyTree.Loans.Workers.AlertEvaluationWorker
   alias MoneyTree.Loans.Workers.DocumentExtractionWorker
   alias MoneyTree.Loans.Workers.RateImportWorker
@@ -269,6 +277,210 @@ defmodule MoneyTree.Loans do
   end
 
   @doc """
+  Ensures the built-in loan fee type and starter jurisdiction configuration exists.
+  """
+  @spec ensure_default_loan_fee_configuration() :: :ok | {:error, Ecto.Changeset.t()}
+  def ensure_default_loan_fee_configuration do
+    with :ok <- ensure_default_loan_fee_types(),
+         :ok <- ensure_default_loan_fee_profiles(),
+         :ok <- ensure_default_loan_fee_rules() do
+      :ok
+    end
+  end
+
+  @doc """
+  Lists enabled canonical loan fee types.
+  """
+  @spec list_loan_fee_types(keyword()) :: [LoanFeeType.t()]
+  def list_loan_fee_types(opts \\ []) do
+    ensure_default_loan_fee_configuration()
+
+    LoanFeeType
+    |> maybe_filter_loan_fee_type_loan_type(opts)
+    |> maybe_filter_loan_fee_type_transaction_type(opts)
+    |> maybe_filter_loan_fee_type_enabled(opts)
+    |> order_by([fee_type], asc: fee_type.sort_order, asc: fee_type.display_name)
+    |> Repo.all()
+  end
+
+  @doc """
+  Predicts modeled low / expected / high fee ranges for a refinance scenario.
+  """
+  @spec predict_loan_fee_range(RefinanceScenario.t() | binary(), keyword()) ::
+          {:ok, map()} | {:error, :not_found}
+  def predict_loan_fee_range(scenario_or_id, opts \\ [])
+
+  def predict_loan_fee_range(%RefinanceScenario{} = scenario, opts) do
+    scenario = Repo.preload(scenario, mortgage: [:escrow_profile])
+
+    fee_types =
+      list_loan_fee_types(loan_type: "mortgage", transaction_type: "refinance", enabled: true)
+
+    profile = fee_jurisdiction_profile_for_scenario(scenario, opts)
+    rules = fee_jurisdiction_rules(profile)
+
+    {:ok,
+     FeePredictionEngine.predict_closing_cost_range(scenario,
+       fee_types: fee_types,
+       profile: profile,
+       rules: rules,
+       escrow_profile: scenario.mortgage && scenario.mortgage.escrow_profile,
+       county_or_parish: scenario_county_or_parish(scenario)
+     )}
+  end
+
+  def predict_loan_fee_range(scenario_id, opts) when is_binary(scenario_id) do
+    user = Keyword.fetch!(opts, :user)
+
+    with {:ok, scenario} <-
+           fetch_refinance_scenario(user, scenario_id, preload: [:mortgage, :fee_items]) do
+      predict_loan_fee_range(scenario, opts)
+    end
+  end
+
+  @doc """
+  Creates editable generic fee items for a scenario without overwriting existing user rows.
+  """
+  @spec create_generic_refinance_fee_items(
+          User.t() | binary(),
+          RefinanceScenario.t() | binary(),
+          keyword()
+        ) ::
+          {:ok, [RefinanceFeeItem.t()]}
+          | {:error, :not_found | :fee_items_exist | Ecto.Changeset.t()}
+  def create_generic_refinance_fee_items(user, scenario_or_id, opts \\ []) do
+    with {:ok, scenario} <- fetch_scenario_for_child_write(user, scenario_or_id),
+         {:ok, scenario} <-
+           fetch_refinance_scenario(user, scenario.id, preload: [:mortgage, :fee_items]),
+         :ok <- ensure_no_existing_fee_items(scenario),
+         {:ok, prediction} <- predict_loan_fee_range(scenario, opts) do
+      prediction.fee_items
+      |> Enum.reject(fn attrs -> Decimal.equal?(attrs["expected_amount"], Decimal.new("0")) end)
+      |> Enum.reduce_while({:ok, []}, fn attrs, {:ok, acc} ->
+        case create_refinance_fee_item(user, scenario, attrs, preload: []) do
+          {:ok, fee_item} -> {:cont, {:ok, [fee_item | acc]}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+      |> case do
+        {:ok, items} -> {:ok, Enum.reverse(items)}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+  end
+
+  @doc """
+  Returns fee assumption status for display and analysis warnings.
+  """
+  @spec fee_assumption_status(RefinanceScenario.t()) :: map()
+  def fee_assumption_status(%RefinanceScenario{} = scenario) do
+    fee_items = scenario.fee_items || []
+    true_cost_items = Enum.filter(fee_items, &(&1.is_true_cost and not &1.is_prepaid_or_escrow))
+
+    generic_items =
+      Enum.filter(fee_items, &String.contains?(&1.notes || "", "MoneyTree estimate"))
+
+    cond do
+      fee_items == [] ->
+        %{
+          status: :missing,
+          warnings: [
+            "This scenario does not include refinance fee assumptions yet. Break-even and cash-to-close values are incomplete."
+          ]
+        }
+
+      true_cost_items == [] ->
+        %{
+          status: :incomplete,
+          warnings: ["No true refinance cost assumptions are loaded for this scenario."]
+        }
+
+      generic_items != [] ->
+        %{
+          status: :generic_estimate,
+          warnings: [
+            "This scenario uses generic national fee estimates. Actual lender, title, recording, and escrow charges may vary."
+          ]
+        }
+
+      true ->
+        %{status: :complete, warnings: []}
+    end
+  end
+
+  @doc """
+  Classifies lender quote fee lines against modeled expectations.
+  """
+  @spec classify_lender_quote_fees(User.t() | binary(), LenderQuote.t() | binary(), keyword()) ::
+          {:ok, map()} | {:error, :not_found | Ecto.Changeset.t()}
+  def classify_lender_quote_fees(user, quote_or_id, opts \\ [])
+
+  def classify_lender_quote_fees(user, %LenderQuote{} = quote, opts) do
+    quote = Repo.preload(quote, [:fee_lines])
+
+    with {:ok, scenario} <- quote_prediction_scenario(user, quote),
+         {:ok, prediction} <- predict_loan_fee_range(scenario, opts) do
+      fee_types =
+        list_loan_fee_types(
+          loan_type: quote.loan_type || "mortgage",
+          transaction_type: "refinance",
+          enabled: true
+        )
+
+      result =
+        FeeQuoteAnalyzer.classify_quote(quote,
+          fee_types: fee_types,
+          prediction: prediction,
+          fee_lines: quote_fee_line_inputs(quote)
+        )
+
+      with {:ok, lines} <- replace_lender_quote_fee_lines(quote, result.fee_lines) do
+        {:ok, Map.put(result, :fee_lines, lines)}
+      end
+    end
+  end
+
+  def classify_lender_quote_fees(user, quote_id, opts) when is_binary(quote_id) do
+    with {:ok, quote} <- fetch_lender_quote(user, quote_id, preload: [:fee_lines]) do
+      classify_lender_quote_fees(user, quote, opts)
+    end
+  end
+
+  @doc """
+  Returns modeled fee review context for a lender quote without rewriting persisted lines.
+  """
+  @spec lender_quote_fee_review(User.t() | binary(), LenderQuote.t() | binary(), keyword()) ::
+          {:ok, map()} | {:error, :not_found}
+  def lender_quote_fee_review(user, quote_or_id, opts \\ [])
+
+  def lender_quote_fee_review(user, %LenderQuote{} = quote, opts) do
+    quote = Repo.preload(quote, [:fee_lines])
+
+    with {:ok, scenario} <- quote_prediction_scenario(user, quote),
+         {:ok, prediction} <- predict_loan_fee_range(scenario, opts) do
+      fee_types =
+        list_loan_fee_types(
+          loan_type: quote.loan_type || "mortgage",
+          transaction_type: "refinance",
+          enabled: true
+        )
+
+      {:ok,
+       FeeQuoteAnalyzer.classify_quote(quote,
+         fee_types: fee_types,
+         prediction: prediction,
+         fee_lines: quote_fee_line_inputs(quote)
+       )}
+    end
+  end
+
+  def lender_quote_fee_review(user, quote_id, opts) when is_binary(quote_id) do
+    with {:ok, quote} <- fetch_lender_quote(user, quote_id, preload: [:fee_lines]) do
+      lender_quote_fee_review(user, quote, opts)
+    end
+  end
+
+  @doc """
   Lists refinance scenarios for a mortgage owned by the user.
   """
   @spec list_refinance_scenarios(User.t() | binary(), Mortgage.t() | binary(), keyword()) :: [
@@ -424,6 +636,208 @@ defmodule MoneyTree.Loans do
   end
 
   @doc """
+  Fetches a refinance fee item scoped through the owning scenario.
+  """
+  @spec fetch_refinance_fee_item(User.t() | binary(), binary(), keyword()) ::
+          {:ok, RefinanceFeeItem.t()} | {:error, :not_found}
+  def fetch_refinance_fee_item(user, fee_item_id, opts \\ [])
+
+  def fetch_refinance_fee_item(user, fee_item_id, opts) when is_binary(fee_item_id) do
+    preload = Keyword.get(opts, :preload, [])
+
+    case Ecto.UUID.cast(fee_item_id) do
+      {:ok, id} ->
+        RefinanceFeeItem
+        |> join(:inner, [fee_item], scenario in assoc(fee_item, :refinance_scenario))
+        |> where(
+          [fee_item, scenario],
+          fee_item.id == ^id and scenario.user_id == ^normalize_user_id(user)
+        )
+        |> maybe_preload_query(preload)
+        |> Repo.one()
+        |> case do
+          nil -> {:error, :not_found}
+          %RefinanceFeeItem{} = fee_item -> {:ok, fee_item}
+        end
+
+      :error ->
+        {:error, :not_found}
+    end
+  end
+
+  def fetch_refinance_fee_item(_user, _fee_item_id, _opts), do: {:error, :not_found}
+
+  @doc """
+  Updates a refinance fee item scoped through the owning scenario.
+  """
+  @spec update_refinance_fee_item(
+          User.t() | binary(),
+          RefinanceFeeItem.t() | binary(),
+          map(),
+          keyword()
+        ) ::
+          {:ok, RefinanceFeeItem.t()} | {:error, Ecto.Changeset.t()} | {:error, :not_found}
+  def update_refinance_fee_item(user, fee_item_or_id, attrs, opts \\ [])
+
+  def update_refinance_fee_item(user, %RefinanceFeeItem{} = fee_item, attrs, opts)
+      when is_map(attrs) do
+    preload = Keyword.get(opts, :preload, [])
+
+    with {:ok, _scenario} <- fetch_scenario_for_child_write(user, fee_item.refinance_scenario_id) do
+      fee_item
+      |> RefinanceFeeItem.changeset(normalize_attr_map(attrs))
+      |> Repo.update()
+      |> case do
+        {:ok, updated} -> {:ok, Repo.preload(updated, preload)}
+        {:error, changeset} -> {:error, changeset}
+      end
+    end
+  end
+
+  def update_refinance_fee_item(user, fee_item_id, attrs, opts)
+      when is_binary(fee_item_id) and is_map(attrs) do
+    with {:ok, fee_item} <- fetch_refinance_fee_item(user, fee_item_id, preload: []) do
+      update_refinance_fee_item(user, fee_item, attrs, opts)
+    end
+  end
+
+  @doc """
+  Deletes a refinance fee item scoped through the owning scenario.
+  """
+  @spec delete_refinance_fee_item(User.t() | binary(), RefinanceFeeItem.t() | binary()) ::
+          {:ok, RefinanceFeeItem.t()} | {:error, :not_found} | {:error, Ecto.Changeset.t()}
+  def delete_refinance_fee_item(user, %RefinanceFeeItem{} = fee_item) do
+    with {:ok, _scenario} <- fetch_scenario_for_child_write(user, fee_item.refinance_scenario_id) do
+      Repo.delete(fee_item)
+    end
+  end
+
+  def delete_refinance_fee_item(user, fee_item_id) when is_binary(fee_item_id) do
+    with {:ok, fee_item} <- fetch_refinance_fee_item(user, fee_item_id, preload: []) do
+      delete_refinance_fee_item(user, fee_item)
+    end
+  end
+
+  @doc """
+  Adds a manually entered lender quote fee line and refreshes quote fee classifications.
+  """
+  @spec create_lender_quote_fee_line(User.t() | binary(), LenderQuote.t() | binary(), map()) ::
+          {:ok, LenderQuoteFeeLine.t()} | {:error, Ecto.Changeset.t()} | {:error, :not_found}
+  def create_lender_quote_fee_line(user, quote_or_id, attrs) when is_map(attrs) do
+    with {:ok, quote} <-
+           fetch_lender_quote(user, normalize_id(quote_or_id), preload: [:fee_lines]) do
+      attrs =
+        attrs
+        |> normalize_attr_map()
+        |> Map.put("lender_quote_id", quote.id)
+        |> Map.put_new("classification", "unknown_fee_type")
+        |> Map.put_new("confidence_level", "low")
+        |> Map.put_new("required", false)
+        |> Map.put_new("requires_review", true)
+        |> Map.put_new("raw_payload", %{"source" => "manual_entry"})
+
+      case %LenderQuoteFeeLine{} |> LenderQuoteFeeLine.changeset(attrs) |> Repo.insert() do
+        {:ok, line} ->
+          fetch_lender_quote(user, quote.id, preload: [:fee_lines])
+          |> case do
+            {:ok, refreshed_quote} -> classify_lender_quote_fees(user, refreshed_quote)
+            {:error, _reason} -> :ok
+          end
+
+          {:ok, line}
+
+        {:error, changeset} ->
+          {:error, changeset}
+      end
+    end
+  end
+
+  @doc """
+  Fetches a lender quote fee line scoped through the owning quote.
+  """
+  @spec fetch_lender_quote_fee_line(User.t() | binary(), binary(), keyword()) ::
+          {:ok, LenderQuoteFeeLine.t()} | {:error, :not_found}
+  def fetch_lender_quote_fee_line(user, fee_line_id, opts \\ [])
+
+  def fetch_lender_quote_fee_line(user, fee_line_id, opts) when is_binary(fee_line_id) do
+    preload = Keyword.get(opts, :preload, [])
+
+    case Ecto.UUID.cast(fee_line_id) do
+      {:ok, id} ->
+        LenderQuoteFeeLine
+        |> join(:inner, [line], quote in assoc(line, :lender_quote))
+        |> where([line, quote], line.id == ^id and quote.user_id == ^normalize_user_id(user))
+        |> maybe_preload_query(preload)
+        |> Repo.one()
+        |> case do
+          nil -> {:error, :not_found}
+          %LenderQuoteFeeLine{} = line -> {:ok, line}
+        end
+
+      :error ->
+        {:error, :not_found}
+    end
+  end
+
+  def fetch_lender_quote_fee_line(_user, _fee_line_id, _opts), do: {:error, :not_found}
+
+  @doc """
+  Updates a manual lender quote fee line and refreshes quote fee classifications.
+  """
+  @spec update_lender_quote_fee_line(
+          User.t() | binary(),
+          LenderQuoteFeeLine.t() | binary(),
+          map()
+        ) ::
+          {:ok, LenderQuoteFeeLine.t()} | {:error, Ecto.Changeset.t()} | {:error, :not_found}
+  def update_lender_quote_fee_line(user, fee_line_or_id, attrs)
+
+  def update_lender_quote_fee_line(user, %LenderQuoteFeeLine{} = fee_line, attrs)
+      when is_map(attrs) do
+    with {:ok, _quote} <- fetch_lender_quote(user, fee_line.lender_quote_id) do
+      result =
+        fee_line
+        |> LenderQuoteFeeLine.changeset(normalize_attr_map(attrs))
+        |> Repo.update()
+
+      case result do
+        {:ok, updated} ->
+          refresh_lender_quote_fee_classification(user, updated.lender_quote_id)
+          {:ok, updated}
+
+        {:error, changeset} ->
+          {:error, changeset}
+      end
+    end
+  end
+
+  def update_lender_quote_fee_line(user, fee_line_id, attrs)
+      when is_binary(fee_line_id) and is_map(attrs) do
+    with {:ok, fee_line} <- fetch_lender_quote_fee_line(user, fee_line_id) do
+      update_lender_quote_fee_line(user, fee_line, attrs)
+    end
+  end
+
+  @doc """
+  Deletes a lender quote fee line and refreshes quote fee classifications.
+  """
+  @spec delete_lender_quote_fee_line(User.t() | binary(), LenderQuoteFeeLine.t() | binary()) ::
+          {:ok, LenderQuoteFeeLine.t()} | {:error, :not_found} | {:error, Ecto.Changeset.t()}
+  def delete_lender_quote_fee_line(user, %LenderQuoteFeeLine{} = fee_line) do
+    with {:ok, _quote} <- fetch_lender_quote(user, fee_line.lender_quote_id),
+         {:ok, deleted} <- Repo.delete(fee_line) do
+      refresh_lender_quote_fee_classification(user, deleted.lender_quote_id)
+      {:ok, deleted}
+    end
+  end
+
+  def delete_lender_quote_fee_line(user, fee_line_id) when is_binary(fee_line_id) do
+    with {:ok, fee_line} <- fetch_lender_quote_fee_line(user, fee_line_id) do
+      delete_lender_quote_fee_line(user, fee_line)
+    end
+  end
+
+  @doc """
   Runs deterministic analysis for a stored refinance scenario and saves a snapshot.
   """
   @spec analyze_refinance_scenario(User.t() | binary(), RefinanceScenario.t() | binary()) ::
@@ -438,7 +852,8 @@ defmodule MoneyTree.Loans do
           current_principal: scenario.mortgage.current_balance,
           current_rate: scenario.mortgage.current_interest_rate,
           current_remaining_term_months: scenario.mortgage.remaining_term_months,
-          current_monthly_payment: scenario.mortgage.monthly_payment_total,
+          current_monthly_payment:
+            EscrowPaymentDisplay.principal_interest_payment(scenario.mortgage),
           new_principal: scenario.new_principal_amount,
           new_rate: scenario.new_interest_rate,
           new_term_months: scenario.new_term_months,
@@ -1726,6 +2141,7 @@ defmodule MoneyTree.Loans do
              |> Map.put("mortgage_id", mortgage.id)
            ),
          {:ok, quote} <- Repo.insert(changeset) do
+      classify_lender_quote_fees(user, quote)
       {:ok, Repo.preload(quote, preload)}
     end
   end
@@ -1745,8 +2161,12 @@ defmodule MoneyTree.Loans do
       |> LenderQuote.changeset(normalize_attr_map(attrs))
       |> Repo.update()
       |> case do
-        {:ok, updated} -> {:ok, Repo.preload(updated, preload)}
-        {:error, changeset} -> {:error, changeset}
+        {:ok, updated} ->
+          classify_lender_quote_fees(user, updated)
+          {:ok, Repo.preload(updated, preload)}
+
+        {:error, changeset} ->
+          {:error, changeset}
       end
     else
       {:error, :not_found}
@@ -2042,7 +2462,7 @@ defmodule MoneyTree.Loans do
             current_principal: mortgage.current_balance,
             current_rate: mortgage.current_interest_rate,
             current_remaining_term_months: mortgage.remaining_term_months,
-            current_monthly_payment: mortgage.monthly_payment_total,
+            current_monthly_payment: EscrowPaymentDisplay.principal_interest_payment(mortgage),
             new_principal: scenario.new_principal_amount,
             new_rate: scenario.new_interest_rate,
             new_term_months: scenario.new_term_months,
@@ -3157,6 +3577,403 @@ defmodule MoneyTree.Loans do
   end
 
   defp maybe_preload_query(query, _), do: query
+
+  defp ensure_default_loan_fee_types do
+    LoanFeeDefaults.fee_types()
+    |> Enum.reduce_while(:ok, fn attrs, :ok ->
+      attrs = normalize_attr_map(attrs)
+
+      fee_type =
+        Repo.get_by(LoanFeeType,
+          loan_type: attrs["loan_type"],
+          transaction_type: attrs["transaction_type"],
+          code: attrs["code"]
+        )
+
+      result =
+        if fee_type do
+          fee_type
+          |> LoanFeeType.changeset(attrs)
+          |> Repo.update()
+        else
+          %LoanFeeType{}
+          |> LoanFeeType.changeset(attrs)
+          |> Repo.insert(
+            on_conflict: :nothing,
+            conflict_target: [:loan_type, :transaction_type, :code]
+          )
+        end
+
+      case result do
+        {:ok, _fee_type} -> {:cont, :ok}
+        {:error, changeset} -> {:halt, {:error, changeset}}
+      end
+    end)
+  end
+
+  defp ensure_default_loan_fee_profiles do
+    LoanFeeDefaults.jurisdiction_profiles()
+    |> Enum.reduce_while(:ok, fn attrs, :ok ->
+      attrs = normalize_attr_map(attrs)
+
+      profile =
+        LoanFeeJurisdictionProfile
+        |> where([profile], profile.country_code == ^attrs["country_code"])
+        |> where([profile], profile.loan_type == ^attrs["loan_type"])
+        |> where([profile], profile.transaction_type == ^attrs["transaction_type"])
+        |> profile_identity_filter(:state_code, Map.get(attrs, "state_code"))
+        |> profile_identity_filter(:county_or_parish, Map.get(attrs, "county_or_parish"))
+        |> profile_identity_filter(:municipality, Map.get(attrs, "municipality"))
+        |> Repo.one() || %LoanFeeJurisdictionProfile{}
+
+      case profile |> LoanFeeJurisdictionProfile.changeset(attrs) |> Repo.insert_or_update() do
+        {:ok, _profile} -> {:cont, :ok}
+        {:error, changeset} -> {:halt, {:error, changeset}}
+      end
+    end)
+  end
+
+  defp ensure_default_loan_fee_rules do
+    LoanFeeDefaults.jurisdiction_rules()
+    |> Enum.reduce_while(:ok, fn rule, :ok ->
+      {profile_key, fee_code, attrs} = normalize_default_fee_rule(rule)
+
+      with %LoanFeeJurisdictionProfile{} = profile <- default_fee_profile(profile_key),
+           %LoanFeeType{} = fee_type <- default_fee_type(fee_code) do
+        attrs =
+          attrs
+          |> normalize_attr_map()
+          |> Map.put("jurisdiction_profile_id", profile.id)
+          |> Map.put("loan_fee_type_id", fee_type.id)
+
+        rule =
+          Repo.get_by(LoanFeeJurisdictionRule,
+            jurisdiction_profile_id: profile.id,
+            loan_fee_type_id: fee_type.id
+          ) || %LoanFeeJurisdictionRule{}
+
+        case rule |> LoanFeeJurisdictionRule.changeset(attrs) |> Repo.insert_or_update() do
+          {:ok, _rule} -> {:cont, :ok}
+          {:error, changeset} -> {:halt, {:error, changeset}}
+        end
+      else
+        _missing -> {:cont, :ok}
+      end
+    end)
+  end
+
+  defp normalize_default_fee_rule({profile_key, fee_code, attrs}) when is_map(profile_key) do
+    {profile_key, fee_code, attrs}
+  end
+
+  defp normalize_default_fee_rule(
+         {country_code, state_code, loan_type, transaction_type, fee_code, attrs}
+       ) do
+    {
+      %{
+        country_code: country_code,
+        state_code: state_code,
+        county_or_parish: nil,
+        municipality: nil,
+        loan_type: loan_type,
+        transaction_type: transaction_type
+      },
+      fee_code,
+      attrs
+    }
+  end
+
+  defp default_fee_profile(%{
+         country_code: country_code,
+         state_code: state_code,
+         county_or_parish: county_or_parish,
+         municipality: municipality,
+         loan_type: loan_type,
+         transaction_type: transaction_type
+       }) do
+    LoanFeeJurisdictionProfile
+    |> where([profile], profile.country_code == ^country_code)
+    |> profile_identity_filter(:state_code, state_code)
+    |> profile_identity_filter(:county_or_parish, county_or_parish)
+    |> profile_identity_filter(:municipality, municipality)
+    |> where([profile], profile.loan_type == ^loan_type)
+    |> where([profile], profile.transaction_type == ^transaction_type)
+    |> Repo.one()
+  end
+
+  defp profile_identity_filter(query, field, nil),
+    do: where(query, [profile], is_nil(field(profile, ^field)))
+
+  defp profile_identity_filter(query, field, value),
+    do: where(query, [profile], field(profile, ^field) == ^value)
+
+  defp default_fee_type(code) do
+    Repo.get_by(LoanFeeType,
+      loan_type: "mortgage",
+      transaction_type: "refinance",
+      code: code
+    )
+  end
+
+  defp maybe_filter_loan_fee_type_loan_type(query, opts) do
+    case Keyword.get(opts, :loan_type) do
+      nil -> query
+      loan_type -> where(query, [fee_type], fee_type.loan_type == ^loan_type)
+    end
+  end
+
+  defp maybe_filter_loan_fee_type_transaction_type(query, opts) do
+    case Keyword.get(opts, :transaction_type) do
+      nil -> query
+      transaction_type -> where(query, [fee_type], fee_type.transaction_type == ^transaction_type)
+    end
+  end
+
+  defp maybe_filter_loan_fee_type_enabled(query, opts) do
+    case Keyword.get(opts, :enabled) do
+      nil -> query
+      enabled when is_boolean(enabled) -> where(query, [fee_type], fee_type.enabled == ^enabled)
+      _value -> query
+    end
+  end
+
+  defp fee_jurisdiction_profile_for_scenario(%RefinanceScenario{} = scenario, opts) do
+    state_code =
+      Keyword.get(opts, :state_code) ||
+        scenario_state_code(scenario)
+
+    county_or_parish =
+      Keyword.get(opts, :county_or_parish) ||
+        scenario_county_or_parish(scenario)
+
+    profile_query =
+      LoanFeeJurisdictionProfile
+      |> where([profile], profile.enabled == true)
+      |> where([profile], profile.country_code == "US")
+      |> where([profile], profile.loan_type == "mortgage")
+      |> where([profile], profile.transaction_type == "refinance")
+
+    parish_profile =
+      if state_code && county_or_parish do
+        profile_query
+        |> where([profile], profile.state_code == ^state_code)
+        |> where([profile], profile.county_or_parish == ^county_or_parish)
+        |> where([profile], is_nil(profile.municipality))
+        |> Repo.one()
+      end
+
+    localized_profile =
+      if state_code do
+        profile_query
+        |> where([profile], profile.state_code == ^state_code)
+        |> where([profile], is_nil(profile.county_or_parish))
+        |> where([profile], is_nil(profile.municipality))
+        |> Repo.one()
+      end
+
+    parish_profile || localized_profile ||
+      profile_query
+      |> where([profile], is_nil(profile.state_code))
+      |> where([profile], is_nil(profile.county_or_parish))
+      |> where([profile], is_nil(profile.municipality))
+      |> Repo.one()
+  end
+
+  defp scenario_state_code(%RefinanceScenario{mortgage: %Mortgage{state_region: state_region}}) do
+    normalize_state_code(state_region)
+  end
+
+  defp scenario_state_code(_scenario), do: nil
+
+  defp scenario_county_or_parish(%RefinanceScenario{
+         mortgage: %Mortgage{county_or_parish: county_or_parish}
+       }) do
+    normalize_county_or_parish(county_or_parish)
+  end
+
+  defp scenario_county_or_parish(_scenario), do: nil
+
+  defp normalize_state_code(nil), do: nil
+
+  defp normalize_state_code(value) when is_binary(value) do
+    case value |> String.trim() |> String.upcase() do
+      "" -> nil
+      "LOUISIANA" -> "LA"
+      state when byte_size(state) == 2 -> state
+      _state -> nil
+    end
+  end
+
+  defp normalize_state_code(_value), do: nil
+
+  defp normalize_county_or_parish(nil), do: nil
+
+  defp normalize_county_or_parish(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> case do
+      "" ->
+        nil
+
+      parish ->
+        parish
+        |> String.replace(~r/\s+parish$/i, "")
+        |> String.trim()
+        |> titleize_county_or_parish()
+        |> known_louisiana_parish_name()
+    end
+  end
+
+  defp normalize_county_or_parish(_value), do: nil
+
+  defp titleize_county_or_parish(value) do
+    value
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
+
+  defp known_louisiana_parish_name("St. John The Baptist"), do: "St. John the Baptist"
+  defp known_louisiana_parish_name(value), do: value
+
+  defp fee_jurisdiction_rules(nil), do: []
+
+  defp fee_jurisdiction_rules(%LoanFeeJurisdictionProfile{} = profile) do
+    profiles = fee_jurisdiction_rule_profiles(profile)
+    profile_ids = Enum.map(profiles, & &1.id)
+
+    rules_by_profile_id =
+      LoanFeeJurisdictionRule
+      |> where([rule], rule.jurisdiction_profile_id in ^profile_ids)
+      |> where([rule], rule.enabled == true)
+      |> Repo.all()
+      |> Enum.group_by(& &1.jurisdiction_profile_id)
+
+    profiles
+    |> Enum.reduce(%{}, fn profile, acc ->
+      rules_by_profile_id
+      |> Map.get(profile.id, [])
+      |> Enum.reduce(acc, fn rule, rule_acc ->
+        Map.put(rule_acc, rule.loan_fee_type_id, rule)
+      end)
+    end)
+    |> Map.values()
+  end
+
+  defp fee_jurisdiction_rule_profiles(%LoanFeeJurisdictionProfile{} = profile) do
+    LoanFeeJurisdictionProfile
+    |> where([candidate], candidate.enabled == true)
+    |> where([candidate], candidate.country_code == ^profile.country_code)
+    |> where([candidate], candidate.loan_type == ^profile.loan_type)
+    |> where([candidate], candidate.transaction_type == ^profile.transaction_type)
+    |> where([candidate], is_nil(candidate.municipality))
+    |> ancestor_identity_filter(:state_code, profile.state_code)
+    |> ancestor_identity_filter(:county_or_parish, profile.county_or_parish)
+    |> Repo.all()
+    |> Enum.sort_by(&fee_jurisdiction_specificity/1)
+  end
+
+  defp ancestor_identity_filter(query, field, nil),
+    do: where(query, [candidate], is_nil(field(candidate, ^field)))
+
+  defp ancestor_identity_filter(query, field, value),
+    do:
+      where(
+        query,
+        [candidate],
+        is_nil(field(candidate, ^field)) or field(candidate, ^field) == ^value
+      )
+
+  defp fee_jurisdiction_specificity(%LoanFeeJurisdictionProfile{} = profile) do
+    [
+      profile.state_code,
+      profile.county_or_parish,
+      profile.municipality
+    ]
+    |> Enum.count(&present_string?/1)
+  end
+
+  defp present_string?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present_string?(_value), do: false
+
+  defp ensure_no_existing_fee_items(%RefinanceScenario{fee_items: fee_items}) do
+    case fee_items || [] do
+      [] -> :ok
+      _items -> {:error, :fee_items_exist}
+    end
+  end
+
+  defp quote_prediction_scenario(user, %LenderQuote{} = quote) do
+    with {:ok, mortgage} <-
+           Mortgages.fetch_mortgage(user, quote.mortgage_id, preload: [:escrow_profile]) do
+      {:ok,
+       %RefinanceScenario{
+         user_id: normalize_user_id(user),
+         mortgage_id: mortgage.id,
+         mortgage: mortgage,
+         name: quote.lender_name || "Lender quote",
+         scenario_type: "lender_quote",
+         product_type: quote.product_type || "fixed",
+         new_term_months: quote.term_months || mortgage.remaining_term_months,
+         new_interest_rate: quote.interest_rate || mortgage.current_interest_rate,
+         new_apr: quote.apr,
+         new_principal_amount: mortgage.current_balance,
+         points: quote.points,
+         lender_credit_amount: quote.lender_credit_amount,
+         status: "draft",
+         fee_items: []
+       }}
+    end
+  end
+
+  defp quote_fee_line_inputs(%LenderQuote{fee_lines: fee_lines})
+       when is_list(fee_lines) and fee_lines != [] do
+    Enum.map(fee_lines, fn line ->
+      %{
+        original_label: line.original_label,
+        amount: line.amount,
+        raw_payload: line.raw_payload
+      }
+    end)
+  end
+
+  defp quote_fee_line_inputs(%LenderQuote{} = quote),
+    do: FeeQuoteAnalyzer.fee_lines_from_quote(quote)
+
+  defp replace_lender_quote_fee_lines(%LenderQuote{id: quote_id}, fee_line_attrs) do
+    Multi.new()
+    |> Multi.delete_all(
+      :delete_existing,
+      from(line in LenderQuoteFeeLine, where: line.lender_quote_id == ^quote_id)
+    )
+    |> Multi.run(:insert_lines, fn repo, _changes ->
+      fee_line_attrs
+      |> Enum.reduce_while({:ok, []}, fn attrs, {:ok, acc} ->
+        attrs = attrs |> stringify_keys() |> Map.put("lender_quote_id", quote_id)
+
+        case %LenderQuoteFeeLine{} |> LenderQuoteFeeLine.changeset(attrs) |> repo.insert() do
+          {:ok, line} -> {:cont, {:ok, [line | acc]}}
+          {:error, changeset} -> {:halt, {:error, changeset}}
+        end
+      end)
+      |> case do
+        {:ok, lines} -> {:ok, Enum.reverse(lines)}
+        {:error, changeset} -> {:error, changeset}
+      end
+    end)
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{insert_lines: lines}} -> {:ok, lines}
+      {:error, _operation, reason, _changes} -> {:error, reason}
+    end
+  end
+
+  defp refresh_lender_quote_fee_classification(user, quote_id) do
+    case fetch_lender_quote(user, quote_id, preload: [:fee_lines]) do
+      {:ok, quote} -> classify_lender_quote_fees(user, quote)
+      {:error, _reason} -> :ok
+    end
+  end
 
   defp maybe_filter_result_mortgage(query, opts) do
     case Keyword.get(opts, :mortgage_id) do

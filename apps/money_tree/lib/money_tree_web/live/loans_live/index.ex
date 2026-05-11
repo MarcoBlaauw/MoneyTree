@@ -8,6 +8,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   alias MoneyTree.Loans
   alias MoneyTree.Loans.AlertRule
   alias MoneyTree.Loans.Amortization
+  alias MoneyTree.Loans.EscrowPaymentDisplay
   alias MoneyTree.Loans.LenderQuote
   alias MoneyTree.Loans.Loan
   alias MoneyTree.Loans.LoanDocument
@@ -35,13 +36,19 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         generic_loan_changeset: generic_loan_changeset(current_user),
         what_if_form: default_what_if_form(nil),
         what_if_summary: nil,
+        payment_display_include_escrow?: false,
         selected_analysis_scenario_id: nil,
         scenario_form_open?: false,
+        scenario_form_mode: :new,
+        editing_scenario: nil,
         scenario_changeset: scenario_changeset(current_user, []),
         rate_observation_form_open?: false,
         rate_observation_changeset: rate_observation_changeset(),
         fee_form_open?: false,
+        fee_form_mode: :new,
+        editing_fee_item: nil,
         fee_changeset: fee_changeset([]),
+        expanded_fee_group_ids: MapSet.new(),
         document_form_open?: false,
         document_changeset: document_changeset(current_user, []),
         extraction_form_open?: false,
@@ -50,6 +57,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         ollama_extraction_form: default_ollama_extraction_form([]),
         quote_form_open?: false,
         quote_changeset: quote_changeset(current_user, []),
+        quote_fee_line_form_open?: false,
+        quote_fee_line_form_mode: :new,
+        editing_quote_fee_line: nil,
+        quote_fee_line_form: default_quote_fee_line_form([]),
         alert_form_open?: false,
         alert_form: default_alert_form([])
       )
@@ -232,8 +243,30 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     {:noreply,
      assign(socket,
        scenario_form_open?: true,
+       scenario_form_mode: :new,
+       editing_scenario: nil,
        scenario_changeset: scenario_changeset(current_user, mortgages)
      )}
+  end
+
+  def handle_event(
+        "edit-scenario",
+        %{"id" => scenario_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Loans.fetch_refinance_scenario(current_user, scenario_id, preload: []) do
+      {:ok, scenario} ->
+        {:noreply,
+         assign(socket,
+           scenario_form_open?: true,
+           scenario_form_mode: :edit,
+           editing_scenario: scenario,
+           scenario_changeset: Loans.change_refinance_scenario(scenario)
+         )}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Refinance scenario not found.")}
+    end
   end
 
   def handle_event(
@@ -244,6 +277,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     {:noreply,
      assign(socket,
        scenario_form_open?: false,
+       scenario_form_mode: :new,
+       editing_scenario: nil,
        scenario_changeset: scenario_changeset(current_user, mortgages)
      )}
   end
@@ -255,9 +290,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       ) do
     params = normalize_scenario_rate_params(params)
 
+    scenario = scenario_for_form(socket, current_user, mortgages, params)
+
     changeset =
-      current_user
-      |> base_scenario(mortgages, params)
+      scenario
       |> Loans.change_refinance_scenario(params)
       |> Map.put(:action, :validate)
 
@@ -272,17 +308,28 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     params = normalize_scenario_rate_params(params)
     mortgage_id = Map.get(params, "mortgage_id") || Map.get(params, :mortgage_id)
 
-    case Loans.create_refinance_scenario(current_user, mortgage_id, params) do
+    result =
+      case socket.assigns.scenario_form_mode do
+        :edit ->
+          Loans.update_refinance_scenario(current_user, socket.assigns.editing_scenario, params)
+
+        _mode ->
+          Loans.create_refinance_scenario(current_user, mortgage_id, params)
+      end
+
+    case result do
       {:ok, _scenario} ->
         {:noreply,
          socket
          |> load_page(current_user)
          |> assign(
            scenario_form_open?: false,
+           scenario_form_mode: :new,
+           editing_scenario: nil,
            scenario_changeset: scenario_changeset(current_user, mortgages),
            fee_changeset: fee_changeset(socket.assigns.scenario_rows)
          )
-         |> put_flash(:info, "Refinance scenario saved.")}
+         |> put_flash(:info, scenario_saved_message(socket.assigns.scenario_form_mode))}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Choose an accessible mortgage before saving.")}
@@ -296,6 +343,26 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end
   end
 
+  def handle_event(
+        "delete-scenario",
+        %{"id" => scenario_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Loans.delete_refinance_scenario(current_user, scenario_id) do
+      {:ok, _scenario} ->
+        {:noreply,
+         socket
+         |> load_page(current_user)
+         |> put_flash(:info, "Refinance scenario removed.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Refinance scenario not found.")}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Unable to remove scenario.")}
+    end
+  end
+
   def handle_event("update-what-if", %{"what_if" => params}, socket) do
     form = merge_what_if_form(socket.assigns.what_if_form, params)
 
@@ -304,6 +371,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
        what_if_form: form,
        what_if_summary: what_if_summary(socket.assigns.selected_mortgage, form)
      )}
+  end
+
+  def handle_event("toggle-escrow-display", %{"include_escrow" => value}, socket) do
+    {:noreply, assign(socket, payment_display_include_escrow?: value == "true")}
   end
 
   def handle_event("show-analysis-detail", %{"id" => scenario_id}, socket) do
@@ -435,22 +506,49 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     {:noreply,
      assign(socket,
        fee_form_open?: true,
+       fee_form_mode: :new,
+       editing_fee_item: nil,
        fee_changeset: fee_changeset(socket.assigns.scenario_rows)
      )}
+  end
+
+  def handle_event(
+        "edit-fee-item",
+        %{"id" => fee_item_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Loans.fetch_refinance_fee_item(current_user, fee_item_id) do
+      {:ok, fee_item} ->
+        {:noreply,
+         assign(socket,
+           fee_form_open?: true,
+           fee_form_mode: :edit,
+           editing_fee_item: fee_item,
+           fee_changeset: Loans.change_refinance_fee_item(fee_item)
+         )}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Fee item not found.")}
+    end
   end
 
   def handle_event("cancel-fee-item", _params, socket) do
     {:noreply,
      assign(socket,
        fee_form_open?: false,
+       fee_form_mode: :new,
+       editing_fee_item: nil,
        fee_changeset: fee_changeset(socket.assigns.scenario_rows)
      )}
   end
 
   def handle_event("validate-fee-item", %{"refinance_fee_item" => params}, socket) do
+    params = normalize_fee_item_params(params)
+
+    fee_item = fee_item_for_form(socket, params)
+
     changeset =
-      socket.assigns.scenario_rows
-      |> base_fee_item(params)
+      fee_item
       |> Loans.change_refinance_fee_item(params)
       |> Map.put(:action, :validate)
 
@@ -462,16 +560,29 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         %{"refinance_fee_item" => params},
         %{assigns: %{current_user: current_user}} = socket
       ) do
+    params = normalize_fee_item_params(params)
+
     scenario_id =
       Map.get(params, "refinance_scenario_id") || Map.get(params, :refinance_scenario_id)
 
-    case Loans.create_refinance_fee_item(current_user, scenario_id, params) do
+    result =
+      case socket.assigns.fee_form_mode do
+        :edit ->
+          Loans.update_refinance_fee_item(current_user, socket.assigns.editing_fee_item, params)
+
+        _mode ->
+          Loans.create_refinance_fee_item(current_user, scenario_id, params)
+      end
+
+    case result do
       {:ok, _fee_item} ->
+        message = fee_item_saved_message(current_user, scenario_id)
+
         {:noreply,
          socket
          |> load_page(current_user)
-         |> assign(fee_form_open?: false)
-         |> put_flash(:info, "Refinance fee item saved.")}
+         |> assign(fee_form_open?: false, fee_form_mode: :new, editing_fee_item: nil)
+         |> put_flash(:info, message)}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Choose an accessible scenario before saving.")}
@@ -483,6 +594,41 @@ defmodule MoneyTreeWeb.LoansLive.Index do
            fee_changeset: Map.put(changeset, :action, :validate)
          )}
     end
+  end
+
+  def handle_event(
+        "delete-fee-item",
+        %{"id" => fee_item_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Loans.delete_refinance_fee_item(current_user, fee_item_id) do
+      {:ok, _fee_item} ->
+        {:noreply,
+         socket
+         |> load_page(current_user)
+         |> put_flash(:info, "Refinance fee item removed.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Fee item not found.")}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Unable to remove fee item.")}
+    end
+  end
+
+  def handle_event(
+        "toggle-fee-group",
+        %{"id" => group_id},
+        %{assigns: %{expanded_fee_group_ids: expanded}} = socket
+      ) do
+    expanded =
+      if MapSet.member?(expanded, group_id) do
+        MapSet.delete(expanded, group_id)
+      else
+        MapSet.put(expanded, group_id)
+      end
+
+    {:noreply, assign(socket, expanded_fee_group_ids: expanded)}
   end
 
   def handle_event(
@@ -502,6 +648,35 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
       {:error, %Ecto.Changeset{}} ->
         {:noreply, put_flash(socket, :error, "Unable to save analysis right now.")}
+    end
+  end
+
+  def handle_event(
+        "add-common-fees",
+        %{"id" => scenario_id},
+        %{assigns: %{current_user: current_user, mortgages: mortgages}} = socket
+      ) do
+    case Loans.create_generic_refinance_fee_items(current_user, scenario_id) do
+      {:ok, fee_items} ->
+        {:noreply,
+         socket
+         |> load_page(current_user)
+         |> assign(fee_changeset: fee_changeset(scenario_rows(current_user, mortgages)))
+         |> put_flash(:info, "Added #{length(fee_items)} editable fee assumptions.")}
+
+      {:error, :fee_items_exist} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This scenario already has fee items. Review or edit those fees instead."
+         )}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Scenario not found.")}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Could not add fee assumptions.")}
     end
   end
 
@@ -957,6 +1132,128 @@ defmodule MoneyTreeWeb.LoansLive.Index do
      |> put_flash(:info, "Quote freshness refreshed; #{expired_count} quotes expired.")}
   end
 
+  def handle_event("new-quote-fee-line", %{"id" => quote_id}, socket) do
+    {:noreply,
+     assign(socket,
+       quote_fee_line_form_open?: true,
+       quote_fee_line_form_mode: :new,
+       editing_quote_fee_line: nil,
+       quote_fee_line_form: default_quote_fee_line_form(socket.assigns.quote_rows, quote_id)
+     )}
+  end
+
+  def handle_event(
+        "edit-quote-fee-line",
+        %{"id" => fee_line_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Loans.fetch_lender_quote_fee_line(current_user, fee_line_id) do
+      {:ok, fee_line} ->
+        {:noreply,
+         assign(socket,
+           quote_fee_line_form_open?: true,
+           quote_fee_line_form_mode: :edit,
+           editing_quote_fee_line: fee_line,
+           quote_fee_line_form: quote_fee_line_form_from_line(fee_line)
+         )}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Quote fee line not found.")}
+    end
+  end
+
+  def handle_event("cancel-quote-fee-line", _params, socket) do
+    {:noreply,
+     assign(socket,
+       quote_fee_line_form_open?: false,
+       quote_fee_line_form_mode: :new,
+       editing_quote_fee_line: nil,
+       quote_fee_line_form: default_quote_fee_line_form(socket.assigns.quote_rows)
+     )}
+  end
+
+  def handle_event("validate-quote-fee-line", %{"quote_fee_line" => params}, socket) do
+    {:noreply,
+     assign(socket,
+       quote_fee_line_form_open?: true,
+       quote_fee_line_form: merge_quote_fee_line_form(socket.assigns.quote_fee_line_form, params)
+     )}
+  end
+
+  def handle_event(
+        "save-quote-fee-line",
+        %{"quote_fee_line" => params},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    form = merge_quote_fee_line_form(socket.assigns.quote_fee_line_form, params)
+
+    quote_id = Map.get(form, "lender_quote_id")
+
+    attrs = %{
+      original_label: Map.get(form, "original_label"),
+      amount: Map.get(form, "amount")
+    }
+
+    result =
+      case socket.assigns.quote_fee_line_form_mode do
+        :edit ->
+          Loans.update_lender_quote_fee_line(
+            current_user,
+            socket.assigns.editing_quote_fee_line,
+            attrs
+          )
+
+        _mode ->
+          Loans.create_lender_quote_fee_line(current_user, quote_id, attrs)
+      end
+
+    case result do
+      {:ok, _line} ->
+        {:noreply,
+         socket
+         |> load_page(current_user)
+         |> assign(
+           quote_fee_line_form_open?: false,
+           quote_fee_line_form_mode: :new,
+           editing_quote_fee_line: nil,
+           quote_fee_line_form: default_quote_fee_line_form(socket.assigns.quote_rows)
+         )
+         |> put_flash(
+           :info,
+           quote_fee_line_saved_message(socket.assigns.quote_fee_line_form_mode)
+         )}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Lender quote not found.")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        {:noreply,
+         socket
+         |> assign(quote_fee_line_form_open?: true, quote_fee_line_form: form)
+         |> put_flash(:error, quote_fee_line_error_message(changeset))}
+    end
+  end
+
+  def handle_event(
+        "delete-quote-fee-line",
+        %{"id" => fee_line_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Loans.delete_lender_quote_fee_line(current_user, fee_line_id) do
+      {:ok, _line} ->
+        {:noreply,
+         socket
+         |> load_page(current_user)
+         |> put_flash(:info, "Quote fee line removed.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Quote fee line not found.")}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Unable to remove quote fee line.")}
+    end
+  end
+
   def handle_event(
         "convert-quote",
         %{"id" => quote_id},
@@ -1261,11 +1558,20 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               Add an alert rule after selecting a mortgage-backed loan workspace.
             </div>
 
+            <div :if={@alert_form_open?} class={modal_backdrop_class()} phx-click="cancel-alert-rule"></div>
             <form :if={@alert_form_open?}
                   id="loan-alert-rule-form"
-                  class="space-y-4"
+                  class={"#{modal_panel_class(:md)} space-y-4"}
                   phx-change="validate-alert-rule"
                   phx-submit="save-alert-rule">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h3 class="text-base font-semibold text-zinc-900">Add alert rule</h3>
+                  <p class="text-sm text-zinc-500">Threshold rules are evaluated against current scenarios and review queues.</p>
+                </div>
+                <button type="button" class="btn btn-outline" phx-click="cancel-alert-rule">Cancel</button>
+              </div>
+
               <input type="hidden" name="alert_rule[mortgage_id]" value={@alert_form["mortgage_id"] || first_mortgage_id(@mortgages)} />
 
               <div>
@@ -1386,6 +1692,74 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 </tbody>
               </table>
             </div>
+
+            <div :if={@quote_rows != []} class="space-y-3">
+              <div :for={row <- @quote_rows} class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+                <div class="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+                  <div>
+                    <h3 class="text-sm font-semibold text-zinc-900"><%= row.quote.lender_name %> fee review</h3>
+                    <p class="text-xs text-zinc-500">Estimated classifications only. Review lender documents before relying on them.</p>
+                  </div>
+                  <button type="button"
+                          class="btn btn-outline"
+                          phx-click="new-quote-fee-line"
+                          phx-value-id={row.quote.id}>
+                    Add quote fee
+                  </button>
+                </div>
+                <div :if={quote_fee_lines(row.quote) == []} class="mt-3 rounded-lg border border-dashed border-zinc-200 bg-white p-3 text-sm text-zinc-500">
+                  No structured fee lines available yet. Add quote fee detail through document import or aggregate quote fields.
+                </div>
+                <div :if={quote_fee_lines(row.quote) != []} class="mt-3 grid gap-3 lg:grid-cols-3">
+                  <section :for={group <- quote_fee_line_groups(row.quote)}
+                           class="rounded-lg border border-zinc-200 bg-white p-3">
+                    <div class="flex items-baseline justify-between gap-3">
+                      <div>
+                        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500"><%= group.label %></h4>
+                        <p class="text-xs text-zinc-500"><%= group.description %></p>
+                      </div>
+                      <span class={quote_fee_group_badge_class(group.key)}><%= length(group.lines) %></span>
+                    </div>
+                    <ul class="mt-3 space-y-2">
+                      <li :for={line <- group.lines} class="rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2">
+                        <div class="flex items-start justify-between gap-3">
+                          <div>
+                            <p class="text-sm font-medium text-zinc-900"><%= line.original_label %></p>
+                            <p class="text-xs text-zinc-500">
+                              <%= format_currency(line.amount) %> • <%= fee_line_classification_label(line.classification) %>
+                            </p>
+                          </div>
+                          <div class="flex items-center gap-1">
+                            <.action_icon icon="edit_note"
+                                          label="Edit quote fee"
+                                          event="edit-quote-fee-line"
+                                          value={line.id} />
+                            <.action_icon icon="delete"
+                                          label="Remove quote fee"
+                                          event="delete-quote-fee-line"
+                                          value={line.id}
+                                          confirm="Remove this quote fee line?" />
+                          </div>
+                        </div>
+                        <p :if={line.review_note} class="mt-2 text-xs text-zinc-500"><%= line.review_note %></p>
+                      </li>
+                    </ul>
+                  </section>
+                </div>
+                <section :if={quote_missing_required_fees(row) != []} class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <div class="flex items-baseline justify-between gap-3">
+                    <h4 class="text-xs font-semibold uppercase tracking-wide">Expected but not listed</h4>
+                    <span class="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-xs font-semibold text-amber-800"><%= length(quote_missing_required_fees(row)) %></span>
+                  </div>
+                  <ul class="mt-2 grid gap-2 md:grid-cols-2">
+                    <li :for={missing <- quote_missing_required_fees(row)} class="rounded-md border border-amber-100 bg-white/70 px-3 py-2">
+                      <p class="font-medium"><%= missing.display_name %></p>
+                      <p class="text-xs text-amber-700"><%= missing.review_note %></p>
+                    </li>
+                  </ul>
+                </section>
+              </div>
+            </div>
           </div>
 
           <div class="space-y-4 rounded-xl border border-zinc-100 bg-zinc-50 p-4">
@@ -1403,67 +1777,116 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               Add a quote after selecting a mortgage-backed loan workspace.
             </div>
 
-            <.simple_form :if={@quote_form_open?}
-                          for={@quote_changeset}
-                          id="lender-quote-form"
-                          phx-change="validate-quote"
-                          phx-submit="save-quote"
-                          :let={f}>
-              <input type="hidden" name="lender_quote[mortgage_id]" value={f[:mortgage_id].value || first_mortgage_id(@mortgages)} />
-
-              <div class="grid gap-4">
-                <.input field={f[:lender_name]} label="Lender name" />
-                <.input field={f[:quote_reference]} label="Quote reference" />
-
-                <div class="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label class="text-sm font-medium text-zinc-700" for="lender_quote_quote_source">Quote source</label>
-                    <select id="lender_quote_quote_source" name="lender_quote[quote_source]" class="input">
-                      <%= Phoenix.HTML.Form.options_for_select(quote_source_options(), f[:quote_source].value || "manual") %>
-                    </select>
-                  </div>
-                  <.input field={f[:product_type]} label="Product type" />
-                  <.input field={f[:term_months]} label="Term months" type={:number} min="1" />
-                  <.input field={f[:interest_rate]} label="Interest rate" type={:number} step="0.0001" min="0" />
-                  <.input field={f[:apr]} label="APR" type={:number} step="0.0001" min="0" />
-                  <.input field={f[:points]} label="Points" type={:number} step="0.0001" min="0" />
-                </div>
-
-                <div class="grid gap-4 sm:grid-cols-2">
-                  <.input field={f[:lender_credit_amount]} label="Lender credit" type={:number} step="0.01" min="0" />
-                  <.input field={f[:estimated_monthly_payment_expected]} label="Expected payment" type={:number} step="0.01" min="0" />
-                  <.input field={f[:estimated_closing_costs_expected]} label="Expected closing costs" type={:number} step="0.01" min="0" />
-                  <.input field={f[:estimated_cash_to_close_expected]} label="Expected cash to close" type={:number} step="0.01" min="0" />
-                </div>
-
-                <div class="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label class="text-sm font-medium text-zinc-700" for="lender_quote_lock_available">Rate lock</label>
-                    <select id="lender_quote_lock_available" name="lender_quote[lock_available]" class="input">
-                      <%= Phoenix.HTML.Form.options_for_select([{"No lock", "false"}, {"Lock available", "true"}], f[:lock_available].value || "false") %>
-                    </select>
-                  </div>
-                  <.input field={f[:quote_expires_at]} label="Quote expires at" placeholder="2026-06-01T00:00:00Z" />
-                </div>
-
+            <div :if={@quote_form_open?} class={modal_backdrop_class()} phx-click="cancel-quote"></div>
+            <div :if={@quote_form_open?} class={modal_panel_class(:lg)}>
+              <div class="mb-4 flex items-start justify-between gap-3">
                 <div>
-                  <label class="text-sm font-medium text-zinc-700" for="lender_quote_status">Status</label>
-                  <select id="lender_quote_status" name="lender_quote[status]" class="input">
-                    <%= Phoenix.HTML.Form.options_for_select(quote_status_options(), f[:status].value || "active") %>
+                  <h3 class="text-base font-semibold text-zinc-900">Refinance lender quote</h3>
+                  <p class="text-sm text-zinc-500">Record lender-specific refinance terms, then convert the quote to a scenario when ready.</p>
+                </div>
+                <button type="button" class="btn btn-outline" phx-click="cancel-quote">Cancel</button>
+              </div>
+
+              <.simple_form for={@quote_changeset}
+                            id="lender-quote-form"
+                            phx-change="validate-quote"
+                            phx-submit="save-quote"
+                            :let={f}>
+                <input type="hidden" name="lender_quote[mortgage_id]" value={f[:mortgage_id].value || first_mortgage_id(@mortgages)} />
+
+                <div class="grid gap-4">
+                  <.input field={f[:lender_name]} label="Lender name" />
+                  <.input field={f[:quote_reference]} label="Quote reference" />
+
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label class="text-sm font-medium text-zinc-700" for="lender_quote_quote_source">Quote source</label>
+                      <select id="lender_quote_quote_source" name="lender_quote[quote_source]" class="input">
+                        <%= Phoenix.HTML.Form.options_for_select(quote_source_options(), f[:quote_source].value || "manual") %>
+                      </select>
+                    </div>
+                    <.input field={f[:product_type]} label="Product type" />
+                    <.input field={f[:term_months]} label="Term months" type={:number} min="1" />
+                    <.input field={f[:interest_rate]} label="Interest rate" type={:number} step="0.0001" min="0" />
+                    <.input field={f[:apr]} label="APR" type={:number} step="0.0001" min="0" />
+                    <.input field={f[:points]} label="Points" type={:number} step="0.0001" min="0" />
+                  </div>
+
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <.input field={f[:lender_credit_amount]} label="Lender credit" type={:number} step="0.01" min="0" />
+                    <.input field={f[:estimated_monthly_payment_expected]} label="Expected payment" type={:number} step="0.01" min="0" />
+                    <.input field={f[:estimated_closing_costs_expected]} label="Expected closing costs" type={:number} step="0.01" min="0" />
+                    <.input field={f[:estimated_cash_to_close_expected]} label="Expected cash to close" type={:number} step="0.01" min="0" />
+                  </div>
+
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label class="text-sm font-medium text-zinc-700" for="lender_quote_lock_available">Rate lock</label>
+                      <select id="lender_quote_lock_available" name="lender_quote[lock_available]" class="input">
+                        <%= Phoenix.HTML.Form.options_for_select([{"No lock", "false"}, {"Lock available", "true"}], f[:lock_available].value || "false") %>
+                      </select>
+                    </div>
+                    <.input field={f[:quote_expires_at]} label="Quote expires at" placeholder="2026-06-01T00:00:00Z" />
+                  </div>
+
+                  <div>
+                    <label class="text-sm font-medium text-zinc-700" for="lender_quote_status">Status</label>
+                    <select id="lender_quote_status" name="lender_quote[status]" class="input">
+                      <%= Phoenix.HTML.Form.options_for_select(quote_status_options(), f[:status].value || "active") %>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label class="text-sm font-medium text-zinc-700" for="lender_quote_source_note">Source note</label>
+                    <textarea id="lender_quote_source_note" class="input min-h-24" name="lender_quote[source_note]"></textarea>
+                  </div>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                  <button type="button" class="btn btn-outline" phx-click="cancel-quote">Cancel</button>
+                  <button type="submit" class="btn">Save lender quote</button>
+                </div>
+              </.simple_form>
+            </div>
+
+            <div :if={@quote_fee_line_form_open?} class={modal_backdrop_class()} phx-click="cancel-quote-fee-line"></div>
+            <div :if={@quote_fee_line_form_open?} class={modal_panel_class(:md)}>
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h3 class="text-base font-semibold text-zinc-900"><%= quote_fee_line_form_title(@quote_fee_line_form_mode) %></h3>
+                  <p class="text-sm text-zinc-500">Enter a lender quote line exactly as listed; MoneyTree maps it to modeled fee ranges.</p>
+                </div>
+                <button type="button" class="btn btn-outline" phx-click="cancel-quote-fee-line">Cancel</button>
+              </div>
+
+              <form id="quote-fee-line-form"
+                    class="mt-4 space-y-4"
+                    phx-change="validate-quote-fee-line"
+                    phx-submit="save-quote-fee-line">
+                <div>
+                  <label class="text-sm font-medium text-zinc-700" for="quote_fee_line_lender_quote_id">Lender quote</label>
+                  <select id="quote_fee_line_lender_quote_id" name="quote_fee_line[lender_quote_id]" class="input">
+                    <%= Phoenix.HTML.Form.options_for_select(quote_options(@quote_rows), @quote_fee_line_form["lender_quote_id"]) %>
                   </select>
                 </div>
 
-                <div>
-                  <label class="text-sm font-medium text-zinc-700" for="lender_quote_source_note">Source note</label>
-                  <textarea id="lender_quote_source_note" class="input min-h-24" name="lender_quote[source_note]"></textarea>
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label class="text-sm font-medium text-zinc-700" for="quote_fee_line_original_label">Fee label</label>
+                    <input id="quote_fee_line_original_label" class="input" name="quote_fee_line[original_label]" value={@quote_fee_line_form["original_label"]} />
+                  </div>
+                  <div>
+                    <label class="text-sm font-medium text-zinc-700" for="quote_fee_line_amount">Amount</label>
+                    <input id="quote_fee_line_amount" class="input" name="quote_fee_line[amount]" type="number" step="0.01" min="0" value={@quote_fee_line_form["amount"]} />
+                  </div>
                 </div>
-              </div>
 
-              <div class="flex justify-end gap-2">
-                <button type="button" class="btn btn-outline" phx-click="cancel-quote">Cancel</button>
-                <button type="submit" class="btn">Save lender quote</button>
-              </div>
-            </.simple_form>
+                <div class="flex justify-end gap-2">
+                  <button type="button" class="btn btn-outline" phx-click="cancel-quote-fee-line">Cancel</button>
+                  <button type="submit" class="btn"><%= quote_fee_line_form_submit_label(@quote_fee_line_form_mode) %></button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
 
@@ -1638,45 +2061,55 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               Add document metadata after selecting a mortgage-backed loan workspace.
             </div>
 
-            <.simple_form :if={@document_form_open?}
-                          for={@document_changeset}
-                          id="loan-document-form"
-                          phx-change="validate-document"
-                          phx-submit="save-document"
-                          :let={f}>
-              <input type="hidden" name="loan_document[mortgage_id]" value={f[:mortgage_id].value || first_mortgage_id(@mortgages)} />
-              <div class="grid gap-4">
+            <div :if={@document_form_open?} class={modal_backdrop_class()} phx-click="cancel-document"></div>
+            <div :if={@document_form_open?} class={modal_panel_class(:lg)}>
+              <div class="mb-4 flex items-start justify-between gap-3">
                 <div>
-                  <label class="text-sm font-medium text-zinc-700">Document file</label>
-                  <.live_file_input upload={@uploads.loan_document_file} class="w-full text-sm text-zinc-700" />
-                  <p :for={entry <- @uploads.loan_document_file.entries} class="mt-1 text-xs text-zinc-500">
-                    <%= entry.client_name %> • <%= entry.client_type %>
-                  </p>
-                  <p :for={error <- upload_errors(@uploads.loan_document_file)} class="text-sm text-red-600">
-                    <%= upload_error_message(error) %>
-                  </p>
+                  <h3 class="text-base font-semibold text-zinc-900">Add document metadata</h3>
+                  <p class="text-sm text-zinc-500">Record source metadata before extraction and review.</p>
                 </div>
-
-                <div>
-                  <label class="text-sm font-medium text-zinc-700" for="loan_document_document_type">Document type</label>
-                  <select id="loan_document_document_type" name="loan_document[document_type]" class="input">
-                    <%= Phoenix.HTML.Form.options_for_select(document_type_options(), f[:document_type].value || "loan_estimate") %>
-                  </select>
-                  <p :for={error <- errors_on(@document_changeset, :document_type)} class="text-sm text-red-600"><%= error %></p>
-                </div>
-
-                <.input field={f[:original_filename]} label="Original filename" />
-                <.input field={f[:content_type]} label="Content type" />
-                <.input field={f[:byte_size]} label="Byte size" type={:number} min="1" />
-                <.input field={f[:storage_key]} label="Storage key" />
-                <.input field={f[:checksum_sha256]} label="SHA-256 checksum" />
-              </div>
-
-              <div class="flex justify-end gap-2">
                 <button type="button" class="btn btn-outline" phx-click="cancel-document">Cancel</button>
-                <button type="submit" class="btn">Save document</button>
               </div>
-            </.simple_form>
+
+              <.simple_form for={@document_changeset}
+                            id="loan-document-form"
+                            phx-change="validate-document"
+                            phx-submit="save-document"
+                            :let={f}>
+                <input type="hidden" name="loan_document[mortgage_id]" value={f[:mortgage_id].value || first_mortgage_id(@mortgages)} />
+                <div class="grid gap-4">
+                  <div>
+                    <label class="text-sm font-medium text-zinc-700">Document file</label>
+                    <.live_file_input upload={@uploads.loan_document_file} class="w-full text-sm text-zinc-700" />
+                    <p :for={entry <- @uploads.loan_document_file.entries} class="mt-1 text-xs text-zinc-500">
+                      <%= entry.client_name %> • <%= entry.client_type %>
+                    </p>
+                    <p :for={error <- upload_errors(@uploads.loan_document_file)} class="text-sm text-red-600">
+                      <%= upload_error_message(error) %>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="text-sm font-medium text-zinc-700" for="loan_document_document_type">Document type</label>
+                    <select id="loan_document_document_type" name="loan_document[document_type]" class="input">
+                      <%= Phoenix.HTML.Form.options_for_select(document_type_options(), f[:document_type].value || "loan_estimate") %>
+                    </select>
+                    <p :for={error <- errors_on(@document_changeset, :document_type)} class="text-sm text-red-600"><%= error %></p>
+                  </div>
+
+                  <.input field={f[:original_filename]} label="Original filename" />
+                  <.input field={f[:content_type]} label="Content type" />
+                  <.input field={f[:byte_size]} label="Byte size" type={:number} min="1" />
+                  <.input field={f[:storage_key]} label="Storage key" />
+                  <.input field={f[:checksum_sha256]} label="SHA-256 checksum" />
+                </div>
+
+                <div class="flex justify-end gap-2">
+                  <button type="button" class="btn btn-outline" phx-click="cancel-document">Cancel</button>
+                  <button type="submit" class="btn">Save document</button>
+                </div>
+              </.simple_form>
+            </div>
 
             <div class="border-t border-zinc-200 pt-4">
               <div class="flex items-start justify-between gap-3">
@@ -1693,11 +2126,20 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 Ollama extraction uses local AI settings and still requires user confirmation before persistence to the mortgage baseline.
               </div>
 
+              <div :if={@ollama_extraction_form_open?} class={modal_backdrop_class()} phx-click="cancel-ollama-extraction"></div>
               <form :if={@ollama_extraction_form_open?}
                     id="loan-document-ollama-extraction-form"
-                    class="mt-4 space-y-4"
+                    class={"#{modal_panel_class(:lg)} space-y-4"}
                     phx-change="validate-ollama-extraction"
                     phx-submit="run-ollama-extraction">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 class="text-base font-semibold text-zinc-900">Generate with Ollama</h3>
+                    <p class="text-sm text-zinc-500">Paste OCR or statement text to create a review-only candidate.</p>
+                  </div>
+                  <button type="button" class="btn btn-outline" phx-click="cancel-ollama-extraction">Cancel</button>
+                </div>
+
                 <div>
                   <label class="text-sm font-medium text-zinc-700" for="ollama_extraction_loan_document_id">Document</label>
                   <select id="ollama_extraction_loan_document_id" name="ollama_extraction[loan_document_id]" class="input">
@@ -1732,11 +2174,20 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 Add an extraction candidate after recording document metadata.
               </div>
 
+              <div :if={@extraction_form_open?} class={modal_backdrop_class()} phx-click="cancel-extraction"></div>
               <form :if={@extraction_form_open?}
                     id="loan-document-extraction-form"
-                    class="mt-4 space-y-4"
+                    class={"#{modal_panel_class(:md)} space-y-4"}
                     phx-change="validate-extraction"
                     phx-submit="save-extraction">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 class="text-base font-semibold text-zinc-900">Add extraction candidate</h3>
+                    <p class="text-sm text-zinc-500">Enter a reviewable field from a document without applying it.</p>
+                  </div>
+                  <button type="button" class="btn btn-outline" phx-click="cancel-extraction">Cancel</button>
+                </div>
+
                 <div>
                   <label class="text-sm font-medium text-zinc-700" for="extraction_loan_document_id">Document</label>
                   <select id="extraction_loan_document_id" name="extraction[loan_document_id]" class="input">
@@ -1842,9 +2293,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
           <div class="grid gap-3 sm:grid-cols-2">
             <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
-              <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Monthly payment</p>
-              <p class="mt-1 text-xl font-semibold text-zinc-900"><%= format_currency(@what_if_summary.scheduled_monthly_payment) %></p>
-              <p class="text-xs text-zinc-500">Principal and interest only</p>
+              <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500" title={payment_display_title(@payment_display_include_escrow?)}>
+                <%= payment_display_label(@payment_display_include_escrow?) %>
+              </p>
+              <p class="mt-1 text-xl font-semibold text-zinc-900"><%= format_currency(display_what_if_payment(@selected_mortgage, @what_if_summary, @payment_display_include_escrow?)) %></p>
+              <p class="text-xs text-zinc-500"><%= payment_display_description(@selected_mortgage, @payment_display_include_escrow?) %></p>
             </div>
             <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
               <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Payoff timeline</p>
@@ -1948,7 +2401,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         </p>
       </div>
 
-      <div :if={@live_action == :refinance} class={refinance_split_class(@rate_observation_form_open?)}>
+      <div :if={@live_action == :refinance} class="space-y-6">
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -2048,7 +2501,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
           </div>
         </div>
 
-        <div :if={@rate_observation_form_open?} class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div
+          :if={@rate_observation_form_open?}
+          class={modal_backdrop_class()}
+          phx-click="cancel-rate-observation"
+        >
+        </div>
+        <div :if={@rate_observation_form_open?} class={modal_panel_class(:md)}>
           <div class="flex items-start justify-between gap-3">
             <div>
               <h2 class="text-lg font-semibold text-zinc-900">Add benchmark rate</h2>
@@ -2113,20 +2572,31 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         </div>
       </div>
 
-      <div :if={@live_action == :refinance} class={refinance_split_class(@scenario_form_open?)}>
+      <div :if={@live_action == :refinance} class="space-y-6">
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 class="text-lg font-semibold text-zinc-900">Refinance analysis</h2>
-              <p class="text-sm text-zinc-500">Compare payment, break-even, and full-term cost.</p>
+              <p class="text-sm text-zinc-500">Compare payment, break-even, and full-term cost. Warnings are shown in scenario details.</p>
             </div>
-            <div class="flex gap-2">
-              <button type="button" class="btn btn-outline" phx-click="new-scenario" disabled={@mortgages == []}>
-                Add scenario
-              </button>
-              <button type="button" class="btn btn-outline" phx-click="new-fee-item" disabled={@scenario_rows == []}>
-                Add fee item
-              </button>
+            <div class="flex flex-col items-start gap-3 sm:items-end">
+              <form id="payment-display-form" phx-change="toggle-escrow-display" class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+                <input type="hidden" name="include_escrow" value="false" />
+                <label class="flex items-center gap-2 text-sm font-medium text-zinc-700">
+                  <input type="checkbox" name="include_escrow" value="true" checked={@payment_display_include_escrow?} />
+                  Include escrow
+                </label>
+                <p class="mt-1 text-xs text-zinc-500"><%= escrow_display_note(@selected_mortgage, @payment_display_include_escrow?) %></p>
+              </form>
+
+              <div class="flex gap-2">
+                <button type="button" class="btn btn-outline" phx-click="new-scenario" disabled={@mortgages == []}>
+                  Add scenario
+                </button>
+                <button type="button" class="btn btn-outline" phx-click="new-fee-item" disabled={@scenario_rows == []}>
+                  Add fee item
+                </button>
+              </div>
             </div>
           </div>
 
@@ -2136,9 +2606,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
           <div :if={@scenario_rows != []} class="grid gap-3 md:grid-cols-3">
             <.refinance_metric
-              label="Lowest expected payment"
-              value={metric_payment_value(@scenario_rows)}
-              row={lowest_expected_payment_row(@scenario_rows)}
+              label={lowest_payment_metric_label(@payment_display_include_escrow?)}
+              value={metric_payment_value(@scenario_rows, @payment_display_include_escrow?)}
+              row={lowest_expected_payment_row(@scenario_rows, @payment_display_include_escrow?)}
             />
             <.refinance_metric
               label="Fastest break-even"
@@ -2149,55 +2619,74 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               label="Lowest full-term delta"
               value={metric_full_term_delta_value(@scenario_rows)}
               row={lowest_full_term_delta_row(@scenario_rows)}
+              value_class={metric_full_term_delta_class(@scenario_rows)}
             />
           </div>
 
           <div :if={@scenario_rows != []} class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-zinc-200 text-sm">
+            <table id="refinance-scenario-table" class="min-w-full divide-y divide-zinc-200 text-sm">
               <thead>
                 <tr class="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  <th class="px-3 py-2">Scenario</th>
-                  <th class="px-3 py-2">Loan</th>
-                  <th class="px-3 py-2">Term</th>
-                  <th class="px-3 py-2">Rate</th>
-                  <th class="px-3 py-2">Payment range</th>
-                  <th class="px-3 py-2">Savings range</th>
-                  <th class="px-3 py-2">True cost range</th>
-                  <th class="px-3 py-2">Cash to close range</th>
-                  <th class="px-3 py-2">Break-even range</th>
-                  <th class="px-3 py-2">Full-term delta</th>
-                  <th class="px-3 py-2">Warnings</th>
-                  <th class="px-3 py-2"></th>
+                  <th class="px-2 py-2">Scenario</th>
+                  <th class="px-2 py-2">Rate</th>
+                  <th class="px-2 py-2" title={payment_display_title(@payment_display_include_escrow?)}>
+                    <%= payment_display_label(@payment_display_include_escrow?) %>
+                  </th>
+                  <th class="px-2 py-2">Savings</th>
+                  <th class="px-2 py-2">True cost</th>
+                  <th class="px-2 py-2">Cash close</th>
+                  <th class="px-2 py-2">Break-even</th>
+                  <th class="px-2 py-2">Full-term</th>
+                  <th class="px-2 py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-zinc-100">
                 <tr :for={row <- @scenario_rows} class="text-zinc-700">
-                  <td class="px-3 py-3 font-medium text-zinc-900"><%= row.scenario.name %></td>
-                  <td class="px-3 py-3"><%= row.mortgage.property_name %></td>
-                  <td class="px-3 py-3"><%= row.scenario.new_term_months %> months</td>
-                  <td class="px-3 py-3"><%= format_percent(row.scenario.new_interest_rate) %></td>
-                  <td class="px-3 py-3"><.range_value range={row.analysis.payment_range} /></td>
-                  <td class="px-3 py-3"><.range_value range={row.analysis.monthly_savings_range} /></td>
-                  <td class="px-3 py-3"><.range_value range={row.analysis.true_refinance_cost_range} /></td>
-                  <td class="px-3 py-3"><.range_value range={row.analysis.cash_to_close_range} /></td>
-                  <td class="px-3 py-3"><.range_value range={row.analysis.break_even_range} kind={:months} /></td>
-                  <td class="px-3 py-3"><%= format_currency(row.analysis.full_term_finance_cost_delta) %></td>
-                  <td class="px-3 py-3"><.warning_status warnings={row.analysis.warnings} /></td>
-                  <td class="px-3 py-3 text-right">
-                    <div class="flex justify-end gap-2">
-                      <button type="button"
-                              class="btn btn-outline"
-                              phx-click="show-analysis-detail"
-                              phx-value-id={row.scenario.id}
-                              aria-controls={analysis_detail_dom_id(row.scenario.id)}>
-                        View details
-                      </button>
-                      <button type="button"
-                              class="btn btn-outline"
-                              phx-click="run-analysis"
-                              phx-value-id={row.scenario.id}>
-                        Save analysis
-                      </button>
+                  <td class="px-2 py-2 font-medium text-zinc-900">
+                    <div class="flex items-center gap-1.5">
+                      <span><%= row.scenario.name %></span>
+                      <span :if={row.analysis.warnings != []} class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-amber-700"
+                            aria-label="Review notes in details" title="Review notes in details">
+                        !
+                      </span>
+                    </div>
+                  </td>
+                  <td class="px-2 py-2"><%= format_percent(row.scenario.new_interest_rate) %></td>
+                  <td class="px-2 py-2"><.range_value range={display_payment_range(row, @payment_display_include_escrow?)} /></td>
+                  <td class="px-2 py-2"><.range_value range={display_savings_range(row, @payment_display_include_escrow?)} tone={:savings} /></td>
+                  <td class="px-2 py-2"><.range_value range={row.analysis.true_refinance_cost_range} /></td>
+                  <td class="px-2 py-2"><.range_value range={row.analysis.cash_to_close_range} /></td>
+                  <td class="px-2 py-2"><.range_value range={row.analysis.break_even_range} kind={:months} /></td>
+                  <td class="px-2 py-2">
+                    <span class={semantic_money_class(row.analysis.full_term_finance_cost_delta, :delta)}>
+                      <%= format_currency(row.analysis.full_term_finance_cost_delta) %>
+                    </span>
+                  </td>
+                  <td class="px-2 py-2 text-right">
+                    <div class="flex justify-end gap-1">
+                      <.action_icon :if={row.fee_status.status == :missing}
+                                    icon="playlist_add"
+                                    label="Add common fees"
+                                    event="add-common-fees"
+                                    value={row.scenario.id} />
+                      <.action_icon icon="visibility"
+                                    label="View details"
+                                    event="show-analysis-detail"
+                                    value={row.scenario.id}
+                                    controls={analysis_detail_dom_id(row.scenario.id)} />
+                      <.action_icon icon="edit_note"
+                                    label="Edit scenario"
+                                    event="edit-scenario"
+                                    value={row.scenario.id} />
+                      <.action_icon icon="save"
+                                    label="Save analysis"
+                                    event="run-analysis"
+                                    value={row.scenario.id} />
+                      <.action_icon icon="delete"
+                                    label="Remove scenario"
+                                    event="delete-scenario"
+                                    value={row.scenario.id}
+                                    confirm="Remove this refinance scenario and its fee items?" />
                     </div>
                   </td>
                 </tr>
@@ -2233,8 +2722,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
               <div class="grid gap-3 sm:grid-cols-3">
                 <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
-                  <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Expected payment</p>
-                  <p class="mt-1 text-xl font-semibold text-zinc-900"><%= format_currency(row.analysis.payment_range.expected) %></p>
+                  <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500" title={payment_display_title(@payment_display_include_escrow?)}>
+                    Expected <%= payment_display_label(@payment_display_include_escrow?) %>
+                  </p>
+                  <p class="mt-1 text-xl font-semibold text-zinc-900"><%= format_currency(display_payment_range(row, @payment_display_include_escrow?).expected) %></p>
                 </div>
                 <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
                   <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Expected break-even</p>
@@ -2242,7 +2733,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 </div>
                 <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
                   <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Full-term delta</p>
-                  <p class="mt-1 text-xl font-semibold text-zinc-900"><%= format_currency(row.analysis.full_term_finance_cost_delta) %></p>
+                  <p class={"mt-1 text-xl font-semibold #{semantic_money_class(row.analysis.full_term_finance_cost_delta, :delta)}"}>
+                    <%= format_currency(row.analysis.full_term_finance_cost_delta) %>
+                  </p>
                 </div>
               </div>
 
@@ -2251,16 +2744,20 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                   <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Core outputs</p>
                   <dl class="mt-2 space-y-2 text-sm">
                     <div class="flex justify-between gap-4">
-                      <dt class="text-zinc-500">Current payment</dt>
-                      <dd class="font-medium text-zinc-900"><%= format_currency(row.analysis.current_monthly_payment) %></dd>
+                      <dt class="text-zinc-500" title={payment_display_title(@payment_display_include_escrow?)}>
+                        Current <%= payment_display_label(@payment_display_include_escrow?) %>
+                      </dt>
+                      <dd class="font-medium text-zinc-900"><%= format_currency(display_current_payment(row, @payment_display_include_escrow?)) %></dd>
                     </div>
                     <div class="flex justify-between gap-4">
-                      <dt class="text-zinc-500">New payment range</dt>
-                      <dd class="min-w-44 font-medium text-zinc-900"><.range_value range={row.analysis.payment_range} /></dd>
+                      <dt class="text-zinc-500" title={payment_display_title(@payment_display_include_escrow?)}>
+                        New <%= payment_display_label(@payment_display_include_escrow?) %> range
+                      </dt>
+                      <dd class="min-w-44 font-medium text-zinc-900"><.range_value range={display_payment_range(row, @payment_display_include_escrow?)} /></dd>
                     </div>
                     <div class="flex justify-between gap-4">
                       <dt class="text-zinc-500">Savings range</dt>
-                      <dd class="min-w-44 font-medium text-zinc-900"><.range_value range={row.analysis.monthly_savings_range} /></dd>
+                      <dd class="min-w-44 font-medium"><.range_value range={display_savings_range(row, @payment_display_include_escrow?)} tone={:savings} /></dd>
                     </div>
                     <div class="flex justify-between gap-4">
                       <dt class="text-zinc-500">Break-even range</dt>
@@ -2290,7 +2787,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     </div>
                     <div class="flex justify-between gap-4">
                       <dt class="text-zinc-500">Full-term delta</dt>
-                      <dd class="font-medium text-zinc-900"><%= format_currency(row.analysis.full_term_finance_cost_delta) %></dd>
+                      <dd class={"font-medium #{semantic_money_class(row.analysis.full_term_finance_cost_delta, :delta)}"}>
+                        <%= format_currency(row.analysis.full_term_finance_cost_delta) %>
+                      </dd>
                     </div>
                   </dl>
                 </div>
@@ -2327,10 +2826,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
           </div>
         </div>
 
-        <div :if={@scenario_form_open?} class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div :if={@scenario_form_open?} class={modal_backdrop_class()} phx-click="cancel-scenario"></div>
+        <div :if={@scenario_form_open?} class={modal_panel_class(:md)}>
           <div class="flex items-start justify-between gap-3">
             <div>
-              <h2 class="text-lg font-semibold text-zinc-900">Add scenario</h2>
+              <h2 class="text-lg font-semibold text-zinc-900"><%= scenario_form_title(@scenario_form_mode) %></h2>
               <p class="text-sm text-zinc-500">Save rate, term, and principal assumptions.</p>
             </div>
             <button type="button" class="btn btn-outline" phx-click="cancel-scenario">
@@ -2395,13 +2895,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
             <div class="flex justify-end gap-2">
               <button type="button" class="btn btn-outline" phx-click="cancel-scenario">Cancel</button>
-              <button type="submit" class="btn">Save scenario</button>
+              <button type="submit" class="btn"><%= scenario_form_submit_label(@scenario_form_mode) %></button>
             </div>
           </.simple_form>
         </div>
       </div>
 
-      <div :if={@live_action == :refinance} class={refinance_split_class(@fee_form_open?)}>
+      <div :if={@live_action == :refinance} class="space-y-6">
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div>
             <h2 class="text-lg font-semibold text-zinc-900">Cost assumptions</h2>
@@ -2430,14 +2930,96 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                   </p>
                 </div>
               </div>
+              <div :if={row.fee_prediction} class="mt-4 grid gap-3 md:grid-cols-3">
+                <div class="rounded-lg border border-zinc-200 bg-white p-3">
+                  <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Estimated closing costs</p>
+                  <p class="mt-1 text-sm font-semibold text-zinc-900">
+                    <%= format_currency(row.fee_prediction.total_closing_cost.low) %> - <%= format_currency(row.fee_prediction.total_closing_cost.high) %>
+                  </p>
+                  <p class="text-xs text-zinc-500">Expected <%= format_currency(row.fee_prediction.total_closing_cost.expected) %></p>
+                </div>
+                <div class="rounded-lg border border-zinc-200 bg-white p-3">
+                  <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">True refinance costs</p>
+                  <p class="mt-1 text-sm font-semibold text-zinc-900">
+                    <%= format_currency(row.fee_prediction.true_cost.low) %> - <%= format_currency(row.fee_prediction.true_cost.high) %>
+                  </p>
+                  <p class="text-xs text-zinc-500">Break-even uses true costs only</p>
+                </div>
+                <div class="rounded-lg border border-zinc-200 bg-white p-3">
+                  <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Model confidence</p>
+                  <p class="mt-1 text-sm font-semibold text-zinc-900"><%= format_label(row.fee_prediction.confidence_level) %></p>
+                  <p class="text-xs text-zinc-500">
+                    <%= profile_label(row.fee_prediction.profile) %>
+                  </p>
+                </div>
+              </div>
+              <div :if={row.fee_status.status == :missing} class="mt-4 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
+                <p>No fee assumptions loaded. Break-even and cash-to-close are incomplete until costs are added.</p>
+                <button type="button"
+                        class="btn btn-outline"
+                        phx-click="add-common-fees"
+                        phx-value-id={row.scenario.id}>
+                  Add common fees
+                </button>
+              </div>
+              <p :if={row.fee_prediction && row.fee_prediction.warnings != []} class="mt-3 text-xs text-amber-700">
+                <%= Enum.join(row.fee_prediction.warnings, " ") %>
+              </p>
+              <div :if={List.wrap(row.scenario.fee_items) != []} class="mt-4 grid gap-3 lg:grid-cols-3">
+                <div :for={group <- fee_item_groups(row.scenario.fee_items)}
+                     class="rounded-lg border border-zinc-200 bg-white">
+                  <% group_id = fee_group_dom_id(row.scenario.id, group.label) %>
+                  <% expanded? = fee_group_expanded?(@expanded_fee_group_ids, group_id) %>
+                  <button type="button"
+                          class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+                          phx-click="toggle-fee-group"
+                          phx-value-id={group_id}
+                          aria-expanded={to_string(expanded?)}
+                          aria-controls={group_id}>
+                    <span>
+                      <span class="block text-[11px] font-semibold uppercase tracking-wide text-zinc-500"><%= group.label %></span>
+                      <span class="text-xs text-zinc-500"><%= length(group.items) %> items</span>
+                    </span>
+                    <span class="flex items-center gap-2">
+                      <span class={fee_group_total_class(group)}><%= format_currency(group.total) %></span>
+                      <span class="text-sm text-zinc-500" aria-hidden="true">
+                        <%= if expanded?, do: "▲", else: "▼" %>
+                      </span>
+                    </span>
+                  </button>
+                  <ul :if={expanded?} id={group_id} class="space-y-2 border-t border-zinc-100 p-3">
+                    <li :for={fee_item <- group.items} class="rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2">
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <p class="text-sm font-medium text-zinc-900"><%= fee_item.name %></p>
+                          <p class="text-xs text-zinc-500"><%= fee_item_type_label(fee_item) %></p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <p class={fee_item_amount_class(fee_item)}><%= signed_fee_item_amount_label(fee_item) %></p>
+                          <.action_icon icon="edit_note"
+                                        label="Edit fee item"
+                                        event="edit-fee-item"
+                                        value={fee_item.id} />
+                          <.action_icon icon="delete"
+                                        label="Remove fee item"
+                                        event="delete-fee-item"
+                                        value={fee_item.id}
+                                        confirm="Remove this fee item?" />
+                        </div>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </li>
           </ul>
         </div>
 
-        <div :if={@fee_form_open?} class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div :if={@fee_form_open?} class={modal_backdrop_class()} phx-click="cancel-fee-item"></div>
+        <div :if={@fee_form_open?} class={modal_panel_class(:md)}>
           <div class="flex items-start justify-between gap-3">
             <div>
-              <h2 class="text-lg font-semibold text-zinc-900">Add fee item</h2>
+              <h2 class="text-lg font-semibold text-zinc-900"><%= fee_form_title(@fee_form_mode) %></h2>
               <p class="text-sm text-zinc-500">Classify each amount for break-even and cash-to-close math.</p>
             </div>
             <button type="button" class="btn btn-outline" phx-click="cancel-fee-item">
@@ -2459,9 +3041,17 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 <p :for={error <- errors_on(@fee_changeset, :refinance_scenario_id)} class="text-sm text-red-600"><%= error %></p>
               </div>
 
+              <div>
+                <label class="text-sm font-medium text-zinc-700" for="refinance_fee_item_loan_fee_type_code">Fee type</label>
+                <select id="refinance_fee_item_loan_fee_type_code" name="refinance_fee_item[loan_fee_type_code]" class="input">
+                  <%= Phoenix.HTML.Form.options_for_select(loan_fee_type_options(), selected_fee_type_code(@fee_changeset)) %>
+                </select>
+                <p class="mt-1 text-xs text-zinc-500">
+                  <%= selected_fee_type_help(@fee_changeset) %>
+                </p>
+              </div>
+
               <div class="grid gap-4 sm:grid-cols-2">
-                <.input field={f[:name]} label="Name" />
-                <.input field={f[:category]} label="Category" />
                 <.input field={f[:expected_amount]} label="Expected amount" type={:number} step="0.01" min="0" />
                 <.input field={f[:sort_order]} label="Sort order" type={:number} min="0" />
               </div>
@@ -2493,7 +3083,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
             <div class="flex justify-end gap-2">
               <button type="button" class="btn btn-outline" phx-click="cancel-fee-item">Cancel</button>
-              <button type="submit" class="btn">Save fee item</button>
+              <button type="submit" class="btn"><%= fee_form_submit_label(@fee_form_mode) %></button>
             </div>
           </.simple_form>
         </div>
@@ -2530,7 +3120,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 <td class="px-3 py-3"><%= format_months(row.result.break_even_months_expected) %></td>
                 <td class="px-3 py-3"><%= format_currency(row.result.true_refinance_cost_expected) %></td>
                 <td class="px-3 py-3"><%= format_currency(row.result.cash_to_close_expected) %></td>
-                <td class="px-3 py-3"><%= format_currency(row.result.full_term_finance_cost_delta_expected) %></td>
+                <td class="px-3 py-3">
+                  <span class={semantic_money_class(row.result.full_term_finance_cost_delta_expected, :delta)}>
+                    <%= format_currency(row.result.full_term_finance_cost_delta_expected) %>
+                  </span>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -2669,7 +3263,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
             Select “Edit loan” on an existing loan or add a new mortgage baseline here.
           </div>
 
-          <.simple_form :if={@mortgage_form_open?}
+          <div :if={@mortgage_form_open?} class={modal_backdrop_class()} phx-click="cancel-mortgage"></div>
+          <div :if={@mortgage_form_open?} class={modal_panel_class(:lg)}>
+          <.simple_form
                         for={@mortgage_changeset}
                         id="mortgage-form"
                         phx-change="validate-mortgage"
@@ -2681,6 +3277,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <.input field={f[:loan_type]} label="Loan type" />
               <.input field={f[:lender_name]} label="Lender" />
               <.input field={f[:servicer_name]} label="Servicer" />
+
+              <div class="grid gap-4 sm:grid-cols-2">
+                <.input field={f[:state_region]} label="State" />
+                <.input field={f[:county_or_parish]} label="County / parish" />
+              </div>
 
               <div class="grid gap-4 sm:grid-cols-2">
                 <.input field={f[:current_balance]} label="Current balance" type={:number} step="0.01" min="0" />
@@ -2731,9 +3332,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <button type="submit" class="btn"><%= mortgage_form_submit_label(@mortgage_form_mode) %></button>
             </div>
           </.simple_form>
+          </div>
         </div>
 
-        <div :if={@generic_loan_form_open?} class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div :if={@generic_loan_form_open?} class={modal_backdrop_class()} phx-click="cancel-generic-loan"></div>
+        <div :if={@generic_loan_form_open?} class={modal_panel_class(:md)}>
           <div class="flex items-start justify-between gap-3">
             <div>
               <h2 class="text-lg font-semibold text-zinc-900">Add non-mortgage loan</h2>
@@ -2795,40 +3398,28 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp range_value(assigns) do
     assigns = assign_new(assigns, :kind, fn -> :currency end)
+    assigns = assign_new(assigns, :tone, fn -> :neutral end)
 
     ~H"""
-    <div class="space-y-1 text-xs">
-      <div class="flex justify-between gap-3">
-        <span class="text-zinc-500">Low</span>
-        <span class="font-medium text-zinc-900"><%= format_range_value(@range.low, @kind) %></span>
+    <div class="space-y-0.5 text-xs leading-tight">
+      <div class="grid grid-cols-[0.9rem_auto] items-baseline justify-start gap-x-1.5">
+        <span class="text-center text-zinc-500" aria-label="Low estimate" title="Low estimate">↓</span>
+        <span class={"font-medium #{range_value_class(@range.low, @tone)}"}>
+        <%= format_range_value(@range.low, @kind) %>
+        </span>
       </div>
-      <div class="flex justify-between gap-3">
-        <span class="text-zinc-500">Expected</span>
-        <span class="font-medium text-zinc-900"><%= format_range_value(@range.expected, @kind) %></span>
+      <div class="grid grid-cols-[0.9rem_auto] items-baseline justify-start gap-x-1.5">
+        <span class="text-center text-zinc-500" aria-label="Expected estimate" title="Expected estimate">−</span>
+        <span class={"font-medium #{range_value_class(@range.expected, @tone)}"}>
+        <%= format_range_value(@range.expected, @kind) %>
+        </span>
       </div>
-      <div class="flex justify-between gap-3">
-        <span class="text-zinc-500">High</span>
-        <span class="font-medium text-zinc-900"><%= format_range_value(@range.high, @kind) %></span>
+      <div class="grid grid-cols-[0.9rem_auto] items-baseline justify-start gap-x-1.5">
+        <span class="text-center text-zinc-500" aria-label="High estimate" title="High estimate">↑</span>
+        <span class={"font-medium #{range_value_class(@range.high, @tone)}"}>
+        <%= format_range_value(@range.high, @kind) %>
+        </span>
       </div>
-    </div>
-    """
-  end
-
-  defp warning_status(%{warnings: []} = assigns) do
-    ~H"""
-    <span class="inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-600">
-      No warnings
-    </span>
-    """
-  end
-
-  defp warning_status(assigns) do
-    ~H"""
-    <div class="space-y-1">
-      <span class="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800">
-        Review needed
-      </span>
-      <p class="max-w-56 text-xs text-amber-700"><%= List.first(@warnings) %></p>
     </div>
     """
   end
@@ -2836,15 +3427,81 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   attr :label, :string, required: true
   attr :value, :string, required: true
   attr :row, :any, default: nil
+  attr :value_class, :string, default: "text-zinc-900"
 
   defp refinance_metric(assigns) do
     ~H"""
     <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
       <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500"><%= @label %></p>
-      <p class="mt-1 text-xl font-semibold text-zinc-900"><%= @value %></p>
+      <p class={"mt-1 text-xl font-semibold #{@value_class}"}><%= @value %></p>
       <p :if={@row} class="text-xs text-zinc-500"><%= @row.scenario.name %></p>
       <p :if={@row == nil} class="text-xs text-zinc-500">No comparable scenario</p>
     </div>
+    """
+  end
+
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :event, :string, required: true
+  attr :value, :string, required: true
+  attr :confirm, :string, default: nil
+  attr :controls, :string, default: nil
+
+  defp action_icon(assigns) do
+    ~H"""
+    <button type="button"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-emerald-900/60 bg-white text-emerald-900 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+            phx-click={@event}
+            phx-value-id={@value}
+            aria-label={@label}
+            title={@label}
+            aria-controls={@controls}
+            data-confirm={@confirm}>
+      <.action_icon_svg icon={@icon} />
+    </button>
+    """
+  end
+
+  attr :icon, :string, required: true
+
+  defp action_icon_svg(assigns) do
+    ~H"""
+    <svg viewBox="0 0 24 24"
+         class="h-4 w-4"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round"
+         aria-hidden="true">
+      <g :if={@icon == "playlist_add"}>
+        <path d="M4 6h10" />
+        <path d="M4 12h8" />
+        <path d="M4 18h8" />
+        <path d="M17 14v6" />
+        <path d="M14 17h6" />
+      </g>
+      <g :if={@icon == "visibility"}>
+        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+        <circle cx="12" cy="12" r="2.5" />
+      </g>
+      <g :if={@icon == "edit_note"}>
+        <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+        <path d="M13.5 7.5l3 3" />
+      </g>
+      <g :if={@icon == "save"}>
+        <path d="M5 4h12l2 2v14H5V4Z" />
+        <path d="M8 4v6h8V4" />
+        <path d="M8 20v-6h8v6" />
+      </g>
+      <g :if={@icon == "delete"}>
+        <path d="M4 7h16" />
+        <path d="M10 11v6" />
+        <path d="M14 11v6" />
+        <path d="M6 7l1 13h10l1-13" />
+        <path d="M9 7V4h6v3" />
+      </g>
+    </svg>
     """
   end
 
@@ -3106,6 +3763,14 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end
   end
 
+  defp decimal_form_value(nil), do: ""
+
+  defp decimal_form_value(%Decimal{} = value) do
+    Decimal.to_string(value, :normal)
+  end
+
+  defp decimal_form_value(value), do: to_string(value)
+
   defp mortgage_for_form(
          %{assigns: %{mortgage_form_mode: :edit, editing_mortgage: %Mortgage{} = mortgage}},
          _current_user
@@ -3146,6 +3811,33 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     |> base_scenario(mortgages)
     |> Loans.change_refinance_scenario()
   end
+
+  defp scenario_for_form(
+         %{
+           assigns: %{
+             scenario_form_mode: :edit,
+             editing_scenario: %RefinanceScenario{} = scenario
+           }
+         },
+         _current_user,
+         _mortgages,
+         _params
+       ) do
+    scenario
+  end
+
+  defp scenario_for_form(_socket, current_user, mortgages, params) do
+    base_scenario(current_user, mortgages, params)
+  end
+
+  defp scenario_saved_message(:edit), do: "Refinance scenario updated."
+  defp scenario_saved_message(_mode), do: "Refinance scenario saved."
+
+  defp scenario_form_title(:edit), do: "Edit scenario"
+  defp scenario_form_title(_mode), do: "Add scenario"
+
+  defp scenario_form_submit_label(:edit), do: "Save scenario"
+  defp scenario_form_submit_label(_mode), do: "Save scenario"
 
   defp rate_observation_changeset(attrs \\ %{}) do
     %RateObservation{
@@ -3236,23 +3928,46 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       |> Enum.map(fn scenario ->
         true_refinance_cost = sum_fee_items(scenario.fee_items, :true_cost)
         cash_to_close_timing_cost = sum_fee_items(scenario.fee_items, :timing_cost)
+        fee_status = Loans.fee_assumption_status(scenario)
+        fee_prediction = scenario_fee_prediction(scenario)
+
+        analysis =
+          scenario_analysis(mortgage, scenario, true_refinance_cost, cash_to_close_timing_cost)
+
+        analysis =
+          Map.update!(
+            analysis,
+            :warnings,
+            &Enum.uniq(&1 ++ fee_status_warnings(fee_status, fee_prediction))
+          )
 
         %{
           mortgage: mortgage,
           scenario: scenario,
+          fee_status: fee_status,
+          fee_prediction: fee_prediction,
           true_refinance_cost: true_refinance_cost,
           cash_to_close: Decimal.add(true_refinance_cost, cash_to_close_timing_cost),
-          analysis:
-            scenario_analysis(
-              mortgage,
-              scenario,
-              true_refinance_cost,
-              cash_to_close_timing_cost
-            )
+          analysis: analysis
         }
       end)
     end)
   end
+
+  defp scenario_fee_prediction(scenario) do
+    case Loans.predict_loan_fee_range(scenario) do
+      {:ok, prediction} -> prediction
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp fee_status_warnings(%{status: :generic_estimate}, %{profile: %{state_code: "LA"}}) do
+    [
+      "This scenario uses modeled Louisiana fee estimates. Verify parish, title, recording, and escrow charges against lender documents."
+    ]
+  end
+
+  defp fee_status_warnings(%{warnings: warnings}, _prediction), do: warnings
 
   defp selected_analysis_rows(_scenario_rows, nil), do: []
 
@@ -3275,10 +3990,12 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end
   end
 
-  defp lowest_expected_payment_row([]), do: nil
+  defp lowest_expected_payment_row(scenario_rows, include_escrow?)
 
-  defp lowest_expected_payment_row(scenario_rows) do
-    Enum.min_by(scenario_rows, & &1.analysis.payment_range.expected, Decimal)
+  defp lowest_expected_payment_row([], _include_escrow?), do: nil
+
+  defp lowest_expected_payment_row(scenario_rows, include_escrow?) do
+    Enum.min_by(scenario_rows, &display_payment_range(&1, include_escrow?).expected, Decimal)
   end
 
   defp fastest_break_even_row(scenario_rows) do
@@ -3296,12 +4013,15 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     Enum.min_by(scenario_rows, & &1.analysis.full_term_finance_cost_delta, Decimal)
   end
 
-  defp metric_payment_value(scenario_rows) do
-    case lowest_expected_payment_row(scenario_rows) do
+  defp metric_payment_value(scenario_rows, include_escrow?) do
+    case lowest_expected_payment_row(scenario_rows, include_escrow?) do
       nil -> "No scenarios"
-      row -> format_currency(row.analysis.payment_range.expected)
+      row -> format_currency(display_payment_range(row, include_escrow?).expected)
     end
   end
+
+  defp lowest_payment_metric_label(true), do: "Lowest expected P&I + escrow"
+  defp lowest_payment_metric_label(false), do: "Lowest expected P&I payment"
 
   defp metric_break_even_value(scenario_rows) do
     case fastest_break_even_row(scenario_rows) do
@@ -3314,6 +4034,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     case lowest_full_term_delta_row(scenario_rows) do
       nil -> "No scenarios"
       row -> format_currency(row.analysis.full_term_finance_cost_delta)
+    end
+  end
+
+  defp metric_full_term_delta_class(scenario_rows) do
+    case lowest_full_term_delta_row(scenario_rows) do
+      nil -> "text-zinc-900"
+      row -> semantic_money_class(row.analysis.full_term_finance_cost_delta, :delta)
     end
   end
 
@@ -3338,7 +4065,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       current_principal: mortgage.current_balance,
       current_rate: mortgage.current_interest_rate,
       current_remaining_term_months: mortgage.remaining_term_months,
-      current_monthly_payment: mortgage.monthly_payment_total,
+      current_monthly_payment: EscrowPaymentDisplay.principal_interest_payment(mortgage),
       new_principal: scenario.new_principal_amount,
       new_rate: scenario.new_interest_rate,
       new_term_months: scenario.new_term_months,
@@ -3347,24 +4074,242 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     })
   end
 
+  defp display_payment_range(
+         %{analysis: %{payment_range: range}, mortgage: mortgage},
+         include_escrow?
+       ) do
+    EscrowPaymentDisplay.payment_range(range, mortgage, include_escrow?)
+  end
+
+  defp display_savings_range(
+         %{analysis: %{payment_range: range}, mortgage: mortgage},
+         include_escrow?
+       ) do
+    EscrowPaymentDisplay.monthly_savings_range(range, mortgage, include_escrow?)
+  end
+
+  defp display_current_payment(%{mortgage: mortgage}, include_escrow?) do
+    EscrowPaymentDisplay.current_payment(mortgage, include_escrow?)
+  end
+
+  defp display_what_if_payment(_mortgage, nil, _include_escrow?), do: Decimal.new("0")
+
+  defp display_what_if_payment(mortgage, summary, true) do
+    case EscrowPaymentDisplay.monthly_escrow_estimate(mortgage) do
+      {:ok, escrow, _source} ->
+        summary.scheduled_monthly_payment
+        |> Decimal.add(escrow)
+        |> Decimal.round(2)
+
+      :unavailable ->
+        summary.scheduled_monthly_payment
+    end
+  end
+
+  defp display_what_if_payment(_mortgage, summary, false), do: summary.scheduled_monthly_payment
+
+  defp payment_display_label(true), do: "P&I + escrow"
+  defp payment_display_label(false), do: "P&I"
+
+  defp payment_display_title(true) do
+    "Principal and interest plus estimated monthly escrow for taxes and insurance"
+  end
+
+  defp payment_display_title(false), do: "Principal and interest payment"
+
+  defp payment_display_description(mortgage, true) do
+    case EscrowPaymentDisplay.monthly_escrow_estimate(mortgage) do
+      {:ok, escrow, _source} -> "Includes #{format_currency(escrow)} monthly escrow estimate"
+      :unavailable -> "Escrow estimate unavailable for this loan."
+    end
+  end
+
+  defp payment_display_description(_mortgage, false), do: "Principal and interest only"
+
+  defp escrow_display_note(_mortgage, false) do
+    "Escrow is a recurring pass-through estimate for taxes/insurance, not a refinance fee."
+  end
+
+  defp escrow_display_note(mortgage, true) do
+    case EscrowPaymentDisplay.monthly_escrow_estimate(mortgage) do
+      {:ok, escrow, _source} ->
+        "Adding #{format_currency(escrow)} estimated monthly escrow for display only."
+
+      :unavailable ->
+        "Escrow estimate unavailable for this loan."
+    end
+  end
+
   defp fee_changeset(scenario_rows) do
     scenario_rows
     |> base_fee_item()
     |> Loans.change_refinance_fee_item()
   end
 
+  defp fee_item_for_form(
+         %{assigns: %{fee_form_mode: :edit, editing_fee_item: %RefinanceFeeItem{} = fee_item}},
+         _params
+       ) do
+    fee_item
+  end
+
+  defp fee_item_for_form(%{assigns: %{scenario_rows: scenario_rows}}, params) do
+    base_fee_item(scenario_rows, params)
+  end
+
   defp base_fee_item(scenario_rows, attrs \\ %{}) do
+    attrs = normalize_fee_item_params(attrs)
+
     %RefinanceFeeItem{
       refinance_scenario_id:
         Map.get(attrs, "refinance_scenario_id") || first_scenario_id(scenario_rows),
+      category: Map.get(attrs, "category"),
+      code: Map.get(attrs, "code"),
+      name: Map.get(attrs, "name"),
       kind: "fee",
       paid_at_closing: true,
       financed: false,
-      is_true_cost: true,
-      is_prepaid_or_escrow: false,
-      required: false,
-      sort_order: 0
+      is_true_cost: Map.get(attrs, "is_true_cost", true),
+      is_prepaid_or_escrow: Map.get(attrs, "is_prepaid_or_escrow", false),
+      required: Map.get(attrs, "required", false),
+      sort_order: Map.get(attrs, "sort_order", 0)
     }
+  end
+
+  defp normalize_fee_item_params(params) do
+    params = Map.new(params)
+
+    params
+    |> selected_fee_type_from_params()
+    |> case do
+      nil ->
+        params
+
+      fee_type ->
+        params
+        |> Map.put("category", fee_type.code)
+        |> Map.put("code", fee_type.code)
+        |> Map.put("name", fee_type.display_name)
+        |> Map.put("kind", fee_kind_from_fee_type(fee_type))
+        |> Map.put("is_true_cost", to_string(fee_type.is_true_cost))
+        |> Map.put("is_prepaid_or_escrow", to_string(fee_type.is_timing_cost))
+        |> Map.put("required", to_string(fee_type.is_required))
+        |> Map.put_new("sort_order", fee_type.sort_order)
+    end
+  end
+
+  defp selected_fee_type_from_params(params) do
+    code = Map.get(params, "loan_fee_type_code") || Map.get(params, :loan_fee_type_code)
+
+    fee_types = refinance_fee_types()
+
+    cond do
+      is_binary(code) && code != "" -> Enum.find(fee_types, &(&1.code == code))
+      map_size(params) == 0 -> List.first(fee_types)
+      true -> nil
+    end
+  end
+
+  defp fee_kind_from_fee_type(%{is_offset: true, code: "old_escrow_refund"}), do: "escrow_refund"
+  defp fee_kind_from_fee_type(%{is_offset: true}), do: "lender_credit"
+  defp fee_kind_from_fee_type(%{is_timing_cost: true}), do: "timing_cost"
+  defp fee_kind_from_fee_type(_fee_type), do: "fee"
+
+  defp fee_item_saved_message(current_user, scenario_id) do
+    case Loans.fetch_refinance_scenario(current_user, scenario_id, preload: [:fee_items]) do
+      {:ok, scenario} ->
+        true_cost = sum_fee_items(scenario.fee_items, :true_cost)
+        cash_to_close = Decimal.add(true_cost, sum_fee_items(scenario.fee_items, :timing_cost))
+
+        "Refinance fee item saved. True cost #{format_currency(true_cost)}. Cash to close #{format_currency(cash_to_close)}."
+
+      {:error, _reason} ->
+        "Refinance fee item saved."
+    end
+  end
+
+  defp fee_form_title(:edit), do: "Edit fee item"
+  defp fee_form_title(_mode), do: "Add fee item"
+
+  defp fee_form_submit_label(:edit), do: "Save fee item"
+  defp fee_form_submit_label(_mode), do: "Add fee item"
+
+  defp fee_item_groups(fee_items) do
+    fee_items = List.wrap(fee_items)
+
+    [
+      %{
+        label: "True costs",
+        items:
+          Enum.filter(
+            fee_items,
+            &(&1.is_true_cost and not &1.is_prepaid_or_escrow and not fee_item_credit?(&1))
+          )
+      },
+      %{
+        label: "Prepaids and escrow timing",
+        items: Enum.filter(fee_items, &(&1.is_prepaid_or_escrow or &1.kind == "timing_cost"))
+      },
+      %{
+        label: "Credits and offsets",
+        items: Enum.filter(fee_items, &fee_item_credit?/1)
+      }
+    ]
+    |> Enum.reject(&(&1.items == []))
+    |> Enum.map(fn group ->
+      Map.put(group, :total, sum_fee_items(group.items, :display_total))
+    end)
+  end
+
+  defp fee_group_dom_id(scenario_id, label) do
+    normalized =
+      label
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/, "-")
+      |> String.trim("-")
+
+    "fee-group-#{scenario_id}-#{normalized}"
+  end
+
+  defp fee_group_expanded?(expanded_fee_group_ids, group_id) do
+    MapSet.member?(expanded_fee_group_ids, group_id)
+  end
+
+  defp fee_group_total_class(%{label: "Credits and offsets"}) do
+    "text-sm font-semibold text-emerald-700"
+  end
+
+  defp fee_group_total_class(_group), do: "text-sm font-semibold text-zinc-900"
+
+  defp fee_item_type_label(%RefinanceFeeItem{} = fee_item) do
+    cond do
+      fee_item_credit?(fee_item) -> "Credit or offset"
+      fee_item.is_prepaid_or_escrow or fee_item.kind == "timing_cost" -> "Cash timing item"
+      fee_item.is_true_cost -> "True refinance cost"
+      true -> "Informational fee"
+    end
+  end
+
+  defp signed_fee_item_amount_label(%RefinanceFeeItem{} = fee_item) do
+    amount = fee_item.expected_amount || fee_item.fixed_amount || Decimal.new("0")
+
+    if fee_item_credit?(fee_item) do
+      "-#{format_currency(amount)}"
+    else
+      format_currency(amount)
+    end
+  end
+
+  defp fee_item_amount_class(%RefinanceFeeItem{} = fee_item) do
+    if fee_item_credit?(fee_item) do
+      "text-sm font-semibold text-emerald-700"
+    else
+      "text-sm font-semibold text-zinc-900"
+    end
+  end
+
+  defp fee_item_credit?(%RefinanceFeeItem{kind: kind}) do
+    kind in ["lender_credit", "escrow_refund", "waived_fee", "other_credit"]
   end
 
   defp document_changeset(current_user, mortgages) do
@@ -3422,14 +4367,124 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       Loans.expire_lender_quotes(current_user, mortgage)
 
       current_user
-      |> Loans.list_lender_quotes(mortgage)
+      |> Loans.list_lender_quotes(mortgage, preload: [:fee_lines])
       |> Enum.map(fn quote ->
         %{
           mortgage: mortgage,
-          quote: quote
+          quote: quote,
+          fee_review: quote_fee_review(current_user, quote)
         }
       end)
     end)
+  end
+
+  defp quote_fee_lines(%LenderQuote{fee_lines: fee_lines}) when is_list(fee_lines), do: fee_lines
+  defp quote_fee_lines(_quote), do: []
+
+  defp quote_fee_review(current_user, quote) do
+    case Loans.lender_quote_fee_review(current_user, quote) do
+      {:ok, review} -> review
+      {:error, _reason} -> %{missing_required_fees: [], warnings: []}
+    end
+  end
+
+  defp quote_missing_required_fees(%{fee_review: %{missing_required_fees: missing}})
+       when is_list(missing) do
+    missing
+  end
+
+  defp quote_missing_required_fees(_row), do: []
+
+  defp quote_fee_line_groups(%LenderQuote{} = quote) do
+    quote
+    |> quote_fee_lines()
+    |> Enum.group_by(&quote_fee_line_group_key(&1.classification))
+    |> then(fn grouped ->
+      [
+        %{
+          key: :review,
+          label: "Review needed",
+          description: "Unknown, duplicate, high, or unusual fees",
+          lines: Map.get(grouped, :review, [])
+        },
+        %{
+          key: :acceptable,
+          label: "Acceptable or low",
+          description: "Within or below modeled range",
+          lines: Map.get(grouped, :acceptable, [])
+        },
+        %{
+          key: :optional,
+          label: "Optional",
+          description: "Not required or informational fees",
+          lines: Map.get(grouped, :optional, [])
+        }
+      ]
+    end)
+    |> Enum.reject(&(&1.lines == []))
+  end
+
+  defp quote_fee_line_group_key(classification)
+       when classification in ["within_expected_range", "below_expected_range"],
+       do: :acceptable
+
+  defp quote_fee_line_group_key("not_required_or_optional"), do: :optional
+  defp quote_fee_line_group_key(_classification), do: :review
+
+  defp quote_fee_group_badge_class(:review) do
+    "rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800"
+  end
+
+  defp quote_fee_group_badge_class(:acceptable) do
+    "rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800"
+  end
+
+  defp quote_fee_group_badge_class(_key) do
+    "rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs font-semibold text-zinc-700"
+  end
+
+  defp default_quote_fee_line_form(quote_rows, quote_id \\ nil) do
+    %{
+      "lender_quote_id" => quote_id || first_quote_id(quote_rows),
+      "original_label" => "",
+      "amount" => ""
+    }
+  end
+
+  defp merge_quote_fee_line_form(form, params) do
+    Map.merge(
+      form || default_quote_fee_line_form([]),
+      Map.take(params, Map.keys(default_quote_fee_line_form([])))
+    )
+  end
+
+  defp quote_fee_line_form_from_line(line) do
+    %{
+      "lender_quote_id" => line.lender_quote_id,
+      "original_label" => line.original_label || "",
+      "amount" => decimal_form_value(line.amount)
+    }
+  end
+
+  defp quote_fee_line_form_title(:edit), do: "Edit quote fee"
+  defp quote_fee_line_form_title(_mode), do: "Add quote fee"
+
+  defp quote_fee_line_form_submit_label(:edit), do: "Save quote fee"
+  defp quote_fee_line_form_submit_label(_mode), do: "Add quote fee"
+
+  defp quote_fee_line_saved_message(:edit), do: "Quote fee line updated and reclassified."
+  defp quote_fee_line_saved_message(_mode), do: "Quote fee line added and classified."
+
+  defp quote_fee_line_error_message(%Ecto.Changeset{} = changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
+    |> Map.values()
+    |> List.flatten()
+    |> List.first()
+    |> case do
+      nil -> "Unable to save quote fee line."
+      message -> "Unable to save quote fee line: #{message}"
+    end
   end
 
   defp alert_rows(current_user, mortgages) do
@@ -3699,6 +4754,12 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end)
   end
 
+  defp sum_fee_items(fee_items, :display_total) do
+    fee_items
+    |> List.wrap()
+    |> Enum.reduce(Decimal.new("0"), &add_signed_fee(&2, &1))
+  end
+
   defp add_signed_fee(acc, fee_item) do
     amount = fee_item.expected_amount || fee_item.fixed_amount || Decimal.new("0")
 
@@ -3714,6 +4775,45 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp scenario_options(scenario_rows) do
     Enum.map(scenario_rows, fn row -> {row.scenario.name, row.scenario.id} end)
   end
+
+  defp loan_fee_type_options do
+    refinance_fee_types()
+    |> Enum.map(&{&1.display_name, &1.code})
+  end
+
+  defp selected_fee_type_code(changeset) do
+    Ecto.Changeset.get_field(changeset, :code) ||
+      refinance_fee_types() |> List.first() |> then(&(&1 && &1.code))
+  end
+
+  defp selected_fee_type_help(changeset) do
+    code = selected_fee_type_code(changeset)
+
+    refinance_fee_types()
+    |> Enum.find(&(&1.code == code))
+    |> case do
+      nil ->
+        "Select a modeled fee type so MoneyTree can classify it consistently."
+
+      fee_type ->
+        [
+          fee_item_kind_from_fee_type_label(fee_type),
+          fee_type.confidence_level && "#{format_label(fee_type.confidence_level)} confidence",
+          fee_type.trid_section && "TRID #{format_label(fee_type.trid_section)}"
+        ]
+        |> Enum.reject(&is_nil/1)
+        |> Enum.join(" • ")
+    end
+  end
+
+  defp refinance_fee_types do
+    Loans.list_loan_fee_types(loan_type: "mortgage", transaction_type: "refinance", enabled: true)
+  end
+
+  defp fee_item_kind_from_fee_type_label(%{is_offset: true}), do: "Credit or offset"
+  defp fee_item_kind_from_fee_type_label(%{is_timing_cost: true}), do: "Cash timing item"
+  defp fee_item_kind_from_fee_type_label(%{is_true_cost: true}), do: "True refinance cost"
+  defp fee_item_kind_from_fee_type_label(_fee_type), do: "Informational fee"
 
   defp fee_kind_options do
     [
@@ -3778,6 +4878,12 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end)
   end
 
+  defp quote_options(quote_rows) do
+    Enum.map(quote_rows, fn row ->
+      {row.quote.lender_name || "Lender quote", row.quote.id}
+    end)
+  end
+
   defp stored_document?(%LoanDocument{storage_key: storage_key}) when is_binary(storage_key) do
     String.trim(storage_key) != ""
   end
@@ -3792,6 +4898,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp first_document_id([%{document: %LoanDocument{id: id}} | _]), do: id
   defp first_document_id(_), do: nil
+
+  defp first_quote_id([%{quote: %LenderQuote{id: id}} | _]), do: id
+  defp first_quote_id(_), do: nil
 
   defp workspace_title(:detail), do: "Loan overview"
   defp workspace_title(:refinance), do: "Refinance analysis"
@@ -3830,11 +4939,17 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end
   end
 
-  defp refinance_split_class(true) do
-    "grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
+  defp modal_backdrop_class do
+    "fixed inset-0 z-40 bg-zinc-950/35 backdrop-blur-sm"
   end
 
-  defp refinance_split_class(false), do: "space-y-6"
+  defp modal_panel_class(:lg) do
+    "fixed left-1/2 top-6 z-50 max-h-[calc(100vh-3rem)] w-[min(54rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl"
+  end
+
+  defp modal_panel_class(_size) do
+    "fixed left-1/2 top-8 z-50 max-h-[calc(100vh-4rem)] w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl"
+  end
 
   defp workspace_path(:refinance, loan_id), do: ~p"/app/loans/#{loan_id}/refinance"
   defp workspace_path(:documents, loan_id), do: ~p"/app/loans/#{loan_id}/documents"
@@ -3860,6 +4975,29 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     |> :erlang.float_to_binary(decimals: 2)
     |> then(&"#{&1}%")
   end
+
+  defp profile_label(nil), do: "Generic national profile"
+
+  defp profile_label(%{state_code: state_code, county_or_parish: county_or_parish})
+       when is_binary(state_code) and is_binary(county_or_parish) do
+    "#{county_or_parish} Parish, #{state_code} profile"
+  end
+
+  defp profile_label(%{state_code: state_code}) when is_binary(state_code) do
+    "#{state_code} profile"
+  end
+
+  defp profile_label(_profile), do: "Generic national profile"
+
+  defp fee_line_classification_label("below_expected_range"), do: "Below expected"
+  defp fee_line_classification_label("within_expected_range"), do: "Acceptable"
+  defp fee_line_classification_label("above_expected_range"), do: "High"
+  defp fee_line_classification_label("extreme_outlier"), do: "Extreme"
+  defp fee_line_classification_label("not_required_or_optional"), do: "Optional"
+  defp fee_line_classification_label("possible_duplicate_fee"), do: "Duplicate"
+  defp fee_line_classification_label("possible_junk_or_unusual_fee"), do: "Review"
+  defp fee_line_classification_label("missing_required_fee"), do: "Missing"
+  defp fee_line_classification_label(_classification), do: "Unknown"
 
   defp format_signed_percent(nil), do: "0.00%"
 
@@ -3996,11 +5134,34 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp rate_source_import_status(_source), do: "Not imported"
 
-  defp format_months(nil), do: "No break-even"
+  defp format_months(nil), do: "None"
   defp format_months(months), do: "#{months} months"
 
   defp format_range_value(value, :months), do: format_months(value)
   defp format_range_value(value, _kind), do: format_currency(value)
+
+  defp range_value_class(value, tone), do: semantic_money_class(value, tone)
+
+  defp semantic_money_class(nil, _tone), do: "text-zinc-900"
+  defp semantic_money_class(_value, :neutral), do: "text-zinc-900"
+
+  defp semantic_money_class(value, :savings) do
+    case Decimal.compare(value, Decimal.new("0")) do
+      :gt -> "text-emerald-700"
+      :lt -> "text-red-700"
+      :eq -> "text-zinc-900"
+    end
+  end
+
+  defp semantic_money_class(value, :delta) do
+    case Decimal.compare(value, Decimal.new("0")) do
+      :lt -> "text-emerald-700"
+      :gt -> "text-red-700"
+      :eq -> "text-zinc-900"
+    end
+  end
+
+  defp semantic_money_class(_value, _tone), do: "text-zinc-900"
 
   defp quote_lock_status(%LenderQuote{
          lock_available: true,

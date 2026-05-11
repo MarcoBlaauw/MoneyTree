@@ -319,6 +319,66 @@ defmodule MoneyTreeWeb.LoansLiveTest do
            ] =
              Loans.list_lender_quotes(user, mortgage)
 
+    view
+    |> element(
+      "button[phx-click='new-quote-fee-line'][phx-value-id='#{quote_id}']",
+      "Add quote fee"
+    )
+    |> render_click()
+
+    html =
+      view
+      |> form("#quote-fee-line-form",
+        quote_fee_line: %{
+          "lender_quote_id" => quote_id,
+          "original_label" => "Appraisal fee",
+          "amount" => "650.00"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Quote fee line added and classified."
+    assert html =~ "Appraisal fee"
+    assert html =~ "Acceptable or low"
+    assert html =~ "Acceptable"
+    assert html =~ "Expected but not listed"
+
+    [%{fee_lines: fee_lines}] = Loans.list_lender_quotes(user, mortgage, preload: [:fee_lines])
+    fee_line = Enum.find(fee_lines, &(&1.original_label == "Appraisal fee"))
+    assert fee_line
+
+    view
+    |> element("button[aria-label='Edit quote fee'][phx-value-id='#{fee_line.id}']")
+    |> render_click()
+
+    html =
+      view
+      |> form("#quote-fee-line-form",
+        quote_fee_line: %{
+          "lender_quote_id" => quote_id,
+          "original_label" => "Mystery review charge",
+          "amount" => "999.00"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Quote fee line updated and reclassified."
+    assert html =~ "Mystery review charge"
+    assert html =~ "Review needed"
+    assert html =~ "Unknown"
+
+    [%{fee_lines: fee_lines}] = Loans.list_lender_quotes(user, mortgage, preload: [:fee_lines])
+    fee_line = Enum.find(fee_lines, &(&1.original_label == "Mystery review charge"))
+    assert fee_line
+
+    html =
+      view
+      |> element("button[aria-label='Remove quote fee'][phx-value-id='#{fee_line.id}']")
+      |> render_click()
+
+    assert html =~ "Quote fee line removed."
+    refute html =~ "Mystery review charge"
+
     html =
       view
       |> element("button[phx-click='convert-quote'][phx-value-id='#{quote_id}']")
@@ -868,6 +928,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Refinance analysis"
     assert html =~ "Save a refinance scenario"
     refute html =~ ~s(id="refinance-scenario-form")
+    refute html =~ ">Loan</th>"
 
     html =
       view
@@ -900,7 +961,12 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Expected refinance"
     assert html =~ "Maple Residence"
     assert html =~ "$2305.22"
-    assert html =~ "Lowest expected payment"
+    refute html =~ ~r/<th[^>]*>\s*Loan\s*<\/th>/
+    refute html =~ ~r/<th[^>]*>\s*Term\s*<\/th>/
+    refute html =~ ">visibility<"
+    refute html =~ ">edit_note<"
+    refute html =~ ">expand_more<"
+    assert html =~ "Lowest expected P&amp;I payment"
     assert html =~ "Fastest break-even"
     assert html =~ "Lowest full-term delta"
     assert html =~ "Analysis details"
@@ -911,6 +977,75 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     assert Decimal.equal?(scenario.new_interest_rate, Decimal.new("0.055"))
     assert Decimal.equal?(scenario.new_apr, Decimal.new("0.0575"))
+  end
+
+  test "edits and removes refinance scenarios from the refinance workspace", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    mortgage =
+      mortgage_fixture(user, %{
+        property_name: "Maple Residence",
+        current_balance: "400000.00",
+        current_interest_rate: "0.0625",
+        monthly_payment_total: "2462.87",
+        remaining_term_months: 360
+      })
+
+    {:ok, scenario} =
+      Loans.create_refinance_scenario(user, mortgage, %{
+        name: "Draft refinance",
+        product_type: "fixed",
+        new_term_months: 360,
+        new_interest_rate: "0.0550",
+        new_principal_amount: "406000.00"
+      })
+
+    {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
+
+    assert html =~ "Draft refinance"
+    assert html =~ ~s(aria-label="Edit scenario")
+    assert html =~ ~s(aria-label="Remove scenario")
+
+    html =
+      view
+      |> element("button[aria-label='Edit scenario'][phx-value-id='#{scenario.id}']")
+      |> render_click()
+
+    assert html =~ "Edit scenario"
+    assert html =~ ~s(id="refinance-scenario-form")
+    assert html =~ ~s(value="Draft refinance")
+
+    html =
+      view
+      |> form("#refinance-scenario-form",
+        refinance_scenario: %{
+          "mortgage_id" => mortgage.id,
+          "name" => "Updated refinance",
+          "product_type" => "fixed",
+          "new_term_months" => "180",
+          "new_interest_rate_percent" => "5.0",
+          "new_principal_amount" => "400000.00"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Refinance scenario updated."
+    assert html =~ "Updated refinance"
+    assert html =~ "180 months"
+    refute html =~ "Draft refinance"
+
+    assert [%{id: scenario_id, name: "Updated refinance", new_term_months: 180}] =
+             Loans.list_refinance_scenarios(user, mortgage)
+
+    html =
+      view
+      |> element("button[aria-label='Remove scenario'][phx-value-id='#{scenario_id}']")
+      |> render_click()
+
+    assert html =~ "Refinance scenario removed."
+    assert html =~ "Save a refinance scenario"
+    refute html =~ "Updated refinance"
+    assert [] = Loans.list_refinance_scenarios(user, mortgage)
   end
 
   test "updates refinance what-if sandbox without saving a scenario", %{conn: conn} do
@@ -954,6 +1089,62 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert Decimal.equal?(unchanged.current_balance, Decimal.new("400000.00"))
     assert Decimal.equal?(unchanged.current_interest_rate, Decimal.new("0.0625"))
     assert unchanged.remaining_term_months == 360
+  end
+
+  test "toggles escrow-inclusive payment display without changing refinance math", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    mortgage =
+      mortgage_fixture(user, %{
+        property_name: "Escrowed Residence",
+        current_balance: "300000.00",
+        current_interest_rate: "0.0600",
+        monthly_principal_interest: "1798.65",
+        monthly_payment_total: "2298.65",
+        remaining_term_months: 360,
+        escrow_profile: %{
+          property_tax_monthly: "350.00",
+          homeowners_insurance_monthly: "150.00",
+          source: "manual_entry",
+          confidence_score: "1.0"
+        }
+      })
+
+    {:ok, scenario} =
+      Loans.create_refinance_scenario(user, mortgage, %{
+        name: "Escrow comparison",
+        new_term_months: 360,
+        new_interest_rate: "0.0550",
+        new_principal_amount: "300000.00"
+      })
+
+    {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
+
+    assert html =~ "Include escrow"
+    assert html =~ "P&amp;I"
+    assert html =~ "Principal and interest payment"
+    assert html =~ "$1703.37"
+    refute html =~ "$2203.37"
+
+    html =
+      view
+      |> form("#payment-display-form", include_escrow: "true")
+      |> render_change()
+
+    assert html =~ "P&amp;I + escrow"
+    assert html =~ "Principal and interest plus estimated monthly escrow"
+    assert html =~ "$2203.37"
+    assert html =~ "Adding $500.00 estimated monthly escrow for display only."
+
+    html =
+      view
+      |> element("button[aria-label='Save analysis'][phx-value-id='#{scenario.id}']")
+      |> render_click()
+
+    assert html =~ "Analysis snapshot saved."
+
+    assert [_result] =
+             Loans.list_refinance_analysis_results(user, refinance_scenario_id: scenario.id)
   end
 
   test "records benchmark rates and creates estimated scenarios in refinance workspace", %{
@@ -1241,13 +1432,15 @@ defmodule MoneyTreeWeb.LoansLiveTest do
       |> render_click()
 
     assert html =~ ~s(id="refinance-fee-item-form")
+    assert html =~ "Fee type"
+    refute html =~ "Category</label>"
+    refute html =~ "Name</label>"
 
     view
     |> form("#refinance-fee-item-form",
       refinance_fee_item: %{
         "refinance_scenario_id" => scenario.id,
-        "name" => "Origination fee",
-        "category" => "origination",
+        "loan_fee_type_code" => "origination_fee",
         "expected_amount" => "6000.00",
         "kind" => "fee",
         "is_true_cost" => "true",
@@ -1266,8 +1459,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
       |> form("#refinance-fee-item-form",
         refinance_fee_item: %{
           "refinance_scenario_id" => scenario.id,
-          "name" => "Initial escrow deposit",
-          "category" => "escrow_deposit",
+          "loan_fee_type_code" => "escrow_deposit",
           "expected_amount" => "4200.00",
           "kind" => "timing_cost",
           "is_true_cost" => "false",
@@ -1281,6 +1473,54 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "$6000.00"
     assert html =~ "$10200.00"
     assert html =~ "39 months"
+    assert html =~ ~s(aria-expanded="false")
+    refute html =~ "expand_more"
+    refute html =~ "Origination fee"
+
+    html =
+      view
+      |> element("button[phx-click='toggle-fee-group']", "True costs")
+      |> render_click()
+
+    assert html =~ ~s(aria-expanded="true")
+    refute html =~ "expand_less"
+    assert html =~ "Origination fee"
+
+    [fee_item | _] =
+      Loans.list_refinance_scenarios(user, mortgage, preload: [:fee_items])
+      |> List.first()
+      |> Map.fetch!(:fee_items)
+      |> Enum.filter(&(&1.name == "Origination fee"))
+
+    view
+    |> element("button[aria-label='Edit fee item'][phx-value-id='#{fee_item.id}']")
+    |> render_click()
+
+    html =
+      view
+      |> form("#refinance-fee-item-form",
+        refinance_fee_item: %{
+          "refinance_scenario_id" => scenario.id,
+          "loan_fee_type_code" => "origination_fee",
+          "expected_amount" => "5500.00",
+          "kind" => "fee",
+          "is_true_cost" => "true",
+          "is_prepaid_or_escrow" => "false",
+          "sort_order" => "0"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Origination fee"
+    assert html =~ "$5500.00"
+
+    html =
+      view
+      |> element("button[aria-label='Remove fee item'][phx-value-id='#{fee_item.id}']")
+      |> render_click()
+
+    assert html =~ "Refinance fee item removed."
+    refute html =~ "$5500.00"
   end
 
   test "shows range outputs and reset-term warnings in scenario comparison", %{conn: conn} do
@@ -1305,20 +1545,22 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
 
-    assert html =~ "Payment range"
-    assert html =~ "Break-even range"
+    assert html =~ "P&amp;I"
+    assert html =~ "Break-even"
     assert html =~ "Warnings"
     assert html =~ "Analysis details"
-    assert html =~ "Lowest expected payment"
-    assert html =~ "Low"
-    assert html =~ "Expected"
-    assert html =~ "High"
+    assert html =~ "Lowest expected P&amp;I payment"
+    assert html =~ "Low estimate"
+    assert html =~ "Expected estimate"
+    assert html =~ "High estimate"
     assert html =~ "$737.39"
     assert html =~ "$776.20"
     assert html =~ "$815.01"
+    assert html =~ "text-emerald-700"
+    assert html =~ "text-red-700"
     assert html =~ "Review needed"
     assert html =~ "Monthly payment decreases, but full-term finance cost increases."
-    assert html =~ "Expected payment"
+    assert html =~ "Expected P&amp;I"
     assert html =~ "Expected break-even"
     assert html =~ "Full-term delta"
     assert html =~ "Current full-term total"
@@ -1336,7 +1578,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     html =
       view
-      |> element("button[phx-value-id='#{scenario.id}']", "View details")
+      |> element("button[aria-label='View details'][phx-value-id='#{scenario.id}']")
       |> render_click()
 
     assert_push_event(view, "scroll-into-view", %{id: ^analysis_detail_id})
@@ -1380,7 +1622,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     html =
       view
-      |> element("button", "Save analysis")
+      |> element("button[aria-label='Save analysis']")
       |> render_click()
 
     assert html =~ "Analysis snapshot saved."

@@ -21,6 +21,12 @@ Market-rate provider v1 is complete enough to support this work:
 
 This fee strategy should build on the current refinance structures instead of introducing a parallel model.
 
+Update after the broader loan-fee subsystem decision:
+
+- The no-migration `RefinanceFeeCatalog` path is superseded by `docs/loan-fee-subsystem-implementation-plan.md`.
+- `refinance_fee_items` remain the editable per-scenario output, but durable canonical fee configuration now lives in `loan_fee_types`, jurisdiction profiles, and jurisdiction rules.
+- Mortgage refinance is the first full consumer; other loan types start with sparse low-confidence fee definitions.
+
 ## Comparison To Uploaded Source
 
 The uploaded source document adds important product requirements that were under-specified in the first repo-adapted version:

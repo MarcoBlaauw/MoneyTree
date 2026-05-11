@@ -29,6 +29,33 @@ defmodule MoneyTree.Loans.RefinanceScenariosTest do
       assert scenario_id == scenario.id
     end
 
+    test "updates and deletes scenarios through the owning user scope" do
+      user = user_fixture()
+      other_user = user_fixture()
+      mortgage = mortgage_fixture(user)
+
+      {:ok, scenario} =
+        Loans.create_refinance_scenario(user, mortgage, valid_scenario_attrs())
+
+      assert {:ok, updated} =
+               Loans.update_refinance_scenario(user, scenario, %{
+                 name: "15-year refinance",
+                 new_term_months: 180,
+                 new_interest_rate: "0.0500"
+               })
+
+      assert updated.name == "15-year refinance"
+      assert updated.new_term_months == 180
+      assert D.equal?(updated.new_interest_rate, D.new("0.0500"))
+
+      assert {:error, :not_found} =
+               Loans.update_refinance_scenario(other_user, scenario, %{name: "Bad update"})
+
+      assert {:error, :not_found} = Loans.delete_refinance_scenario(other_user, scenario)
+      assert {:ok, _deleted} = Loans.delete_refinance_scenario(user, scenario.id)
+      assert {:error, :not_found} = Loans.fetch_refinance_scenario(user, scenario.id)
+    end
+
     test "rejects scenarios for another user's mortgage" do
       user = user_fixture()
       other_user = user_fixture()
@@ -112,6 +139,37 @@ defmodule MoneyTree.Loans.RefinanceScenariosTest do
                  name: "Origination fee",
                  expected_amount: "6000.00"
                })
+    end
+
+    test "updates and deletes fee items through the owning scenario scope" do
+      user = user_fixture()
+      other_user = user_fixture()
+      mortgage = mortgage_fixture(user)
+
+      {:ok, scenario} =
+        Loans.create_refinance_scenario(user, mortgage, valid_scenario_attrs())
+
+      {:ok, fee_item} =
+        Loans.create_refinance_fee_item(user, scenario, %{
+          category: "origination",
+          name: "Origination fee",
+          expected_amount: "6000.00"
+        })
+
+      assert {:ok, updated} =
+               Loans.update_refinance_fee_item(user, fee_item, %{
+                 name: "Updated origination fee",
+                 expected_amount: "5500.00"
+               })
+
+      assert updated.name == "Updated origination fee"
+      assert updated.expected_amount == D.new("5500.00")
+
+      assert {:error, :not_found} =
+               Loans.update_refinance_fee_item(other_user, fee_item, %{name: "Bad update"})
+
+      assert {:ok, _deleted} = Loans.delete_refinance_fee_item(user, fee_item.id)
+      assert {:error, :not_found} = Loans.fetch_refinance_fee_item(user, fee_item.id)
     end
   end
 

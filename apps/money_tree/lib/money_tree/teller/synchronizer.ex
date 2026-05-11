@@ -351,10 +351,10 @@ defmodule MoneyTree.Teller.Synchronizer do
     access_token = access_token(connection)
 
     cond do
-      function_exported?(client_module, :new, 1) and is_binary(access_token) ->
+      client_module_supports_new?(client_module) and is_binary(access_token) ->
         {:ok, client_module.new(access_token: access_token)}
 
-      function_exported?(client_module, :new, 1) ->
+      client_module_supports_new?(client_module) ->
         {:error, {:missing_access_token, %{connection_id: connection.id}}}
 
       true ->
@@ -364,6 +364,10 @@ defmodule MoneyTree.Teller.Synchronizer do
 
   defp build_client(client, _connection) do
     {:ok, client}
+  end
+
+  defp client_module_supports_new?(client_module) do
+    Code.ensure_loaded?(client_module) and function_exported?(client_module, :new, 1)
   end
 
   defp list_accounts(%MoneyTree.Teller.Client{} = client, params) do

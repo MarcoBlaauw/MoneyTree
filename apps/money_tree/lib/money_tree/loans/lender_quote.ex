@@ -8,6 +8,7 @@ defmodule MoneyTree.Loans.LenderQuote do
   import Ecto.Changeset
 
   alias Decimal
+  alias MoneyTree.Loans.LenderQuoteFeeLine
   alias MoneyTree.Mortgages.Mortgage
   alias MoneyTree.Users.User
 
@@ -46,6 +47,7 @@ defmodule MoneyTree.Loans.LenderQuote do
 
     belongs_to :user, User
     belongs_to :mortgage, Mortgage
+    has_many :fee_lines, LenderQuoteFeeLine
 
     timestamps()
   end
