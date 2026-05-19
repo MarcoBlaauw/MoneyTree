@@ -1944,6 +1944,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <th class="px-3 py-2">Lock</th>
                     <th class="px-3 py-2">Expires</th>
                     <th class="px-3 py-2">Freshness</th>
+                    <th class="px-3 py-2">Fee review</th>
                     <th class="px-3 py-2">Status</th>
                     <th class="px-3 py-2"></th>
                   </tr>
@@ -1971,6 +1972,15 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <td class="px-3 py-3"><%= quote_lock_status(row.quote) %></td>
                     <td class="px-3 py-3"><%= format_datetime(row.quote.quote_expires_at) || "Not set" %></td>
                     <td class="px-3 py-3"><%= quote_freshness_label(row.quote) %></td>
+                    <td class="px-3 py-3">
+                      <% summary = quote_fee_review_summary(row) %>
+                      <span class={quote_review_status_class(summary.status)}>
+                        <%= quote_review_status_label(summary.status) %>
+                      </span>
+                      <span class="block text-xs text-zinc-500">
+                        <%= summary.review_count %> review • <%= summary.missing_count %> missing
+                      </span>
+                    </td>
                     <td class="px-3 py-3"><%= format_label(row.quote.status) %></td>
                     <td class="px-3 py-3 text-right">
                       <button type="button"

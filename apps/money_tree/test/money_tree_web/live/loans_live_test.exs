@@ -727,6 +727,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Mapped fees"
     assert html =~ "Review items"
     assert html =~ "Missing expected"
+    assert html =~ "Fee review"
     assert html =~ "Acceptable or low"
     assert html =~ "Acceptable"
     assert html =~ "Expected but not listed"
