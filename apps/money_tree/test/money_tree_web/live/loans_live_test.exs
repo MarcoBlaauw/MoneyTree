@@ -723,6 +723,10 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     assert html =~ "Quote fee line added and classified."
     assert html =~ "Appraisal fee"
+    assert html =~ "Quote review summary"
+    assert html =~ "Mapped fees"
+    assert html =~ "Review items"
+    assert html =~ "Missing expected"
     assert html =~ "Acceptable or low"
     assert html =~ "Acceptable"
     assert html =~ "Expected but not listed"
