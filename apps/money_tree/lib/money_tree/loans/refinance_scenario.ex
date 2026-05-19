@@ -1,6 +1,6 @@
 defmodule MoneyTree.Loans.RefinanceScenario do
   @moduledoc """
-  Persisted refinance assumptions for a mortgage-backed Loan Center scenario.
+  Persisted refinance assumptions for a Loan Center scenario.
   """
 
   use Ecto.Schema
@@ -9,6 +9,7 @@ defmodule MoneyTree.Loans.RefinanceScenario do
 
   alias Decimal
   alias MoneyTree.Loans.LenderQuote
+  alias MoneyTree.Loans.Loan
   alias MoneyTree.Loans.RefinanceAnalysisResult
   alias MoneyTree.Loans.RefinanceFeeItem
   alias MoneyTree.Mortgages.Mortgage
@@ -35,11 +36,13 @@ defmodule MoneyTree.Loans.RefinanceScenario do
     field :lender_credit_amount, :decimal
     field :expected_years_before_sale_or_refi, :integer
     field :closing_date_assumption, :date
+    field :credit_score_band, :string
     field :rate_source_type, :string
     field :status, :string, default: "draft"
 
     belongs_to :user, User
     belongs_to :mortgage, Mortgage
+    belongs_to :loan, Loan
     belongs_to :lender_quote, LenderQuote
     has_many :fee_items, RefinanceFeeItem
     has_many :analysis_results, RefinanceAnalysisResult
@@ -53,6 +56,7 @@ defmodule MoneyTree.Loans.RefinanceScenario do
     |> cast(attrs, [
       :user_id,
       :mortgage_id,
+      :loan_id,
       :name,
       :scenario_type,
       :product_type,
@@ -67,13 +71,13 @@ defmodule MoneyTree.Loans.RefinanceScenario do
       :lender_credit_amount,
       :expected_years_before_sale_or_refi,
       :closing_date_assumption,
+      :credit_score_band,
       :rate_source_type,
       :lender_quote_id,
       :status
     ])
     |> validate_required([
       :user_id,
-      :mortgage_id,
       :name,
       :scenario_type,
       :new_term_months,
@@ -86,6 +90,7 @@ defmodule MoneyTree.Loans.RefinanceScenario do
     |> validate_length(:name, min: 1, max: 160)
     |> validate_length(:scenario_type, min: 1, max: 80)
     |> validate_length(:product_type, max: 120)
+    |> validate_length(:credit_score_band, max: 80)
     |> validate_length(:rate_source_type, max: 120)
     |> validate_inclusion(:status, @statuses)
     |> validate_number(:new_term_months, greater_than: 0)
@@ -97,8 +102,11 @@ defmodule MoneyTree.Loans.RefinanceScenario do
     |> validate_non_negative_decimal(:cash_in_amount)
     |> validate_non_negative_decimal(:points)
     |> validate_non_negative_decimal(:lender_credit_amount)
+    |> validate_single_owner()
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:mortgage_id)
+    |> foreign_key_constraint(:loan_id)
+    |> check_constraint(:mortgage_id, name: :refinance_scenarios_single_owner)
   end
 
   def statuses, do: @statuses
@@ -138,4 +146,25 @@ defmodule MoneyTree.Loans.RefinanceScenario do
   end
 
   defp cast_decimal(_value), do: :error
+
+  defp validate_single_owner(changeset) do
+    mortgage_id = get_field(changeset, :mortgage_id)
+    loan_id = get_field(changeset, :loan_id)
+
+    case {mortgage_id, loan_id} do
+      {nil, nil} ->
+        add_error(changeset, :mortgage_id, "or loan must be present")
+
+      {nil, _loan_id} ->
+        changeset
+
+      {_mortgage_id, nil} ->
+        changeset
+
+      {_mortgage_id, _loan_id} ->
+        changeset
+        |> add_error(:mortgage_id, "cannot be set with loan")
+        |> add_error(:loan_id, "cannot be set with mortgage")
+    end
+  end
 end

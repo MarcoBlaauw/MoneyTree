@@ -9,7 +9,7 @@ Loan Center market rates extend the existing `loan_rate_sources` and `loan_rate_
 | Area | Status | Notes |
 | --- | --- | --- |
 | Existing table extension | Done | `loan_rate_sources` and `loan_rate_observations` are extended with provider attribution, import health, `effective_date`, `published_at`, geography, notes, confidence, source URL, and dedupe support. |
-| FRED provider | Done | `MoneyTree.Loans.RateProviders.Fred` imports the v1 mortgage, prime, fed funds, SOFR, and Treasury series through the provider behavior. |
+| FRED provider | Done | `MoneyTree.Loans.RateProviders.Fred` imports the v1 mortgage, auto, prime, fed funds, SOFR, and Treasury series through the provider behavior. |
 | Runtime configuration | Done | `FRED_API_KEY` and optional `FRED_BASE_URL` are environment-only configuration values; secrets are not stored in provider rows. |
 | Import worker and schedule | Done | `MoneyTree.Loans.Workers.RateImportWorker` supports provider-aware FRED imports and Oban Cron runs the FRED import daily. |
 | Normalized persistence | Done | Imported observations preserve source payloads, source links, observed/effective/import dates, decimal-fraction rates, and update existing rows on duplicate source/series/effective-date matches. |
@@ -58,18 +58,59 @@ Initial FRED series:
 
 - `MORTGAGE30US` - 30-year fixed mortgage national average.
 - `MORTGAGE15US` - 15-year fixed mortgage national average.
+- `TERMCBAUTO48NS` - 48-month commercial-bank new-auto finance rate average.
+- `RIFLPBCIANM60NM` - 60-month commercial-bank new-auto finance rate average.
+- `RIFLPBCIANM72NM` - 72-month commercial-bank new-auto finance rate average.
 - `DPRIME` - bank prime loan rate.
 - `FEDFUNDS` - effective federal funds rate.
 - `SOFR` - secured overnight financing rate.
 - `GS10` - 10-year Treasury constant maturity.
 - `GS2` - 2-year Treasury constant maturity.
 
-Unverified credit-card and auto-loan FRED series are intentionally excluded from v1 mappings.
+Unverified credit-card FRED series are intentionally excluded from v1 mappings.
+The auto series are commercial-bank new-auto averages. They are not used-auto
+or auto-refinance-specific offers and should not seed auto refinance scenarios
+without a user review step.
 
 Manual supplemental imports use the same normalized observation pipeline as API
 providers. Reviewed rows can be imported with source attribution, effective
 date, loan type, term, rate/APR, points, notes, and source URL without storing
 secrets or treating the data as an offer.
+
+## Non-Mortgage Rate Research Needed
+
+Generic auto workspaces display FRED commercial-bank new-auto benchmark context
+after import. Auto benchmark observations can seed reviewed, editable refinance
+scenarios after explicit user action. Personal and student loan refinance
+scenario rates remain user-entered until source-backed benchmark data is added.
+
+Before MoneyTree should use richer market context for auto refinance or other
+non-mortgage loans, collect source-backed data for:
+
+- Auto loan benchmark source candidates:
+  - new auto purchase rates
+  - used auto purchase rates
+  - auto refinance rates, if separately published
+  - term buckets such as 36, 48, 60, 72, and 84 months
+  - credit union versus bank averages, if source data separates them
+- Source metadata for each candidate:
+  - provider/source name
+  - source URL
+  - update cadence
+  - geography, if local or state-specific
+  - whether values are average, advertised, benchmark, survey, or manual observations
+  - whether rates are APR or nominal rate
+  - whether rates include vehicle age, new/used, LTV, or credit-tier assumptions
+- Validation notes:
+  - whether historical data is available
+  - whether usage terms allow display in MoneyTree
+  - whether attribution text is required
+  - whether the source supports API access, CSV/manual import, or only human-reviewed entry
+
+Do not automatically map auto loan benchmarks into scenario calculations. If a
+source publishes advertised promotional rates, label those as advertised
+benchmarks, not personalized offers, and require user review before any scenario
+is saved.
 
 ## Data Semantics
 

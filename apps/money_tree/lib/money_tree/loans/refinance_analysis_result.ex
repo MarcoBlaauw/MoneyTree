@@ -8,6 +8,7 @@ defmodule MoneyTree.Loans.RefinanceAnalysisResult do
   import Ecto.Changeset
 
   alias MoneyTree.Loans.RefinanceScenario
+  alias MoneyTree.Loans.Loan
   alias MoneyTree.Mortgages.Mortgage
   alias MoneyTree.Users.User
 
@@ -44,6 +45,7 @@ defmodule MoneyTree.Loans.RefinanceAnalysisResult do
 
     belongs_to :user, User
     belongs_to :mortgage, Mortgage
+    belongs_to :loan, Loan
     belongs_to :refinance_scenario, RefinanceScenario
 
     timestamps()
@@ -55,6 +57,7 @@ defmodule MoneyTree.Loans.RefinanceAnalysisResult do
     |> cast(attrs, [
       :user_id,
       :mortgage_id,
+      :loan_id,
       :refinance_scenario_id,
       :analysis_version,
       :current_monthly_payment,
@@ -84,11 +87,11 @@ defmodule MoneyTree.Loans.RefinanceAnalysisResult do
     ])
     |> validate_required([
       :user_id,
-      :mortgage_id,
       :refinance_scenario_id,
       :analysis_version,
       :computed_at
     ])
+    |> validate_single_owner()
     |> validate_length(:analysis_version, min: 1, max: 40)
     |> validate_number(:break_even_months_low, greater_than: 0)
     |> validate_number(:break_even_months_expected, greater_than: 0)
@@ -97,7 +100,9 @@ defmodule MoneyTree.Loans.RefinanceAnalysisResult do
     |> validate_assumptions()
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:mortgage_id)
+    |> foreign_key_constraint(:loan_id)
     |> foreign_key_constraint(:refinance_scenario_id)
+    |> check_constraint(:mortgage_id, name: :refinance_analysis_results_single_owner)
   end
 
   defp validate_warnings(changeset) do
@@ -113,5 +118,26 @@ defmodule MoneyTree.Loans.RefinanceAnalysisResult do
     validate_change(changeset, :assumptions, fn :assumptions, value ->
       if is_map(value), do: [], else: [assumptions: "must be a map"]
     end)
+  end
+
+  defp validate_single_owner(changeset) do
+    mortgage_id = get_field(changeset, :mortgage_id)
+    loan_id = get_field(changeset, :loan_id)
+
+    case {mortgage_id, loan_id} do
+      {nil, nil} ->
+        add_error(changeset, :mortgage_id, "or loan must be present")
+
+      {nil, _loan_id} ->
+        changeset
+
+      {_mortgage_id, nil} ->
+        changeset
+
+      {_mortgage_id, _loan_id} ->
+        changeset
+        |> add_error(:mortgage_id, "cannot be set with loan")
+        |> add_error(:loan_id, "cannot be set with mortgage")
+    end
   end
 end

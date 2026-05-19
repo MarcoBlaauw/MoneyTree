@@ -35,6 +35,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         editing_mortgage: nil,
         mortgage_changeset: mortgage_changeset(current_user),
         generic_loan_form_open?: false,
+        generic_loan_form_mode: :new,
+        editing_generic_loan: nil,
         generic_loan_changeset: generic_loan_changeset(current_user),
         what_if_form: default_what_if_form(nil),
         what_if_summary: nil,
@@ -68,6 +70,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         alert_form: default_alert_form([])
       )
       |> load_page(current_user)
+      |> maybe_open_document_import(current_user, params)
 
     {:ok,
      allow_upload(socket, :loan_document_file,
@@ -88,6 +91,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
        mortgage_form_mode: :new,
        editing_mortgage: nil,
        mortgage_changeset: mortgage_changeset(current_user),
+       generic_loan_form_mode: :new,
+       editing_generic_loan: nil,
        generic_loan_form_open?: false,
        generic_loan_changeset: generic_loan_changeset(current_user)
      )}
@@ -99,6 +104,20 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         %{assigns: %{current_user: current_user}} = socket
       ) do
     {:noreply, assign_loan_form_kind(socket, current_user, kind)}
+  end
+
+  def handle_event(
+        "start-loan-document-import",
+        _params,
+        %{assigns: %{route_loan_id: loan_id}} = socket
+      )
+      when is_binary(loan_id) do
+    {:noreply, push_navigate(socket, to: ~p"/app/loans/#{loan_id}/documents?new_document=true")}
+  end
+
+  def handle_event("start-loan-document-import", _params, socket) do
+    {:noreply,
+     put_flash(socket, :error, "Open a loan workspace before importing loan documents.")}
   end
 
   def handle_event("new-mortgage", _params, %{assigns: %{current_user: current_user}} = socket) do
@@ -137,6 +156,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
        loan_form_kind: "auto",
        mortgage_form_open?: false,
        generic_loan_form_open?: true,
+       generic_loan_form_mode: :new,
+       editing_generic_loan: nil,
        generic_loan_changeset: generic_loan_changeset(current_user)
      )}
   end
@@ -151,6 +172,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
        loan_form_open?: false,
        loan_form_kind: "mortgage",
        generic_loan_form_open?: false,
+       generic_loan_form_mode: :new,
+       editing_generic_loan: nil,
        generic_loan_changeset: generic_loan_changeset(current_user)
      )}
   end
@@ -161,8 +184,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         %{assigns: %{current_user: current_user}} = socket
       ) do
     changeset =
-      current_user
-      |> base_generic_loan(params)
+      socket
+      |> generic_loan_for_form(current_user, params)
       |> Loans.change_loan(normalize_generic_loan_rate_params(params))
       |> Map.put(:action, :validate)
 
@@ -182,7 +205,16 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       ) do
     params = normalize_generic_loan_rate_params(params)
 
-    case Loans.create_loan(current_user, params) do
+    result =
+      case socket.assigns.generic_loan_form_mode do
+        :edit ->
+          Loans.update_loan(current_user, socket.assigns.editing_generic_loan, params)
+
+        _mode ->
+          Loans.create_loan(current_user, params)
+      end
+
+    case result do
       {:ok, _loan} ->
         {:noreply,
          socket
@@ -191,9 +223,14 @@ defmodule MoneyTreeWeb.LoansLive.Index do
            loan_form_open?: false,
            loan_form_kind: "mortgage",
            generic_loan_form_open?: false,
+           generic_loan_form_mode: :new,
+           editing_generic_loan: nil,
            generic_loan_changeset: generic_loan_changeset(current_user)
          )
-         |> put_flash(:info, "Loan added to Loan Center.")}
+         |> put_flash(:info, generic_loan_saved_message(socket.assigns.generic_loan_form_mode))}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Loan record not found.")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply,
@@ -202,6 +239,29 @@ defmodule MoneyTreeWeb.LoansLive.Index do
            generic_loan_form_open?: true,
            generic_loan_changeset: Map.put(changeset, :action, :validate)
          )}
+    end
+  end
+
+  def handle_event(
+        "edit-generic-loan",
+        %{"id" => loan_id},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Loans.fetch_loan(current_user, loan_id) do
+      {:ok, loan} ->
+        {:noreply,
+         assign(socket,
+           loan_form_open?: false,
+           loan_form_kind: loan.loan_type,
+           mortgage_form_open?: false,
+           generic_loan_form_open?: true,
+           generic_loan_form_mode: :edit,
+           editing_generic_loan: loan,
+           generic_loan_changeset: Loans.change_loan(loan)
+         )}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Loan record not found.")}
     end
   end
 
@@ -285,14 +345,20 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   def handle_event(
         "new-scenario",
         _params,
-        %{assigns: %{current_user: current_user, mortgages: mortgages}} = socket
+        %{
+          assigns: %{
+            current_user: current_user,
+            mortgages: mortgages,
+            selected_generic_loan: selected_generic_loan
+          }
+        } = socket
       ) do
     {:noreply,
      assign(socket,
        scenario_form_open?: true,
        scenario_form_mode: :new,
        editing_scenario: nil,
-       scenario_changeset: scenario_changeset(current_user, mortgages)
+       scenario_changeset: scenario_changeset(current_user, mortgages, selected_generic_loan)
      )}
   end
 
@@ -319,25 +385,37 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   def handle_event(
         "cancel-scenario",
         _params,
-        %{assigns: %{current_user: current_user, mortgages: mortgages}} = socket
+        %{
+          assigns: %{
+            current_user: current_user,
+            mortgages: mortgages,
+            selected_generic_loan: selected_generic_loan
+          }
+        } = socket
       ) do
     {:noreply,
      assign(socket,
        scenario_form_open?: false,
        scenario_form_mode: :new,
        editing_scenario: nil,
-       scenario_changeset: scenario_changeset(current_user, mortgages)
+       scenario_changeset: scenario_changeset(current_user, mortgages, selected_generic_loan)
      )}
   end
 
   def handle_event(
         "validate-scenario",
         %{"refinance_scenario" => params},
-        %{assigns: %{current_user: current_user, mortgages: mortgages}} = socket
+        %{
+          assigns: %{
+            current_user: current_user,
+            mortgages: mortgages,
+            selected_generic_loan: selected_generic_loan
+          }
+        } = socket
       ) do
     params = normalize_scenario_rate_params(params)
 
-    scenario = scenario_for_form(socket, current_user, mortgages, params)
+    scenario = scenario_for_form(socket, current_user, mortgages, selected_generic_loan, params)
 
     changeset =
       scenario
@@ -350,7 +428,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   def handle_event(
         "save-scenario",
         %{"refinance_scenario" => params},
-        %{assigns: %{current_user: current_user, mortgages: mortgages}} = socket
+        %{
+          assigns: %{
+            current_user: current_user,
+            mortgages: mortgages,
+            selected_generic_loan: selected_generic_loan
+          }
+        } = socket
       ) do
     params = normalize_scenario_rate_params(params)
     mortgage_id = Map.get(params, "mortgage_id") || Map.get(params, :mortgage_id)
@@ -360,8 +444,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         :edit ->
           Loans.update_refinance_scenario(current_user, socket.assigns.editing_scenario, params)
 
-        _mode ->
+        _mode when is_nil(selected_generic_loan) ->
           Loans.create_refinance_scenario(current_user, mortgage_id, params)
+
+        _mode ->
+          Loans.create_loan_refinance_scenario(current_user, selected_generic_loan, params)
       end
 
     case result do
@@ -373,13 +460,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
            scenario_form_open?: false,
            scenario_form_mode: :new,
            editing_scenario: nil,
-           scenario_changeset: scenario_changeset(current_user, mortgages),
+           scenario_changeset: scenario_changeset(current_user, mortgages, selected_generic_loan),
            fee_changeset: fee_changeset(socket.assigns.scenario_rows)
          )
          |> put_flash(:info, scenario_saved_message(socket.assigns.scenario_form_mode))}
 
       {:error, :not_found} ->
-        {:noreply, put_flash(socket, :error, "Choose an accessible mortgage before saving.")}
+        {:noreply, put_flash(socket, :error, "Choose an accessible loan before saving.")}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply,
@@ -549,13 +636,47 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end
   end
 
+  def handle_event(
+        "review-auto-rate-scenario",
+        %{"id" => observation_id},
+        %{
+          assigns: %{
+            current_user: current_user,
+            selected_generic_loan: %Loan{loan_type: "auto"} = loan
+          }
+        } = socket
+      ) do
+    with {:ok, %RateObservation{loan_type: "auto"} = observation} <-
+           Loans.fetch_rate_observation(observation_id),
+         changeset <-
+           observation
+           |> auto_rate_observation_scenario_attrs(current_user, loan)
+           |> reviewed_scenario_changeset() do
+      {:noreply,
+       assign(socket,
+         scenario_form_open?: true,
+         scenario_form_mode: :new,
+         editing_scenario: nil,
+         scenario_changeset: changeset
+       )}
+    else
+      {:ok, %RateObservation{}} ->
+        {:noreply, put_flash(socket, :error, "Choose an auto benchmark before reviewing.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Benchmark rate not found.")}
+    end
+  end
+
   def handle_event("new-fee-item", _params, socket) do
+    loan_type = active_fee_loan_type(socket.assigns)
+
     {:noreply,
      assign(socket,
        fee_form_open?: true,
        fee_form_mode: :new,
        editing_fee_item: nil,
-       fee_changeset: fee_changeset(socket.assigns.scenario_rows)
+       fee_changeset: fee_changeset(socket.assigns.scenario_rows, loan_type)
      )}
   end
 
@@ -580,19 +701,22 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   def handle_event("cancel-fee-item", _params, socket) do
+    loan_type = active_fee_loan_type(socket.assigns)
+
     {:noreply,
      assign(socket,
        fee_form_open?: false,
        fee_form_mode: :new,
        editing_fee_item: nil,
-       fee_changeset: fee_changeset(socket.assigns.scenario_rows)
+       fee_changeset: fee_changeset(socket.assigns.scenario_rows, loan_type)
      )}
   end
 
   def handle_event("validate-fee-item", %{"refinance_fee_item" => params}, socket) do
-    params = normalize_fee_item_params(params)
+    loan_type = active_fee_loan_type(socket.assigns)
+    params = normalize_fee_item_params(params, loan_type)
 
-    fee_item = fee_item_for_form(socket, params)
+    fee_item = fee_item_for_form(socket, params, loan_type)
 
     changeset =
       fee_item
@@ -607,7 +731,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         %{"refinance_fee_item" => params},
         %{assigns: %{current_user: current_user}} = socket
       ) do
-    params = normalize_fee_item_params(params)
+    params = normalize_fee_item_params(params, active_fee_loan_type(socket.assigns))
 
     scenario_id =
       Map.get(params, "refinance_scenario_id") || Map.get(params, :refinance_scenario_id)
@@ -704,11 +828,30 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         %{assigns: %{current_user: current_user, mortgages: mortgages}} = socket
       ) do
     case Loans.create_generic_refinance_fee_items(current_user, scenario_id) do
+      {:ok, []} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :info,
+           "No non-zero common fee assumptions are available for this loan type yet."
+         )}
+
       {:ok, fee_items} ->
         {:noreply,
          socket
          |> load_page(current_user)
-         |> assign(fee_changeset: fee_changeset(scenario_rows(current_user, mortgages)))
+         |> assign(
+           fee_changeset:
+             fee_changeset(
+               scenario_rows(
+                 current_user,
+                 mortgages,
+                 socket.assigns.selected_generic_loan,
+                 socket.assigns.live_action
+               ),
+               active_fee_loan_type(socket.assigns)
+             )
+         )
          |> put_flash(:info, "Added #{length(fee_items)} editable fee assumptions.")}
 
       {:error, :fee_items_exist} ->
@@ -781,7 +924,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
     case Loans.create_loan_document(current_user, mortgage_id, attrs) do
       {:ok, document} ->
-        maybe_enqueue_uploaded_document_extraction(socket, current_user, document, attrs)
+        extraction_queue_result =
+          maybe_enqueue_uploaded_document_extraction(current_user, document, attrs)
 
         {:noreply,
          socket
@@ -790,7 +934,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
            document_form_open?: false,
            document_changeset: document_changeset(current_user, mortgages)
          )
-         |> put_flash(:info, "Loan document metadata saved for review.")}
+         |> put_flash(
+           document_save_flash_kind(extraction_queue_result),
+           document_save_flash_message(extraction_queue_result)
+         )}
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Choose an accessible mortgage before saving.")}
@@ -1468,7 +1615,14 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   def handle_event("select-loan", %{"loan_id" => loan_id}, socket) do
-    {:noreply, push_navigate(socket, to: workspace_path(socket.assigns.live_action, loan_id))}
+    destination =
+      if generic_loan_id?(socket.assigns.generic_loans, loan_id) do
+        ~p"/app/loans/#{loan_id}"
+      else
+        workspace_path(socket.assigns.live_action, loan_id)
+      end
+
+    {:noreply, push_navigate(socket, to: destination)}
   end
 
   @impl true
@@ -1480,6 +1634,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         subtitle="Mortgage loans are supported first. Additional loan types will be added incrementally."
       >
         <:actions>
+          <.link :if={@route_loan_id} navigate={~p"/app/loans"} class="btn btn-outline">
+            Loan portfolio
+          </.link>
           <button type="button" class="btn btn-outline" phx-click="new-loan">
             Add loan
           </button>
@@ -1532,22 +1689,71 @@ defmodule MoneyTreeWeb.LoansLive.Index do
           </div>
         </div>
 
+        <div :if={@selected_generic_loan} class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Selected loan</p>
+              <h2 class="mt-1 text-xl font-semibold text-zinc-900"><%= @selected_generic_loan.name %></h2>
+              <p class="text-sm text-zinc-500">
+                <%= format_label(@selected_generic_loan.loan_type) %> • <%= @selected_generic_loan.status %>
+              </p>
+              <p :if={@selected_generic_loan.collateral_description} class="mt-1 text-sm text-zinc-500">
+                <%= @selected_generic_loan.collateral_description %>
+              </p>
+              <p :if={@selected_generic_loan.state_region} class="mt-1 text-sm text-zinc-500">
+                State <%= @selected_generic_loan.state_region %>
+              </p>
+              <button
+                type="button"
+                class="btn btn-outline mt-3"
+                phx-click="edit-generic-loan"
+                phx-value-id={@selected_generic_loan.id}
+              >
+                Edit loan
+              </button>
+            </div>
+
+            <dl class="grid gap-3 text-sm sm:grid-cols-4 lg:min-w-[560px]">
+              <div>
+                <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Balance</dt>
+                <dd class="mt-1 font-semibold text-zinc-900"><%= format_currency(@selected_generic_loan.current_balance) %></dd>
+              </div>
+              <div>
+                <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Rate</dt>
+                <dd class="mt-1 font-semibold text-zinc-900"><%= format_percent(@selected_generic_loan.current_interest_rate) %></dd>
+              </div>
+              <div>
+                <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Payment</dt>
+                <dd class="mt-1 font-semibold text-zinc-900"><%= format_currency(@selected_generic_loan.monthly_payment_total) %></dd>
+              </div>
+              <div>
+                <dt class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Term left</dt>
+                <dd class="mt-1 font-semibold text-zinc-900"><%= @selected_generic_loan.remaining_term_months %> months</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+
         <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Loan workspace</p>
-            <h2 class="mt-1 text-lg font-semibold text-zinc-900"><%= workspace_title(@live_action) %></h2>
-            <p class="text-sm text-zinc-500"><%= workspace_description(@live_action) %></p>
+            <h2 class="mt-1 text-lg font-semibold text-zinc-900">
+              <%= workspace_title(@live_action, @selected_generic_loan) %>
+            </h2>
+            <p class="text-sm text-zinc-500">
+              <%= workspace_description(@live_action, @selected_generic_loan) %>
+            </p>
           </div>
 
           <div class="space-y-3">
             <form phx-change="select-loan" class="min-w-64">
               <label class="text-sm font-medium text-zinc-700" for="loan_workspace_selector">Browse loans</label>
               <select id="loan_workspace_selector" name="loan_id" class="input">
-                <%= Phoenix.HTML.Form.options_for_select(mortgage_options(@all_mortgages), @route_loan_id) %>
+                <%= Phoenix.HTML.Form.options_for_select(loan_workspace_options(@all_mortgages, @generic_loans), @route_loan_id) %>
               </select>
             </form>
 
-            <nav class="flex flex-wrap gap-2 text-sm" aria-label="Loan workspaces">
+            <nav :if={@selected_mortgage} class="flex flex-wrap gap-2 text-sm" aria-label="Loan workspaces">
               <.link navigate={~p"/app/loans/#{@route_loan_id}"} class={workspace_link_class(@live_action, :detail)}>
                 Overview
               </.link>
@@ -1562,6 +1768,15 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               </.link>
               <.link navigate={~p"/app/loans/#{@route_loan_id}/alerts"} class={workspace_link_class(@live_action, :alerts)}>
                 Alerts
+              </.link>
+            </nav>
+
+            <nav :if={@selected_generic_loan} class="flex flex-wrap gap-2 text-sm" aria-label="Loan workspaces">
+              <.link navigate={~p"/app/loans/#{@route_loan_id}"} class={workspace_link_class(@live_action, :detail)}>
+                Overview
+              </.link>
+              <.link navigate={~p"/app/loans/#{@route_loan_id}/refinance"} class={workspace_link_class(@live_action, :refinance)}>
+                Refinance
               </.link>
             </nav>
           </div>
@@ -1998,7 +2213,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
             </div>
 
             <div :if={@document_rows == []} class="rounded-xl border border-dashed border-zinc-200 p-5 text-sm text-zinc-500">
-              Document metadata will appear here before extraction candidates can be reviewed.
+              Upload a loan document to create review-only extraction candidates. Confirmed values can then update the mortgage, create a quote, or create a scenario.
             </div>
 
             <div :if={@document_rows != []} class="overflow-x-auto">
@@ -2015,9 +2230,17 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 </thead>
                 <tbody class="divide-y divide-zinc-100">
                   <tr :for={row <- @document_rows} class="text-zinc-700">
-                    <td class="px-3 py-3 font-medium text-zinc-900"><%= row.document.original_filename %></td>
+                    <td class="px-3 py-3">
+                      <p class="font-medium text-zinc-900"><%= row.document.original_filename %></p>
+                      <p class="mt-1 text-xs text-zinc-500"><%= document_next_step(row).description %></p>
+                    </td>
                     <td class="px-3 py-3"><%= format_label(row.document.document_type) %></td>
-                    <td class="px-3 py-3"><%= format_label(row.document.status) %></td>
+                    <td class="px-3 py-3">
+                      <span class={document_next_step(row).class}>
+                        <%= document_next_step(row).label %>
+                      </span>
+                      <p class="mt-1 text-xs text-zinc-500"><%= format_label(row.document.status) %></p>
+                    </td>
                     <td class="px-3 py-3"><%= extraction_summary(row.document.extractions) %></td>
                     <td class="px-3 py-3"><%= format_datetime(row.document.uploaded_at) %></td>
                     <td class="px-3 py-3">
@@ -2026,7 +2249,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                               phx-click="extract-document"
                               phx-value-id={row.document.id}
                               disabled={!stored_document?(row.document)}>
-                        Run extraction
+                        <%= document_extraction_action_label(row.document) %>
                       </button>
                     </td>
                   </tr>
@@ -2103,22 +2326,41 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                   </div>
                 </div>
 
-                <dl class="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-                  <div :for={{field, value} <- payload_fields(candidate.extraction.extracted_payload)} class="rounded-lg bg-white px-3 py-2">
-                    <dt class="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                      <span><%= format_label(field) %></span>
-                      <span :if={field_confidence(candidate.extraction.field_confidence, field)} class="font-medium normal-case tracking-normal text-emerald-700">
-                        <%= field_confidence(candidate.extraction.field_confidence, field) %>
-                      </span>
-                    </dt>
-                    <dd class="mt-1 text-zinc-900"><%= format_payload_value(value) %></dd>
-                    <dd :if={field_citations(candidate.extraction.source_citations, field) != []} class="mt-2 space-y-1 text-xs text-zinc-500">
-                      <p :for={citation <- field_citations(candidate.extraction.source_citations, field)}>
-                        <%= citation %>
+                <div class="mt-3 rounded-lg border border-zinc-100 bg-white p-3">
+                  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Review impact</p>
+                      <p class="mt-1 text-sm text-zinc-600">
+                        Confirming makes these extracted values eligible for the actions below. Nothing updates the loan, quote, or scenario until you choose an apply action.
                       </p>
-                    </dd>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                      <span :for={target <- extraction_target_labels(candidate.extraction)} class="rounded-full bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700">
+                        <%= target %>
+                      </span>
+                    </div>
                   </div>
-                </dl>
+
+                  <dl class="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                    <div :for={{field, value} <- payload_fields(candidate.extraction.extracted_payload)} class="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
+                      <dt class="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                        <span><%= format_label(field) %></span>
+                        <span class={extraction_field_target_class(field)}>
+                          <%= extraction_field_target_label(field) %>
+                        </span>
+                      </dt>
+                      <dd class="mt-1 font-medium text-zinc-900"><%= format_payload_value(value) %></dd>
+                      <dd :if={field_confidence(candidate.extraction.field_confidence, field)} class="mt-1 text-xs font-medium text-emerald-700">
+                        <%= field_confidence(candidate.extraction.field_confidence, field) %>
+                      </dd>
+                      <dd :if={field_citations(candidate.extraction.source_citations, field) != []} class="mt-2 space-y-1 text-xs text-zinc-500">
+                        <p :for={citation <- field_citations(candidate.extraction.source_citations, field)}>
+                          <%= citation %>
+                        </p>
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
 
                 <div :if={extraction_review_context?(candidate.extraction)} class="mt-3 rounded-lg border border-zinc-100 bg-white p-3 text-sm">
                   <div :if={stored_text_artifact(candidate.extraction)} class="text-xs text-zinc-500">
@@ -2147,8 +2389,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
           <div class="space-y-4 rounded-xl border border-zinc-100 bg-zinc-50 p-4">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <h3 class="text-base font-semibold text-zinc-900">Add document metadata</h3>
-                <p class="text-sm text-zinc-500">Record source metadata before extraction and review.</p>
+                <h3 class="text-base font-semibold text-zinc-900">Upload loan document</h3>
+                <p class="text-sm text-zinc-500">Upload a statement, Loan Estimate, or quote for extraction and review.</p>
               </div>
               <button :if={@document_form_open?} type="button" class="btn btn-outline" phx-click="cancel-document">
                 Cancel
@@ -2163,8 +2405,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
             <div :if={@document_form_open?} class={modal_panel_class(:lg)}>
               <div class="mb-4 flex items-start justify-between gap-3">
                 <div>
-                  <h3 class="text-base font-semibold text-zinc-900">Add document metadata</h3>
-                  <p class="text-sm text-zinc-500">Record source metadata before extraction and review.</p>
+                  <h3 class="text-base font-semibold text-zinc-900">Upload loan document</h3>
+                  <p class="text-sm text-zinc-500">MoneyTree stores the file first, then any extracted values require your review before they update loan records.</p>
                 </div>
                 <button type="button" class="btn btn-outline" phx-click="cancel-document">Cancel</button>
               </div>
@@ -2177,8 +2419,19 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 <input type="hidden" name="loan_document[mortgage_id]" value={f[:mortgage_id].value || first_mortgage_id(@mortgages)} />
                 <div class="grid gap-4">
                   <div>
+                    <label class="text-sm font-medium text-zinc-700" for="loan_document_document_type">Document type</label>
+                    <select id="loan_document_document_type" name="loan_document[document_type]" class="input">
+                      <%= Phoenix.HTML.Form.options_for_select(document_type_options(), f[:document_type].value || "loan_estimate") %>
+                    </select>
+                    <p :for={error <- errors_on(@document_changeset, :document_type)} class="text-sm text-red-600"><%= error %></p>
+                  </div>
+
+                  <div>
                     <label class="text-sm font-medium text-zinc-700">Document file</label>
                     <.live_file_input upload={@uploads.loan_document_file} class="w-full text-sm text-zinc-700" />
+                    <p class="mt-1 text-xs text-zinc-500">
+                      PDF, image, text, Markdown, and CSV files are supported. Extracted values stay review-only until confirmed.
+                    </p>
                     <p :for={entry <- @uploads.loan_document_file.entries} class="mt-1 text-xs text-zinc-500">
                       <%= entry.client_name %> • <%= entry.client_type %>
                     </p>
@@ -2187,24 +2440,26 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     </p>
                   </div>
 
-                  <div>
-                    <label class="text-sm font-medium text-zinc-700" for="loan_document_document_type">Document type</label>
-                    <select id="loan_document_document_type" name="loan_document[document_type]" class="input">
-                      <%= Phoenix.HTML.Form.options_for_select(document_type_options(), f[:document_type].value || "loan_estimate") %>
-                    </select>
-                    <p :for={error <- errors_on(@document_changeset, :document_type)} class="text-sm text-red-600"><%= error %></p>
-                  </div>
-
-                  <.input field={f[:original_filename]} label="Original filename" />
-                  <.input field={f[:content_type]} label="Content type" />
-                  <.input field={f[:byte_size]} label="Byte size" type={:number} min="1" />
-                  <.input field={f[:storage_key]} label="Storage key" />
-                  <.input field={f[:checksum_sha256]} label="SHA-256 checksum" />
+                  <details class="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                    <summary class="cursor-pointer text-sm font-medium text-zinc-700">
+                      Advanced metadata
+                    </summary>
+                    <div class="mt-3 grid gap-4">
+                      <p class="text-xs text-zinc-500">
+                        These fields are normally filled from the uploaded file. Use them only when recording a document that was stored outside this upload flow.
+                      </p>
+                      <.input field={f[:original_filename]} label="Original filename" />
+                      <.input field={f[:content_type]} label="Content type" />
+                      <.input field={f[:byte_size]} label="Byte size" type={:number} min="1" />
+                      <.input field={f[:storage_key]} label="Storage key" />
+                      <.input field={f[:checksum_sha256]} label="SHA-256 checksum" />
+                    </div>
+                  </details>
                 </div>
 
                 <div class="flex justify-end gap-2">
                   <button type="button" class="btn btn-outline" phx-click="cancel-document">Cancel</button>
-                  <button type="submit" class="btn">Save document</button>
+                  <button type="submit" class="btn">Save for review</button>
                 </div>
               </.simple_form>
             </div>
@@ -2416,7 +2671,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         </form>
       </div>
 
-      <div :if={@live_action == :refinance} class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div :if={@live_action == :refinance && @selected_mortgage} class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 class="text-lg font-semibold text-zinc-900">Market rate snapshot</h2>
@@ -2499,7 +2754,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         </p>
       </div>
 
-      <div :if={@live_action == :refinance} class="space-y-6">
+      <div :if={@live_action == :refinance && @selected_mortgage} class="space-y-6">
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -2670,6 +2925,125 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         </div>
       </div>
 
+      <div
+        :if={@live_action == :refinance && @selected_generic_loan && @selected_generic_loan.loan_type == "auto"}
+        class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm"
+      >
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-zinc-900">Auto rate snapshot</h2>
+            <p class="text-sm text-zinc-500">
+              FRED commercial-bank new-auto averages provide market context only. They are not used-auto refinance offers.
+            </p>
+          </div>
+          <div class="flex flex-col items-start gap-2 sm:items-end">
+            <p class="text-xs text-zinc-500">
+              Observed <%= format_date(@auto_market_snapshot.quality.latest_effective_date) || "Not imported" %>
+            </p>
+            <button
+              :for={source <- @rate_source_rows}
+              type="button"
+              class="btn btn-outline"
+              phx-click="import-rate-source"
+              phx-value-id={source.id}
+            >
+              Import FRED benchmarks
+            </button>
+          </div>
+        </div>
+
+        <div :if={@auto_market_snapshot.quality.warnings != []} class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <p :for={warning <- @auto_market_snapshot.quality.warnings}><%= warning %></p>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-3">
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">48-month new auto</p>
+            <p class="mt-1 text-xl font-semibold text-zinc-900"><%= market_rate_value(@auto_market_snapshot, "termcbauto48ns") %></p>
+            <p class="text-xs text-zinc-500"><%= market_trend_label(@auto_market_snapshot, "termcbauto48ns", 90) %></p>
+            <button
+              :if={market_rate_observation(@auto_market_snapshot, "termcbauto48ns")}
+              type="button"
+              class="btn btn-outline mt-3"
+              phx-click="review-auto-rate-scenario"
+              phx-value-id={market_rate_observation(@auto_market_snapshot, "termcbauto48ns").id}
+            >
+              Create reviewed scenario
+            </button>
+          </div>
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">60-month new auto</p>
+            <p class="mt-1 text-xl font-semibold text-zinc-900"><%= market_rate_value(@auto_market_snapshot, "riflpbcianm60nm") %></p>
+            <p class="text-xs text-zinc-500"><%= market_trend_label(@auto_market_snapshot, "riflpbcianm60nm", 90) %></p>
+            <button
+              :if={market_rate_observation(@auto_market_snapshot, "riflpbcianm60nm")}
+              type="button"
+              class="btn btn-outline mt-3"
+              phx-click="review-auto-rate-scenario"
+              phx-value-id={market_rate_observation(@auto_market_snapshot, "riflpbcianm60nm").id}
+            >
+              Create reviewed scenario
+            </button>
+          </div>
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">72-month new auto</p>
+            <p class="mt-1 text-xl font-semibold text-zinc-900"><%= market_rate_value(@auto_market_snapshot, "riflpbcianm72nm") %></p>
+            <p class="text-xs text-zinc-500"><%= market_trend_label(@auto_market_snapshot, "riflpbcianm72nm", 90) %></p>
+            <button
+              :if={market_rate_observation(@auto_market_snapshot, "riflpbcianm72nm")}
+              type="button"
+              class="btn btn-outline mt-3"
+              phx-click="review-auto-rate-scenario"
+              phx-value-id={market_rate_observation(@auto_market_snapshot, "riflpbcianm72nm").id}
+            >
+              Create reviewed scenario
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-zinc-100">
+          <table class="min-w-full divide-y divide-zinc-100 text-sm">
+            <thead class="bg-zinc-50">
+              <tr class="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                <th class="px-3 py-2">Benchmark</th>
+                <th class="px-3 py-2">7 days</th>
+                <th class="px-3 py-2">30 days</th>
+                <th class="px-3 py-2">90 days</th>
+                <th class="px-3 py-2">YoY</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-100 bg-white">
+              <tr :for={row <- market_trend_rows(@auto_market_snapshot)} class="text-zinc-700">
+                <td class="px-3 py-3 font-medium text-zinc-900"><%= row.label %></td>
+                <td class="px-3 py-3"><%= row.day_7 %></td>
+                <td class="px-3 py-3"><%= row.day_30 %></td>
+                <td class="px-3 py-3"><%= row.day_90 %></td>
+                <td class="px-3 py-3"><%= row.yoy %></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="flex flex-col gap-2 text-xs text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            Source: <%= market_snapshot_attribution(@auto_market_snapshot) %>. Actual auto refinance offers may vary by credit score, vehicle age, LTV, mileage, lender fees, loan size, location, and term.
+          </p>
+          <a
+            :if={market_snapshot_source_url(@auto_market_snapshot)}
+            href={market_snapshot_source_url(@auto_market_snapshot)}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium text-zinc-700 underline underline-offset-2"
+          >
+            View source
+          </a>
+        </div>
+
+        <p class="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+          This product uses the FRED® API but is not endorsed or certified by the Federal Reserve Bank of St. Louis.
+        </p>
+      </div>
+
       <div :if={@live_action == :refinance} class="space-y-6">
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -2678,7 +3052,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <p class="text-sm text-zinc-500">Compare payment, break-even, and full-term cost. Warnings are shown in scenario details.</p>
             </div>
             <div class="flex flex-col items-start gap-3 sm:items-end">
-              <form id="payment-display-form" phx-change="toggle-escrow-display" class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+              <form :if={@selected_mortgage}
+                    id="payment-display-form"
+                    phx-change="toggle-escrow-display"
+                    class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
                 <input type="hidden" name="include_escrow" value="false" />
                 <label class="flex items-center gap-2 text-sm font-medium text-zinc-700">
                   <input type="checkbox" name="include_escrow" value="true" checked={@payment_display_include_escrow?} />
@@ -2687,8 +3064,15 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                 <p class="mt-1 text-xs text-zinc-500"><%= escrow_display_note(@selected_mortgage, @payment_display_include_escrow?) %></p>
               </form>
 
+              <div :if={@selected_generic_loan} class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <p class="font-medium"><%= generic_refinance_assumption_title(@selected_generic_loan) %></p>
+                <p class="mt-1 text-xs">
+                  <%= generic_refinance_assumption_message(@selected_generic_loan) %>
+                </p>
+              </div>
+
               <div class="flex gap-2">
-                <button type="button" class="btn btn-outline" phx-click="new-scenario" disabled={@mortgages == []}>
+                <button type="button" class="btn btn-outline" phx-click="new-scenario" disabled={@selected_mortgage == nil && @selected_generic_loan == nil}>
                   Add scenario
                 </button>
                 <button type="button" class="btn btn-outline" phx-click="new-fee-item" disabled={@scenario_rows == []}>
@@ -2762,7 +3146,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                   </td>
                   <td class="px-2 py-2 text-right">
                     <div class="flex justify-end gap-1">
-                      <.action_icon :if={row.fee_status.status == :missing}
+                      <.action_icon :if={row.fee_status.status == :missing && row.fee_prediction}
                                     icon="playlist_add"
                                     label="Add common fees"
                                     event="add-common-fees"
@@ -2907,6 +3291,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                       <dt class="text-zinc-500">Cash to close range</dt>
                       <dd class="min-w-44 font-medium text-zinc-900"><.range_value range={row.analysis.cash_to_close_range} /></dd>
                     </div>
+                    <div :if={present_string?(row.scenario.credit_score_band)} class="flex justify-between gap-4">
+                      <dt class="text-zinc-500">Credit score band</dt>
+                      <dd class="font-medium text-zinc-900"><%= credit_score_band_label(row.scenario.credit_score_band) %></dd>
+                    </div>
                   </dl>
 
                   <div :if={row.analysis.warnings != []} class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -2941,17 +3329,51 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                         phx-change="validate-scenario"
                         phx-submit="save-scenario"
                         :let={f}>
+            <div
+              :if={Ecto.Changeset.get_field(@scenario_changeset, :scenario_type) == "rate_observation"}
+              class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+            >
+              <p class="font-medium">Market benchmark, not lender offer</p>
+              <p class="mt-1 text-xs">
+                This starts from an observed benchmark rate. Review the rate, APR, term, and fees before saving.
+              </p>
+            </div>
+            <input type="hidden" name="refinance_scenario[scenario_type]" value={Ecto.Changeset.get_field(@scenario_changeset, :scenario_type) || "manual"} />
+            <input :if={Ecto.Changeset.get_field(@scenario_changeset, :rate_source_type)} type="hidden" name="refinance_scenario[rate_source_type]" value={Ecto.Changeset.get_field(@scenario_changeset, :rate_source_type)} />
+
             <div class="grid gap-4">
-              <div>
+              <div :if={@selected_mortgage}>
                 <label class="text-sm font-medium text-zinc-700" for="refinance_scenario_mortgage_id">Mortgage</label>
                 <select id="refinance_scenario_mortgage_id" name="refinance_scenario[mortgage_id]" class="input">
                   <%= Phoenix.HTML.Form.options_for_select(mortgage_options(@mortgages), f[:mortgage_id].value || first_mortgage_id(@mortgages)) %>
                 </select>
                 <p :for={error <- errors_on(@scenario_changeset, :mortgage_id)} class="text-sm text-red-600"><%= error %></p>
               </div>
+              <div :if={@selected_generic_loan} class="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                <input type="hidden" name="refinance_scenario[loan_id]" value={@selected_generic_loan.id} />
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Loan</p>
+                <p class="mt-1 text-sm font-medium text-zinc-900"><%= @selected_generic_loan.name %></p>
+                <p :for={error <- errors_on(@scenario_changeset, :loan_id)} class="text-sm text-red-600"><%= error %></p>
+              </div>
 
               <.input field={f[:name]} label="Scenario name" />
-              <.input field={f[:product_type]} label="Product type" />
+              <div class="grid gap-4 sm:grid-cols-2">
+                <.input field={f[:product_type]} label="Product type" />
+                <div :if={@selected_generic_loan && @selected_generic_loan.loan_type == "auto"}>
+                  <label class="text-sm font-medium text-zinc-700" for="refinance_scenario_credit_score_band">Credit score band</label>
+                  <select
+                    id="refinance_scenario_credit_score_band"
+                    name="refinance_scenario[credit_score_band]"
+                    class="input"
+                  >
+                    <%= Phoenix.HTML.Form.options_for_select(credit_score_band_options(), f[:credit_score_band].value || "") %>
+                  </select>
+                  <p class="mt-1 text-xs text-zinc-500">
+                    Stored as context only. It does not change payment math yet.
+                  </p>
+                  <p :for={error <- errors_on(@scenario_changeset, :credit_score_band)} class="text-sm text-red-600"><%= error %></p>
+                </div>
+              </div>
 
               <div class="grid gap-4 sm:grid-cols-2">
                 <.input field={f[:new_term_months]} label="New term months" type={:number} min="1" />
@@ -3051,6 +3473,21 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                   </p>
                 </div>
               </div>
+              <div :if={prediction_source_links(row.fee_prediction) != []} class="mt-3 rounded-lg border border-zinc-200 bg-white p-3">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Sources</p>
+                <div class="mt-2 flex flex-wrap gap-2 text-xs">
+                  <a :for={source <- prediction_source_links(row.fee_prediction)}
+                     href={source.url}
+                     target="_blank"
+                     rel="noreferrer"
+                     class="rounded-full border border-zinc-200 px-2.5 py-1 font-medium text-zinc-700 hover:bg-zinc-50">
+                    <%= source.label %>
+                  </a>
+                </div>
+                <p :if={prediction_last_verified_at(row.fee_prediction)} class="mt-2 text-xs text-zinc-500">
+                  Last verified <%= format_datetime(prediction_last_verified_at(row.fee_prediction)) %>
+                </p>
+              </div>
               <div :if={row.fee_status.status == :missing} class="mt-4 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between">
                 <p>No fee assumptions loaded. Break-even and cash-to-close are incomplete until costs are added.</p>
                 <button type="button"
@@ -3065,7 +3502,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               </p>
               <div :if={List.wrap(row.scenario.fee_items) != []} class="mt-4 grid gap-3 lg:grid-cols-3">
                 <div :for={group <- fee_item_groups(row.scenario.fee_items)}
-                     class="rounded-lg border border-zinc-200 bg-white">
+                     class={[
+                       "rounded-lg border border-zinc-200 bg-white",
+                       fee_group_container_class(@expanded_fee_group_ids, row.scenario.id, group.label)
+                     ]}>
                   <% group_id = fee_group_dom_id(row.scenario.id, group.label) %>
                   <% expanded? = fee_group_expanded?(@expanded_fee_group_ids, group_id) %>
                   <button type="button"
@@ -3085,14 +3525,17 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                       </span>
                     </span>
                   </button>
-                  <ul :if={expanded?} id={group_id} class="space-y-2 border-t border-zinc-100 p-3">
+                  <ul :if={expanded?} id={group_id} class="grid gap-2 border-t border-zinc-100 p-3 xl:grid-cols-2">
                     <li :for={fee_item <- group.items} class="rounded-md border border-zinc-100 bg-zinc-50 px-3 py-2">
-                      <div class="flex items-start justify-between gap-3">
-                        <div>
+                      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div class="min-w-0">
                           <p class="text-sm font-medium text-zinc-900"><%= fee_item.name %></p>
                           <p class="text-xs text-zinc-500"><%= fee_item_type_label(fee_item) %></p>
+                          <p :if={present_string?(fee_item.notes)} class="mt-1 break-words text-xs text-zinc-500">
+                            <%= fee_item.notes %>
+                          </p>
                         </div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex shrink-0 items-center justify-end gap-2">
                           <p class={fee_item_amount_class(fee_item)}><%= signed_fee_item_amount_label(fee_item) %></p>
                           <.action_icon icon="edit_note"
                                         label="Edit fee item"
@@ -3142,10 +3585,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <div>
                 <label class="text-sm font-medium text-zinc-700" for="refinance_fee_item_loan_fee_type_code">Fee type</label>
                 <select id="refinance_fee_item_loan_fee_type_code" name="refinance_fee_item[loan_fee_type_code]" class="input">
-                  <%= Phoenix.HTML.Form.options_for_select(loan_fee_type_options(), selected_fee_type_code(@fee_changeset)) %>
+                  <%= Phoenix.HTML.Form.options_for_select(
+                    loan_fee_type_options(fee_form_loan_type(@selected_generic_loan)),
+                    selected_fee_type_code(@fee_changeset, fee_form_loan_type(@selected_generic_loan))
+                  ) %>
                 </select>
                 <p class="mt-1 text-xs text-zinc-500">
-                  <%= selected_fee_type_help(@fee_changeset) %>
+                  <%= selected_fee_type_help(@fee_changeset, fee_form_loan_type(@selected_generic_loan)) %>
                 </p>
               </div>
 
@@ -3229,7 +3675,94 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         </div>
       </div>
 
-      <div :if={is_nil(@route_loan_id) || @live_action == :detail} class="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <div :if={@selected_generic_loan && @live_action == :detail} class="space-y-6">
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div>
+            <h2 class="text-lg font-semibold text-zinc-900">Refinance preview</h2>
+            <p class="text-sm text-zinc-500">
+              Generic payoff analysis using the current balance, current rate, remaining term, and payment.
+            </p>
+          </div>
+
+          <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <p class="font-semibold">Portfolio preview only</p>
+            <p class="mt-1">
+              This quick preview reuses the current loan terms. Open the refinance workspace to review loan-type market context, scenarios, and fee assumptions.
+            </p>
+          </div>
+
+          <%= case generic_loan_preview(@selected_generic_loan) do %>
+            <% {:ok, analysis} -> %>
+              <div class="mt-4 grid gap-3 md:grid-cols-3">
+                <.refinance_metric
+                  label="Expected payment"
+                  value={format_currency(analysis.payment_range.expected)}
+                />
+                <.refinance_metric
+                  label="Expected savings"
+                  value={format_currency(analysis.monthly_savings_range.expected)}
+                  value_class={semantic_money_class(analysis.monthly_savings_range.expected, :savings)}
+                />
+                <.refinance_metric
+                  label="Full-term delta"
+                  value={format_currency(analysis.full_term_finance_cost_delta)}
+                  value_class={semantic_money_class(analysis.full_term_finance_cost_delta, :delta)}
+                />
+              </div>
+
+              <div class="mt-5 overflow-x-auto">
+                <table class="min-w-full divide-y divide-zinc-200 text-sm">
+                  <thead>
+                    <tr class="text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      <th class="px-3 py-2">Range</th>
+                      <th class="px-3 py-2">Payment</th>
+                      <th class="px-3 py-2">Monthly savings</th>
+                      <th class="px-3 py-2">Break-even</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-zinc-100">
+                    <tr>
+                      <td class="px-3 py-3 text-zinc-500">Low</td>
+                      <td class="px-3 py-3 font-medium text-zinc-900"><%= format_currency(analysis.payment_range.low) %></td>
+                      <td class="px-3 py-3">
+                        <span class={semantic_money_class(analysis.monthly_savings_range.low, :savings)}>
+                          <%= format_currency(analysis.monthly_savings_range.low) %>
+                        </span>
+                      </td>
+                      <td class="px-3 py-3"><%= format_months(analysis.break_even_range.low) %></td>
+                    </tr>
+                    <tr>
+                      <td class="px-3 py-3 text-zinc-500">Expected</td>
+                      <td class="px-3 py-3 font-medium text-zinc-900"><%= format_currency(analysis.payment_range.expected) %></td>
+                      <td class="px-3 py-3">
+                        <span class={semantic_money_class(analysis.monthly_savings_range.expected, :savings)}>
+                          <%= format_currency(analysis.monthly_savings_range.expected) %>
+                        </span>
+                      </td>
+                      <td class="px-3 py-3"><%= format_months(analysis.break_even_range.expected) %></td>
+                    </tr>
+                    <tr>
+                      <td class="px-3 py-3 text-zinc-500">High</td>
+                      <td class="px-3 py-3 font-medium text-zinc-900"><%= format_currency(analysis.payment_range.high) %></td>
+                      <td class="px-3 py-3">
+                        <span class={semantic_money_class(analysis.monthly_savings_range.high, :savings)}>
+                          <%= format_currency(analysis.monthly_savings_range.high) %>
+                        </span>
+                      </td>
+                      <td class="px-3 py-3"><%= format_months(analysis.break_even_range.high) %></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            <% {:error, _changeset} -> %>
+              <div class="mt-4 rounded-xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500">
+                Refinance preview is unavailable for this loan baseline.
+              </div>
+          <% end %>
+        </div>
+      </div>
+
+      <div :if={is_nil(@route_loan_id) || (@selected_mortgage && @live_action == :detail)} class="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
         <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <h2 class="text-lg font-semibold text-zinc-900">Mortgage details</h2>
 
@@ -3285,6 +3818,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                   <p :if={loan.collateral_description} class="mt-1 text-xs text-zinc-500">
                     <%= loan.collateral_description %>
                   </p>
+                  <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                    <.link navigate={~p"/app/loans/#{loan.id}"} class="rounded-full border border-zinc-200 bg-white px-3 py-1 font-medium text-zinc-700 hover:bg-zinc-50">
+                      Open workspace
+                    </.link>
+                  </div>
                 </div>
                 <div class="text-left sm:text-right">
                   <p class="font-semibold text-zinc-900"><%= format_currency(loan.current_balance) %></p>
@@ -3339,7 +3877,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
             </button>
           </div>
 
-          <.loan_form_kind_selector :if={@loan_form_open?} selected={@loan_form_kind} />
+          <.loan_form_kind_selector
+            :if={@loan_form_open?}
+            selected={@loan_form_kind}
+            import_available?={document_import_available?(@route_loan_id)}
+          />
           <.simple_form
                         for={@mortgage_changeset}
                         id="mortgage-form"
@@ -3415,15 +3957,19 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         <div class="space-y-4">
           <div class="flex items-start justify-between gap-3">
             <div>
-              <h2 class="text-lg font-semibold text-zinc-900">Add loan</h2>
-              <p class="text-sm text-zinc-500">Create a generic loan baseline for auto, personal, or student debt.</p>
+              <h2 class="text-lg font-semibold text-zinc-900"><%= generic_loan_form_title(@generic_loan_form_mode) %></h2>
+              <p class="text-sm text-zinc-500"><%= generic_loan_form_description(@generic_loan_form_mode) %></p>
             </div>
             <button type="button" class="btn btn-outline" phx-click="cancel-generic-loan">
               Cancel
             </button>
           </div>
 
-          <.loan_form_kind_selector :if={@loan_form_open?} selected={@loan_form_kind} />
+          <.loan_form_kind_selector
+            :if={@loan_form_open?}
+            selected={@loan_form_kind}
+            import_available?={document_import_available?(@route_loan_id)}
+          />
           <.simple_form for={@generic_loan_changeset}
                         id="generic-loan-form"
                         phx-change="validate-generic-loan"
@@ -3441,6 +3987,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <.input field={f[:lender_name]} label="Lender" />
               <.input field={f[:servicer_name]} label="Servicer" />
               <.input field={f[:collateral_description]} label="Collateral or note" />
+              <.input field={f[:state_region]} label="State" />
 
               <div class="grid gap-4 sm:grid-cols-2">
                 <.input field={f[:current_balance]} label="Current balance" type={:number} step="0.01" min="0" />
@@ -3465,7 +4012,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
             <div class="flex justify-end gap-2">
               <button type="button" class="btn btn-outline" phx-click="cancel-generic-loan">Cancel</button>
-              <button type="submit" class="btn">Add loan</button>
+              <button type="submit" class="btn"><%= generic_loan_form_submit_label(@generic_loan_form_mode) %></button>
             </div>
           </.simple_form>
         </div>
@@ -3502,6 +4049,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     """
   end
 
+  attr :selected, :string, required: true
+  attr :import_available?, :boolean, default: false
+
   defp loan_form_kind_selector(assigns) do
     ~H"""
     <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
@@ -3515,11 +4065,22 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       </form>
 
       <div class="mt-3 rounded-lg border border-dashed border-zinc-200 bg-white p-3 text-sm text-zinc-500">
-        <div class="flex items-start gap-3">
+        <div :if={@import_available?} class="flex items-start justify-between gap-3">
+          <div>
+            <p class="font-medium text-zinc-700">Import from document</p>
+            <p>Document import will extract and prefill loan details for review before saving.</p>
+          </div>
+          <button type="button" class="btn btn-outline whitespace-nowrap" phx-click="start-loan-document-import">
+            Import
+          </button>
+        </div>
+
+        <div :if={!@import_available?} class="flex items-start gap-3">
           <input type="radio" disabled class="mt-1" />
           <div>
             <p class="font-medium text-zinc-700">Import from document</p>
             <p>Document import will extract and prefill loan details for review before saving.</p>
+            <p class="mt-1 text-xs text-zinc-400">Create or open a loan workspace before importing documents.</p>
           </div>
         </div>
       </div>
@@ -3614,14 +4175,18 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     mortgages = scope_mortgages(all_mortgages, socket.assigns.route_loan_id)
 
     selected_mortgage = List.first(mortgages)
+    selected_generic_loan = selected_generic_loan(generic_loans, socket.assigns.route_loan_id)
     what_if_form = maybe_reset_what_if_form(socket.assigns[:what_if_form], selected_mortgage)
-    scenario_rows = scenario_rows(current_user, mortgages)
+
+    scenario_rows =
+      scenario_rows(current_user, mortgages, selected_generic_loan, socket.assigns.live_action)
 
     assign(socket,
       all_mortgages: all_mortgages,
       generic_loans: generic_loans,
       mortgages: mortgages,
       selected_mortgage: selected_mortgage,
+      selected_generic_loan: selected_generic_loan,
       what_if_form: what_if_form,
       what_if_summary: what_if_summary(selected_mortgage, what_if_form),
       selected_analysis_scenario_id:
@@ -3633,13 +4198,50 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       rate_source_rows: rate_source_rows(),
       rate_observation_rows: rate_observation_rows(),
       market_snapshot: Loans.mortgage_market_snapshot(),
-      analysis_history_rows: analysis_history_rows(current_user, mortgages),
+      auto_market_snapshot: Loans.auto_market_snapshot(),
+      analysis_history_rows:
+        analysis_history_rows(
+          current_user,
+          mortgages,
+          selected_generic_loan,
+          socket.assigns.live_action
+        ),
       document_rows: document_rows(current_user, mortgages),
       quote_rows: quote_rows(current_user, mortgages),
       quote_fee_type_options: quote_fee_type_options(),
       alert_rows: alert_rows(current_user, mortgages)
     )
   end
+
+  defp maybe_open_document_import(socket, current_user, %{
+         "loan_id" => loan_id,
+         "new_document" => "true"
+       })
+       when is_binary(loan_id) do
+    assign(socket,
+      loan_form_open?: false,
+      mortgage_form_open?: false,
+      generic_loan_form_open?: false,
+      document_form_open?: true,
+      document_changeset: document_changeset(current_user, socket.assigns.mortgages)
+    )
+  end
+
+  defp maybe_open_document_import(socket, _current_user, _params), do: socket
+
+  defp document_import_available?(loan_id), do: is_binary(loan_id)
+
+  defp selected_generic_loan(generic_loans, loan_id) when is_binary(loan_id) do
+    Enum.find(generic_loans, &(&1.id == loan_id))
+  end
+
+  defp selected_generic_loan(_generic_loans, _loan_id), do: nil
+
+  defp generic_loan_id?(generic_loans, loan_id) when is_binary(loan_id) do
+    Enum.any?(generic_loans, &(&1.id == loan_id))
+  end
+
+  defp generic_loan_id?(_generic_loans, _loan_id), do: false
 
   defp scope_mortgages(mortgages, nil), do: mortgages
 
@@ -3674,6 +4276,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       editing_mortgage: nil,
       mortgage_changeset: mortgage_changeset(current_user),
       generic_loan_form_open?: false,
+      generic_loan_form_mode: :new,
+      editing_generic_loan: nil,
       generic_loan_changeset: generic_loan_changeset(current_user)
     )
   end
@@ -3688,6 +4292,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       editing_mortgage: nil,
       mortgage_changeset: mortgage_changeset(current_user),
       generic_loan_form_open?: true,
+      generic_loan_form_mode: :new,
+      editing_generic_loan: nil,
       generic_loan_changeset: generic_loan_changeset(current_user, kind)
     )
   end
@@ -3921,6 +4527,51 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp mortgage_for_form(_socket, current_user), do: base_mortgage(current_user)
 
+  defp generic_loan_for_form(
+         %{
+           assigns: %{
+             generic_loan_form_mode: :edit,
+             editing_generic_loan: %Loan{} = loan
+           }
+         },
+         _current_user,
+         _params
+       ) do
+    loan
+  end
+
+  defp generic_loan_for_form(_socket, current_user, params) do
+    base_generic_loan(current_user, params)
+  end
+
+  defp generic_loan_saved_message(:edit), do: "Loan updated."
+  defp generic_loan_saved_message(_mode), do: "Loan added to Loan Center."
+
+  defp generic_loan_form_title(:edit), do: "Edit loan"
+  defp generic_loan_form_title(_mode), do: "Add loan"
+
+  defp generic_loan_form_description(:edit),
+    do: "Update this generic loan baseline and refinance preview inputs."
+
+  defp generic_loan_form_description(_mode),
+    do: "Create a generic loan baseline for auto, personal, or student debt."
+
+  defp generic_refinance_assumption_title(%Loan{loan_type: "auto"}),
+    do: "Reviewed benchmark assumptions"
+
+  defp generic_refinance_assumption_title(_loan), do: "User-entered assumptions"
+
+  defp generic_refinance_assumption_message(%Loan{loan_type: "auto"}) do
+    "FRED new-auto benchmarks are available as market context and can seed reviewed scenarios. They are not auto refinance offers. Fee estimates use available generic or state-level assumptions."
+  end
+
+  defp generic_refinance_assumption_message(_loan) do
+    "External market rates are not available for this loan type yet. Fee estimates use available generic or state-level assumptions."
+  end
+
+  defp generic_loan_form_submit_label(:edit), do: "Save loan"
+  defp generic_loan_form_submit_label(_mode), do: "Add loan"
+
   defp mortgage_saved_message(:edit), do: "Loan updated."
   defp mortgage_saved_message(_mode), do: "Mortgage added to Loan Center."
 
@@ -3947,9 +4598,9 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     }
   end
 
-  defp scenario_changeset(current_user, mortgages) do
+  defp scenario_changeset(current_user, mortgages, selected_generic_loan \\ nil) do
     current_user
-    |> base_scenario(mortgages)
+    |> base_scenario(mortgages, selected_generic_loan)
     |> Loans.change_refinance_scenario()
   end
 
@@ -3962,13 +4613,14 @@ defmodule MoneyTreeWeb.LoansLive.Index do
          },
          _current_user,
          _mortgages,
+         _selected_generic_loan,
          _params
        ) do
     scenario
   end
 
-  defp scenario_for_form(_socket, current_user, mortgages, params) do
-    base_scenario(current_user, mortgages, params)
+  defp scenario_for_form(_socket, current_user, mortgages, selected_generic_loan, params) do
+    base_scenario(current_user, mortgages, selected_generic_loan, params)
   end
 
   defp scenario_saved_message(:edit), do: "Refinance scenario updated."
@@ -3980,6 +4632,49 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp scenario_form_submit_label(:edit), do: "Save scenario"
   defp scenario_form_submit_label(_mode), do: "Save scenario"
 
+  defp reviewed_scenario_changeset(attrs) do
+    %RefinanceScenario{}
+    |> Loans.change_refinance_scenario(attrs)
+  end
+
+  defp auto_rate_observation_scenario_attrs(
+         %RateObservation{} = observation,
+         current_user,
+         %Loan{} = loan
+       ) do
+    source_type =
+      case observation.rate_source do
+        %RateSource{source_type: source_type} -> source_type
+        _source -> "rate_observation"
+      end
+
+    %{
+      "user_id" => current_user.id,
+      "loan_id" => loan.id,
+      "name" => auto_rate_observation_scenario_name(observation),
+      "scenario_type" => "rate_observation",
+      "product_type" => observation.product_type || "fixed",
+      "new_term_months" => observation.term_months || default_scenario_term_months(loan),
+      "new_interest_rate" => observation.rate,
+      "new_apr" => observation.apr,
+      "new_principal_amount" => loan.current_balance,
+      "points" => observation.points,
+      "credit_score_band" => nil,
+      "rate_source_type" => source_type,
+      "status" => "draft"
+    }
+  end
+
+  defp auto_rate_observation_scenario_name(%RateObservation{} = observation) do
+    rate =
+      observation.rate
+      |> Decimal.mult(Decimal.new("100"))
+      |> Decimal.round(2)
+      |> Decimal.to_string(:normal)
+
+    "#{observation.term_months}-month auto benchmark at #{rate}%"
+  end
+
   defp rate_observation_changeset(attrs \\ %{}) do
     %RateObservation{
       loan_type: "mortgage",
@@ -3989,6 +4684,24 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       raw_payload: %{}
     }
     |> Loans.change_rate_observation(attrs)
+  end
+
+  defp credit_score_band_options do
+    [
+      {"Not specified", ""},
+      {"Superprime / excellent", "superprime"},
+      {"Prime / good", "prime"},
+      {"Nonprime / fair", "nonprime"},
+      {"Subprime", "subprime"},
+      {"Deep subprime", "deep_subprime"}
+    ]
+  end
+
+  defp credit_score_band_label(value) do
+    credit_score_band_options()
+    |> Enum.find_value(format_label(value), fn {label, option_value} ->
+      if option_value == value, do: label
+    end)
   end
 
   defp normalize_rate_observation_rate_params(params) do
@@ -4026,7 +4739,24 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     |> Enum.reject(&(&1.source_type == "manual"))
   end
 
-  defp base_scenario(current_user, mortgages, attrs \\ %{}) do
+  defp base_scenario(current_user, mortgages, selected_generic_loan) do
+    base_scenario(current_user, mortgages, selected_generic_loan, %{})
+  end
+
+  defp base_scenario(current_user, _mortgages, %Loan{} = loan, _attrs) do
+    %RefinanceScenario{
+      user_id: current_user.id,
+      loan_id: loan.id,
+      scenario_type: "manual",
+      product_type: "fixed",
+      new_term_months: default_scenario_term_months(loan),
+      new_interest_rate: loan.current_interest_rate,
+      new_principal_amount: loan.current_balance,
+      status: "draft"
+    }
+  end
+
+  defp base_scenario(current_user, mortgages, _selected_generic_loan, attrs) do
     mortgage = mortgage_for_scenario_defaults(mortgages, attrs)
 
     %RefinanceScenario{
@@ -4054,6 +4784,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
        when is_integer(months) and months > 0,
        do: months
 
+  defp default_scenario_term_months(%Loan{remaining_term_months: months})
+       when is_integer(months) and months > 0,
+       do: months
+
   defp default_scenario_term_months(_mortgage), do: 360
 
   defp mortgage_rate(%Mortgage{current_interest_rate: rate}), do: rate
@@ -4061,6 +4795,63 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp mortgage_balance(%Mortgage{current_balance: balance}), do: balance
   defp mortgage_balance(_mortgage), do: nil
+
+  defp mortgage_state_code(%Mortgage{state_region: state_region}),
+    do: normalize_state_code(state_region)
+
+  defp mortgage_state_code(_mortgage), do: nil
+
+  defp loan_state_code(%Loan{state_region: state_region}), do: normalize_state_code(state_region)
+  defp loan_state_code(_loan), do: nil
+
+  defp mortgage_county_or_parish(%Mortgage{county_or_parish: county_or_parish}) do
+    normalize_county_or_parish(county_or_parish)
+  end
+
+  defp mortgage_county_or_parish(_mortgage), do: nil
+
+  defp normalize_state_code(nil), do: nil
+
+  defp normalize_state_code(value) when is_binary(value) do
+    case value |> String.trim() |> String.upcase() do
+      "" -> nil
+      "LOUISIANA" -> "LA"
+      state when byte_size(state) == 2 -> state
+      _state -> nil
+    end
+  end
+
+  defp normalize_state_code(_value), do: nil
+
+  defp normalize_county_or_parish(nil), do: nil
+
+  defp normalize_county_or_parish(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> case do
+      "" ->
+        nil
+
+      parish ->
+        parish
+        |> String.replace(~r/\s+parish$/i, "")
+        |> String.trim()
+        |> titleize_county_or_parish()
+        |> known_louisiana_parish_name()
+    end
+  end
+
+  defp normalize_county_or_parish(_value), do: nil
+
+  defp titleize_county_or_parish(value) do
+    value
+    |> String.split(~r/\s+/, trim: true)
+    |> Enum.map(&String.capitalize/1)
+    |> Enum.join(" ")
+  end
+
+  defp known_louisiana_parish_name("St. John The Baptist"), do: "St. John the Baptist"
+  defp known_louisiana_parish_name(value), do: value
 
   defp scenario_rows(current_user, mortgages) do
     Enum.flat_map(mortgages, fn mortgage ->
@@ -4070,7 +4861,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         true_refinance_cost = sum_fee_items(scenario.fee_items, :true_cost)
         cash_to_close_timing_cost = sum_fee_items(scenario.fee_items, :timing_cost)
         fee_status = Loans.fee_assumption_status(scenario)
-        fee_prediction = scenario_fee_prediction(scenario)
+        fee_prediction = scenario_fee_prediction(scenario, mortgage)
 
         analysis =
           scenario_analysis(mortgage, scenario, true_refinance_cost, cash_to_close_timing_cost)
@@ -4095,8 +4886,70 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end)
   end
 
-  defp scenario_fee_prediction(scenario) do
-    case Loans.predict_loan_fee_range(scenario) do
+  defp scenario_rows(current_user, _mortgages, %Loan{} = loan, :refinance) do
+    current_user
+    |> Loans.list_loan_refinance_scenarios(loan)
+    |> Enum.map(fn scenario ->
+      true_refinance_cost = sum_fee_items(scenario.fee_items, :true_cost)
+      cash_to_close_timing_cost = sum_fee_items(scenario.fee_items, :timing_cost)
+      fee_status = Loans.fee_assumption_status(scenario)
+      fee_prediction = scenario_fee_prediction(scenario, loan)
+
+      analysis =
+        RefinanceCalculator.analyze(%{
+          current_principal: loan.current_balance,
+          current_rate: loan.current_interest_rate,
+          current_remaining_term_months: loan.remaining_term_months,
+          current_monthly_payment: loan.monthly_payment_total,
+          new_principal: scenario.new_principal_amount,
+          new_rate: scenario.new_interest_rate,
+          new_term_months: scenario.new_term_months,
+          true_refinance_cost: true_refinance_cost,
+          cash_to_close_timing_cost: cash_to_close_timing_cost
+        })
+        |> Map.update!(
+          :warnings,
+          &Enum.uniq(
+            &1 ++
+              generic_loan_refinance_warnings(loan) ++
+              fee_status_warnings(fee_status, fee_prediction)
+          )
+        )
+
+      %{
+        loan: loan,
+        scenario: scenario,
+        fee_status: fee_status,
+        fee_prediction: fee_prediction,
+        true_refinance_cost: true_refinance_cost,
+        cash_to_close: Decimal.add(true_refinance_cost, cash_to_close_timing_cost),
+        analysis: analysis
+      }
+    end)
+  end
+
+  defp scenario_rows(current_user, mortgages, _selected_generic_loan, _live_action) do
+    scenario_rows(current_user, mortgages)
+  end
+
+  defp generic_loan_refinance_warnings(%Loan{} = loan) do
+    [
+      "This #{format_label(loan.loan_type)} loan scenario uses user-entered rate assumptions. External refinance offer rates are not available for this loan type yet."
+    ]
+  end
+
+  defp scenario_fee_prediction(scenario, %Loan{} = loan) do
+    case Loans.predict_loan_fee_range(scenario, state_code: loan_state_code(loan)) do
+      {:ok, prediction} -> prediction
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp scenario_fee_prediction(scenario, %Mortgage{} = mortgage) do
+    case Loans.predict_loan_fee_range(scenario,
+           state_code: mortgage_state_code(mortgage),
+           county_or_parish: mortgage_county_or_parish(mortgage)
+         ) do
       {:ok, prediction} -> prediction
       {:error, _reason} -> nil
     end
@@ -4185,14 +5038,32 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end
   end
 
-  defp analysis_history_rows(current_user, mortgages) do
+  defp analysis_history_rows(current_user, mortgages, selected_generic_loan, live_action)
+
+  defp analysis_history_rows(current_user, _mortgages, %Loan{} = loan, :refinance) do
+    scenario_names =
+      current_user
+      |> scenario_rows([], loan, :refinance)
+      |> Map.new(fn row -> {row.scenario.id, row.scenario.name} end)
+
+    current_user
+    |> Loans.list_refinance_analysis_results(loan_id: loan.id, limit: 10)
+    |> Enum.map(fn result ->
+      %{
+        result: result,
+        scenario_name: Map.get(scenario_names, result.refinance_scenario_id, "Scenario")
+      }
+    end)
+  end
+
+  defp analysis_history_rows(current_user, mortgages, _selected_generic_loan, _live_action) do
     scenario_names =
       current_user
       |> scenario_rows(mortgages)
       |> Map.new(fn row -> {row.scenario.id, row.scenario.name} end)
 
     current_user
-    |> Loans.list_refinance_analysis_results(limit: 10)
+    |> Loans.list_refinance_analysis_results(mortgage_id: first_mortgage_id(mortgages), limit: 10)
     |> Enum.map(fn result ->
       %{
         result: result,
@@ -4222,6 +5093,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     EscrowPaymentDisplay.payment_range(range, mortgage, include_escrow?)
   end
 
+  defp display_payment_range(
+         %{analysis: %{payment_range: range}, loan: %Loan{}},
+         _include_escrow?
+       ) do
+    range
+  end
+
   defp display_savings_range(
          %{analysis: %{payment_range: range}, mortgage: mortgage},
          include_escrow?
@@ -4229,8 +5107,19 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     EscrowPaymentDisplay.monthly_savings_range(range, mortgage, include_escrow?)
   end
 
+  defp display_savings_range(
+         %{analysis: %{monthly_savings_range: range}, loan: %Loan{}},
+         _include_escrow?
+       ) do
+    range
+  end
+
   defp display_current_payment(%{mortgage: mortgage}, include_escrow?) do
     EscrowPaymentDisplay.current_payment(mortgage, include_escrow?)
+  end
+
+  defp display_current_payment(%{loan: %Loan{} = loan}, _include_escrow?) do
+    loan.monthly_payment_total
   end
 
   defp display_what_if_payment(_mortgage, nil, _include_escrow?), do: Decimal.new("0")
@@ -4281,25 +5170,26 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end
   end
 
-  defp fee_changeset(scenario_rows) do
+  defp fee_changeset(scenario_rows, loan_type \\ "mortgage") do
     scenario_rows
-    |> base_fee_item()
+    |> base_fee_item(%{}, loan_type)
     |> Loans.change_refinance_fee_item()
   end
 
   defp fee_item_for_form(
          %{assigns: %{fee_form_mode: :edit, editing_fee_item: %RefinanceFeeItem{} = fee_item}},
-         _params
+         _params,
+         _loan_type
        ) do
     fee_item
   end
 
-  defp fee_item_for_form(%{assigns: %{scenario_rows: scenario_rows}}, params) do
-    base_fee_item(scenario_rows, params)
+  defp fee_item_for_form(%{assigns: %{scenario_rows: scenario_rows}}, params, loan_type) do
+    base_fee_item(scenario_rows, params, loan_type)
   end
 
-  defp base_fee_item(scenario_rows, attrs \\ %{}) do
-    attrs = normalize_fee_item_params(attrs)
+  defp base_fee_item(scenario_rows, attrs, loan_type) do
+    attrs = normalize_fee_item_params(attrs, loan_type)
 
     %RefinanceFeeItem{
       refinance_scenario_id:
@@ -4317,11 +5207,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     }
   end
 
-  defp normalize_fee_item_params(params) do
+  defp normalize_fee_item_params(params, loan_type) do
     params = Map.new(params)
 
     params
-    |> selected_fee_type_from_params()
+    |> selected_fee_type_from_params(loan_type)
     |> case do
       nil ->
         params
@@ -4339,10 +5229,10 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end
   end
 
-  defp selected_fee_type_from_params(params) do
+  defp selected_fee_type_from_params(params, loan_type) do
     code = Map.get(params, "loan_fee_type_code") || Map.get(params, :loan_fee_type_code)
 
-    fee_types = refinance_fee_types()
+    fee_types = refinance_fee_types(loan_type)
 
     cond do
       is_binary(code) && code != "" -> Enum.find(fee_types, &(&1.code == code))
@@ -4410,6 +5300,14 @@ defmodule MoneyTreeWeb.LoansLive.Index do
       |> String.trim("-")
 
     "fee-group-#{scenario_id}-#{normalized}"
+  end
+
+  defp fee_group_container_class(expanded_fee_group_ids, scenario_id, label) do
+    if fee_group_expanded?(expanded_fee_group_ids, fee_group_dom_id(scenario_id, label)) do
+      "lg:col-span-3"
+    else
+      ""
+    end
   end
 
   defp fee_group_expanded?(expanded_fee_group_ids, group_id) do
@@ -4481,6 +5379,82 @@ defmodule MoneyTreeWeb.LoansLive.Index do
         }
       end)
     end)
+  end
+
+  defp document_next_step(%{document: document}) do
+    cond do
+      not stored_document?(document) ->
+        %{
+          label: "Metadata only",
+          description: "Upload a stored file or add extraction candidates manually.",
+          class:
+            "inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600"
+        }
+
+      document.status == "failed" ->
+        %{
+          label: "Extraction failed",
+          description: "Check the file or run extraction again when ready.",
+          class:
+            "inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800"
+        }
+
+      document.status == "queued" ->
+        %{
+          label: "Extraction queued",
+          description: "MoneyTree will create review-only candidate values from this document.",
+          class:
+            "inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+        }
+
+      document.status == "extracting" ->
+        %{
+          label: "Extracting",
+          description: "MoneyTree is reading the document and preparing review candidates.",
+          class:
+            "inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+        }
+
+      any_extraction_pending_review?(document.extractions) ->
+        %{
+          label: "Review extraction",
+          description: "Confirm or reject extracted values before applying them.",
+          class:
+            "inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
+        }
+
+      any_extraction_confirmed?(document.extractions) ->
+        %{
+          label: "Ready to apply",
+          description: "Apply confirmed values to a mortgage, quote, or scenario.",
+          class:
+            "inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800"
+        }
+
+      List.wrap(document.extractions) != [] ->
+        %{
+          label: "Review complete",
+          description: "Extraction candidates exist; review any remaining fields as needed.",
+          class:
+            "inline-flex rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600"
+        }
+
+      true ->
+        %{
+          label: "Needs extraction",
+          description: "Run extraction to create review-only candidate values.",
+          class:
+            "inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+        }
+    end
+  end
+
+  defp any_extraction_pending_review?(extractions) do
+    Enum.any?(List.wrap(extractions), &extraction_pending_review?/1)
+  end
+
+  defp any_extraction_confirmed?(extractions) do
+    Enum.any?(List.wrap(extractions), &extraction_confirmed?/1)
   end
 
   defp quote_changeset(current_user, mortgages) do
@@ -4878,19 +5852,33 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     _ -> %{}
   end
 
-  defp maybe_enqueue_uploaded_document_extraction(socket, current_user, document, attrs) do
+  defp maybe_enqueue_uploaded_document_extraction(current_user, document, attrs) do
     if uploaded_file_attrs?(attrs) do
       case Loans.enqueue_loan_document_extraction(current_user, document) do
         {:ok, _job} ->
-          :ok
+          :queued
 
         {:error, reason} ->
-          put_flash(socket, :error, "Document extraction could not be queued: #{inspect(reason)}")
-          :ok
+          {:error, reason}
       end
     else
-      :ok
+      :metadata_only
     end
+  end
+
+  defp document_save_flash_kind({:error, _reason}), do: :error
+  defp document_save_flash_kind(_result), do: :info
+
+  defp document_save_flash_message(:queued) do
+    "Loan document saved and extraction queued for review."
+  end
+
+  defp document_save_flash_message(:metadata_only) do
+    "Loan document metadata saved for review."
+  end
+
+  defp document_save_flash_message({:error, reason}) do
+    "Loan document saved, but extraction could not be queued: #{inspect(reason)}"
   end
 
   defp uploaded_file_attrs?(attrs) do
@@ -4966,24 +5954,31 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp mortgage_options(mortgages), do: Enum.map(mortgages, &{&1.property_name, &1.id})
 
+  defp loan_workspace_options(mortgages, generic_loans) do
+    mortgage_options(mortgages) ++
+      Enum.map(generic_loans, fn loan ->
+        {"#{loan.name} (#{format_label(loan.loan_type)})", loan.id}
+      end)
+  end
+
   defp scenario_options(scenario_rows) do
     Enum.map(scenario_rows, fn row -> {row.scenario.name, row.scenario.id} end)
   end
 
-  defp loan_fee_type_options do
-    refinance_fee_types()
+  defp loan_fee_type_options(loan_type) do
+    refinance_fee_types(loan_type)
     |> Enum.map(&{&1.display_name, &1.code})
   end
 
-  defp selected_fee_type_code(changeset) do
+  defp selected_fee_type_code(changeset, loan_type) do
     Ecto.Changeset.get_field(changeset, :code) ||
-      refinance_fee_types() |> List.first() |> then(&(&1 && &1.code))
+      refinance_fee_types(loan_type) |> List.first() |> then(&(&1 && &1.code))
   end
 
-  defp selected_fee_type_help(changeset) do
-    code = selected_fee_type_code(changeset)
+  defp selected_fee_type_help(changeset, loan_type) do
+    code = selected_fee_type_code(changeset, loan_type)
 
-    refinance_fee_types()
+    refinance_fee_types(loan_type)
     |> Enum.find(&(&1.code == code))
     |> case do
       nil ->
@@ -5000,9 +5995,23 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     end
   end
 
-  defp refinance_fee_types do
-    Loans.list_loan_fee_types(loan_type: "mortgage", transaction_type: "refinance", enabled: true)
+  defp refinance_fee_types(loan_type) do
+    Loans.list_loan_fee_types(loan_type: loan_type, transaction_type: "refinance", enabled: true)
   end
+
+  defp active_fee_loan_type(%{selected_generic_loan: %Loan{loan_type: loan_type}})
+       when is_binary(loan_type) and loan_type != "" do
+    loan_type
+  end
+
+  defp active_fee_loan_type(_assigns), do: "mortgage"
+
+  defp fee_form_loan_type(%Loan{loan_type: loan_type})
+       when is_binary(loan_type) and loan_type != "" do
+    loan_type
+  end
+
+  defp fee_form_loan_type(_selected_generic_loan), do: "mortgage"
 
   defp fee_item_kind_from_fee_type_label(%{is_offset: true}), do: "Credit or offset"
   defp fee_item_kind_from_fee_type_label(%{is_timing_cost: true}), do: "Cash timing item"
@@ -5093,6 +6102,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp stored_document?(_document), do: false
 
+  defp document_extraction_action_label(%LoanDocument{extractions: extractions})
+       when is_list(extractions) and extractions != [] do
+    "Re-run extraction"
+  end
+
+  defp document_extraction_action_label(_document), do: "Run extraction"
+
   defp first_mortgage_id([%Mortgage{id: id} | _]), do: id
   defp first_mortgage_id(_), do: nil
 
@@ -5105,12 +6121,25 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp first_quote_id([%{quote: %LenderQuote{id: id}} | _]), do: id
   defp first_quote_id(_), do: nil
 
+  defp workspace_title(:detail, %Loan{}), do: "Loan overview"
+  defp workspace_title(action, _selected_generic_loan), do: workspace_title(action)
+
   defp workspace_title(:detail), do: "Loan overview"
   defp workspace_title(:refinance), do: "Refinance analysis"
   defp workspace_title(:documents), do: "Documents"
   defp workspace_title(:quotes), do: "Lender quotes"
   defp workspace_title(:alerts), do: "Alerts"
   defp workspace_title(_), do: "Loan overview"
+
+  defp workspace_description(:detail, %Loan{}) do
+    "Review the generic loan baseline and refinance preview."
+  end
+
+  defp workspace_description(_action, %Loan{}) do
+    "Generic loan workspaces currently support overview and refinance preview only."
+  end
+
+  defp workspace_description(action, _selected_generic_loan), do: workspace_description(action)
 
   defp workspace_description(:refinance) do
     "Compare deterministic payment, break-even, and full-term cost outputs for this loan."
@@ -5192,6 +6221,61 @@ defmodule MoneyTreeWeb.LoansLive.Index do
 
   defp profile_label(_profile), do: "Generic national profile"
 
+  defp prediction_source_links(nil), do: []
+
+  defp prediction_source_links(prediction) do
+    profile_source =
+      case prediction.profile do
+        %{source_url: url, source_label: label} when is_binary(url) and url != "" ->
+          [%{url: url, label: source_label(label, "Profile source")}]
+
+        _profile ->
+          []
+      end
+
+    row_sources =
+      prediction.rows
+      |> List.wrap()
+      |> Enum.flat_map(fn row ->
+        case row.rule do
+          %{source_url: url, source_label: label} when is_binary(url) and url != "" ->
+            [%{url: url, label: source_label(label, row.fee_type.display_name)}]
+
+          _rule ->
+            []
+        end
+      end)
+
+    (profile_source ++ row_sources)
+    |> Enum.uniq_by(& &1.url)
+    |> Enum.take(4)
+  end
+
+  defp prediction_last_verified_at(nil), do: nil
+
+  defp prediction_last_verified_at(prediction) do
+    profile_verified_at =
+      case prediction.profile do
+        %{last_verified_at: %DateTime{} = verified_at} -> [verified_at]
+        _profile -> []
+      end
+
+    row_verified_at =
+      prediction.rows
+      |> List.wrap()
+      |> Enum.flat_map(fn
+        %{rule: %{last_verified_at: %DateTime{} = verified_at}} -> [verified_at]
+        _row -> []
+      end)
+
+    (profile_verified_at ++ row_verified_at)
+    |> Enum.sort(fn left, right -> DateTime.compare(left, right) != :gt end)
+    |> List.last()
+  end
+
+  defp source_label(label, _fallback) when is_binary(label) and label != "", do: label
+  defp source_label(_label, fallback), do: fallback
+
   defp fee_line_classification_label("below_expected_range"), do: "Below expected"
   defp fee_line_classification_label("within_expected_range"), do: "Acceptable"
   defp fee_line_classification_label("above_expected_range"), do: "High"
@@ -5239,7 +6323,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   defp market_rate_observation(snapshot, series_key) do
-    (snapshot.mortgage_rates ++ snapshot.baseline_rates)
+    (market_snapshot_primary_rates(snapshot) ++ Map.get(snapshot, :baseline_rates, []))
     |> Enum.find(&(&1.series_key == series_key))
   end
 
@@ -5257,11 +6341,8 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   defp market_trend_rows(snapshot) do
-    [
-      {"30-year mortgage", "mortgage30us"},
-      {"15-year mortgage", "mortgage15us"},
-      {"10-year Treasury", "gs10"}
-    ]
+    snapshot
+    |> market_trend_series()
     |> Enum.map(fn {label, series_key} ->
       %{
         label: label,
@@ -5297,7 +6378,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   defp market_snapshot_attribution(snapshot) do
-    (snapshot.mortgage_rates ++ snapshot.baseline_rates)
+    (market_snapshot_primary_rates(snapshot) ++ Map.get(snapshot, :baseline_rates, []))
     |> Enum.map(fn observation ->
       case observation.rate_source do
         %RateSource{attribution_label: label} when is_binary(label) and label != "" -> label
@@ -5314,11 +6395,31 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   defp market_snapshot_source_url(snapshot) do
-    (snapshot.mortgage_rates ++ snapshot.baseline_rates)
+    (market_snapshot_primary_rates(snapshot) ++ Map.get(snapshot, :baseline_rates, []))
     |> Enum.map(fn observation ->
       observation.source_url || rate_source_attribution_url(observation.rate_source)
     end)
     |> Enum.find(&present_string?/1)
+  end
+
+  defp market_snapshot_primary_rates(%{mortgage_rates: rates}) when is_list(rates), do: rates
+  defp market_snapshot_primary_rates(%{auto_rates: rates}) when is_list(rates), do: rates
+  defp market_snapshot_primary_rates(_snapshot), do: []
+
+  defp market_trend_series(%{auto_rates: _rates}) do
+    [
+      {"48-month new auto", "termcbauto48ns"},
+      {"60-month new auto", "riflpbcianm60nm"},
+      {"72-month new auto", "riflpbcianm72nm"}
+    ]
+  end
+
+  defp market_trend_series(_snapshot) do
+    [
+      {"30-year mortgage", "mortgage30us"},
+      {"15-year mortgage", "mortgage15us"},
+      {"10-year Treasury", "gs10"}
+    ]
   end
 
   defp rate_source_attribution_url(%RateSource{attribution_url: url}), do: url
@@ -5466,6 +6567,58 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   defp field_citations(_citations, _field), do: []
+
+  defp extraction_target_labels(%LoanDocumentExtraction{extracted_payload: payload}) do
+    payload
+    |> payload_fields()
+    |> Enum.map(fn {field, _value} -> extraction_field_target_label(field) end)
+    |> Kernel.++(scenario_target_labels(payload))
+    |> Enum.uniq()
+    |> case do
+      [] -> ["Review only"]
+      labels -> labels
+    end
+  end
+
+  defp scenario_target_labels(payload) when is_map(payload) and map_size(payload) > 0,
+    do: ["Scenario"]
+
+  defp scenario_target_labels(_payload), do: []
+
+  defp extraction_field_target_label(field) do
+    case to_string(field) do
+      field
+      when field in ~w(current_balance interest_rate current_interest_rate monthly_payment term_months remaining_term_months lender_name servicer_name loan_type property_name) ->
+        "Mortgage baseline"
+
+      field
+      when field in ~w(rate apr points lender_credit quote_date expiration_date lock_expiration lender_quote lender_name closing_costs) ->
+        "Lender quote"
+
+      field
+      when field in ~w(scenario_name new_interest_rate new_apr new_principal_amount new_term_months product_type closing_costs cash_to_close monthly_payment) ->
+        "Scenario"
+
+      field
+      when field in ~w(origination_fee appraisal_fee title_fee title_insurance recording_fee lender_credit prepaid_interest escrow_deposit property_tax_escrow homeowners_insurance closing_costs) ->
+        "Fee review"
+
+      _field ->
+        "Review only"
+    end
+  end
+
+  defp extraction_field_target_class(field) do
+    base = "rounded-full px-2 py-0.5 text-[11px] font-medium normal-case tracking-normal"
+
+    case extraction_field_target_label(field) do
+      "Mortgage baseline" -> "#{base} bg-emerald-100 text-emerald-800"
+      "Lender quote" -> "#{base} bg-blue-100 text-blue-800"
+      "Scenario" -> "#{base} bg-purple-100 text-purple-800"
+      "Fee review" -> "#{base} bg-amber-100 text-amber-800"
+      _label -> "#{base} bg-zinc-100 text-zinc-600"
+    end
+  end
 
   defp format_citation(%{"text" => text} = citation) when is_binary(text) do
     page = Map.get(citation, "page")

@@ -35,7 +35,7 @@ defmodule MoneyTree.Loans.FeePredictionEngine do
     total_closing = true_cost |> add_range(timing_cost) |> subtract_range(offsets)
     cash_to_close = total_closing
 
-    warnings = warnings(rows, profile, escrow_profile, county_or_parish)
+    warnings = warnings(rows, profile, escrow_profile, county_or_parish, scenario)
 
     %{
       total_closing_cost: total_closing,
@@ -46,7 +46,7 @@ defmodule MoneyTree.Loans.FeePredictionEngine do
       confidence_level: confidence_level(profile, rows),
       confidence_score: confidence_score(profile, rows),
       profile: profile,
-      fee_items: Enum.map(rows, &fee_item_attrs/1),
+      fee_items: Enum.map(rows, &fee_item_attrs(&1, scenario)),
       rows: rows,
       missing_fee_codes: missing_required_fee_codes(rows, fee_types),
       warnings: warnings
@@ -177,13 +177,17 @@ defmodule MoneyTree.Loans.FeePredictionEngine do
   end
 
   defp default_amount_range(
-         %{amount_calculation_method: "louisiana_title_insurance_refinance"},
+         %{amount_calculation_method: "louisiana_title_insurance_refinance"} = fee,
          scenario
        ) do
-    standard_premium = louisiana_lender_title_policy_premium(scenario.new_principal_amount)
-    reissue_premium = D.mult(standard_premium, D.new("0.40")) |> D.round(2)
+    if D.compare(scenario.new_principal_amount, D.new("250000.00")) == :gt do
+      default_amount_range(%{fee | amount_calculation_method: "percent_of_loan_amount"}, scenario)
+    else
+      standard_premium = louisiana_lender_title_policy_premium(scenario.new_principal_amount)
+      reissue_premium = D.mult(standard_premium, D.new("0.50")) |> D.round(2)
 
-    range(reissue_premium, reissue_premium, standard_premium)
+      range(reissue_premium, reissue_premium, standard_premium)
+    end
   end
 
   defp default_amount_range(_fee, _scenario), do: range(@zero, @zero, @zero)
@@ -205,38 +209,40 @@ defmodule MoneyTree.Loans.FeePredictionEngine do
   defp louisiana_title_premium_for_thousands(thousands) when thousands <= 0, do: @zero
 
   defp louisiana_title_premium_for_thousands(thousands) do
-    [
-      {12, "100.00"},
-      {50, "4.20"},
-      {100, "3.60"},
-      {500, "3.30"},
-      {1_000, "2.70"},
-      {2_000, "2.40"},
-      {5_000, "2.10"},
-      {10_000, "1.80"},
-      {15_000, "1.50"},
-      {:infinity, "1.20"}
-    ]
-    |> Enum.reduce_while({thousands, 0, @zero}, fn
-      {_limit, _rate}, {remaining, _previous_limit, total} when remaining <= 0 ->
-        {:halt, {remaining, nil, total}}
-
-      {:infinity, rate}, {remaining, _previous_limit, total} ->
-        {:halt, {0, nil, D.add(total, D.mult(D.new(remaining), D.new(rate)))}}
-
-      {limit, rate}, {remaining, previous_limit, total} ->
-        band_size = min(remaining, limit - previous_limit)
-        band_total = D.mult(D.new(band_size), D.new(rate))
-        {:cont, {remaining - band_size, limit, D.add(total, band_total)}}
-    end)
-    |> elem(2)
+    cond do
+      thousands <= 5 -> D.new("160.00")
+      thousands <= 10 -> D.new("220.00")
+      thousands <= 15 -> D.new("270.00")
+      thousands <= 20 -> D.new("320.00")
+      thousands <= 25 -> D.new("370.00")
+      thousands <= 30 -> D.new("420.00")
+      thousands <= 35 -> D.new("470.00")
+      thousands <= 40 -> D.new("520.00")
+      thousands <= 45 -> D.new("570.00")
+      thousands <= 50 -> D.new("620.00")
+      thousands <= 55 -> D.new("670.00")
+      thousands <= 60 -> D.new("720.00")
+      thousands <= 65 -> D.new("770.00")
+      thousands <= 70 -> D.new("820.00")
+      thousands <= 75 -> D.new("870.00")
+      thousands <= 80 -> D.new("920.00")
+      thousands <= 85 -> D.new("970.00")
+      thousands <= 90 -> D.new("1020.00")
+      thousands <= 95 -> D.new("1070.00")
+      thousands <= 100 -> D.new("1120.00")
+      true -> D.add(D.new("1120.00"), D.mult(D.new(thousands - 100), D.new("3.50")))
+    end
   end
 
-  defp fee_item_attrs(%{
-         fee_type: fee_type,
-         amount_range: amount_range,
-         confidence_level: confidence
-       }) do
+  defp fee_item_attrs(
+         %{
+           fee_type: fee_type,
+           amount_range: amount_range,
+           confidence_level: confidence,
+           rule: rule
+         },
+         scenario
+       ) do
     %{
       "category" => fee_type.code,
       "code" => fee_type.code,
@@ -251,9 +257,45 @@ defmodule MoneyTree.Loans.FeePredictionEngine do
       "is_prepaid_or_escrow" => fee_type.is_timing_cost,
       "required" => fee_type.is_required,
       "sort_order" => fee_type.sort_order,
-      "notes" => "Generated #{confidence} confidence MoneyTree estimate. Editable by the user."
+      "notes" => fee_item_notes(confidence, rule, fee_type, scenario)
     }
   end
+
+  defp fee_item_notes(confidence, rule, fee_type, scenario) do
+    [
+      "Generated #{confidence} confidence MoneyTree estimate. Editable by the user.",
+      source_note(rule),
+      verification_note(rule),
+      title_fallback_note(fee_type, scenario)
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" ")
+  end
+
+  defp source_note(%{source_label: label, source_url: url})
+       when is_binary(label) and label != "" and is_binary(url) and url != "" do
+    "Source: #{label} (#{url})."
+  end
+
+  defp source_note(%{source_label: label}) when is_binary(label) and label != "" do
+    "Source: #{label}."
+  end
+
+  defp source_note(_rule), do: nil
+
+  defp verification_note(%{last_verified_at: %DateTime{} = verified_at}) do
+    "Last verified #{Calendar.strftime(verified_at, "%Y-%m-%d")}."
+  end
+
+  defp verification_note(_rule), do: nil
+
+  defp title_fallback_note(%LoanFeeType{code: "title_insurance_lender_policy"}, scenario) do
+    if louisiana_title_fallback?(scenario) do
+      "MoneyTree used a percentage fallback because the represented Louisiana filed-rate table currently stops at $250,000."
+    end
+  end
+
+  defp title_fallback_note(_fee_type, _scenario), do: nil
 
   defp fee_item_kind(%LoanFeeType{is_offset: true, code: "old_escrow_refund"}),
     do: "escrow_refund"
@@ -271,39 +313,54 @@ defmodule MoneyTree.Loans.FeePredictionEngine do
     |> Enum.map(& &1.code)
   end
 
-  defp warnings(rows, profile, escrow_profile, county_or_parish) do
+  defp warnings(rows, profile, escrow_profile, county_or_parish, scenario) do
     []
     |> maybe_add(profile == nil, "Using generic national fee assumptions.")
     |> maybe_add(
       profile && profile.confidence_level in ["very_low", "low"],
       "Modeled fee range has low confidence."
     )
-    |> maybe_add(escrow_profile == nil, "Escrow and prepaid timing data is incomplete.")
+    |> maybe_add(
+      mortgage_profile?(profile) && escrow_profile == nil,
+      "Escrow and prepaid timing data is incomplete."
+    )
     |> maybe_add(
       Enum.any?(rows, & &1.requires_local_verification),
       "Some state or local fee assumptions require verification."
     )
     |> maybe_add(
-      louisiana_profile?(profile) && is_nil(county_or_parish),
+      louisiana_mortgage_profile?(profile) && is_nil(county_or_parish),
       "Louisiana recording and local tax assumptions can vary by parish. MoneyTree is using a statewide estimate until the parish is known."
     )
     |> maybe_add(
-      louisiana_profile?(profile) && profile.county_or_parish == "Orleans",
+      louisiana_mortgage_profile?(profile) && profile.county_or_parish == "Orleans",
       "Orleans Parish documentary transaction tax has been included because the property is located in Orleans Parish."
     )
     |> maybe_add(
-      louisiana_profile?(profile) && county_or_parish not in [nil, "Orleans"] &&
+      louisiana_mortgage_profile?(profile) && county_or_parish not in [nil, "Orleans"] &&
         profile.confidence_level != "high",
       "Parish-specific recording fees should be verified."
     )
     |> maybe_add(
-      louisiana_profile?(profile) &&
+      louisiana_mortgage_profile?(profile) &&
         Enum.any?(rows, &(&1.fee_type.code == "title_insurance_lender_policy")),
       "Louisiana title insurance is modeled from the reported filed-rate tiers. Confirm refinance/reissue eligibility with the lender or title company."
     )
     |> maybe_add(
-      louisiana_profile?(profile),
+      louisiana_mortgage_profile?(profile) && louisiana_title_fallback?(scenario),
+      "Louisiana title insurance is using a percentage fallback because the verified filed-rate table is only represented through $250,000 in MoneyTree."
+    )
+    |> maybe_add(
+      louisiana_mortgage_profile?(profile),
       "MoneyTree did not apply a statewide percentage-based Louisiana mortgage tax. Parish-specific taxes or transaction fees may still apply."
+    )
+    |> maybe_add(
+      louisiana_auto_profile?(profile),
+      "Louisiana title/lien fees are estimated from OMV-published fees. Lender fees, GAP refunds, warranty refunds, and prepayment charges depend on your contract and final lender offer."
+    )
+    |> maybe_add(
+      auto_profile?(profile) and not louisiana_auto_profile?(profile),
+      "State title/lien fees are not modeled until the vehicle state is known. Add a state or enter lender/title fees manually."
     )
     |> Enum.reverse()
   end
@@ -313,6 +370,28 @@ defmodule MoneyTree.Loans.FeePredictionEngine do
 
   defp louisiana_profile?(%LoanFeeJurisdictionProfile{state_code: "LA"}), do: true
   defp louisiana_profile?(_profile), do: false
+
+  defp mortgage_profile?(%LoanFeeJurisdictionProfile{loan_type: "mortgage"}), do: true
+  defp mortgage_profile?(_profile), do: false
+
+  defp auto_profile?(%LoanFeeJurisdictionProfile{loan_type: "auto"}), do: true
+  defp auto_profile?(_profile), do: false
+
+  defp louisiana_mortgage_profile?(%LoanFeeJurisdictionProfile{} = profile) do
+    louisiana_profile?(profile) && mortgage_profile?(profile)
+  end
+
+  defp louisiana_mortgage_profile?(_profile), do: false
+
+  defp louisiana_auto_profile?(%LoanFeeJurisdictionProfile{} = profile) do
+    louisiana_profile?(profile) && auto_profile?(profile)
+  end
+
+  defp louisiana_auto_profile?(_profile), do: false
+
+  defp louisiana_title_fallback?(%RefinanceScenario{new_principal_amount: amount}) do
+    D.compare(amount || @zero, D.new("250000.00")) == :gt
+  end
 
   defp confidence_level(%LoanFeeJurisdictionProfile{confidence_level: level}, _rows), do: level
   defp confidence_level(_profile, _rows), do: "low"

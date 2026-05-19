@@ -1,12 +1,57 @@
 defmodule MoneyTree.Loans.LoanFeeDefaults do
   @moduledoc false
 
+  @verified_at ~U[2026-05-10 00:00:00Z]
+
+  @source_urls %{
+    st_charles: "https://www.deeds.com/recorder/louisiana/saint-charles/",
+    jefferson: "https://www.deeds.com/recorder/louisiana/jefferson/",
+    orleans: "https://www.orleanscivilclerk.com/images/Land%20Records%20Fee%20Sheet.pdf",
+    st_john: "https://www.deeds.com/recorder/louisiana/st-john-the-baptist/",
+    st_tammany: "https://www.deeds.com/recorder/louisiana/saint-tammany/",
+    east_baton_rouge:
+      "https://static1.squarespace.com/static/666af37e5bc38966393081e0/t/667ac889f12d8660ab339aa8/1719322761497/22_Recording+Fee+Schedule+8_2017.pdf",
+    latisso:
+      "https://www.virtualunderwriter.com/-/media/files/virtualunderwriter/imported/pdfs/latisso-rate-forms-manualeffective-8-1-2024.pdf",
+    louisiana_omv_fees:
+      "https://www.expresslane.org/vehicles/vehicle-registration-title-plate-fees/",
+    louisiana_elt: "https://expresslane.dps.louisiana.gov/pta_elt/pta_elt.aspx",
+    louisiana_prepayment: "https://www.legis.la.gov/legis/Law.aspx?d=106289",
+    cfpb_gap:
+      "https://www.consumerfinance.gov/ask-cfpb/what-is-guaranteed-asset-protection-gap-insurance-en-797/"
+  }
+
   def fee_types do
     mortgage_refinance_fee_types() ++ generic_loan_fee_types()
   end
 
   def jurisdiction_profiles do
     base_profiles = [
+      %{
+        country_code: "US",
+        loan_type: "auto",
+        transaction_type: "refinance",
+        confidence_level: "low",
+        confidence_score: "0.3500",
+        source_label: "MoneyTree generic auto refinance model",
+        notes:
+          "Generic auto refinance assumptions. State title/lien fees require a state-specific profile.",
+        enabled: true
+      },
+      %{
+        country_code: "US",
+        state_code: "LA",
+        loan_type: "auto",
+        transaction_type: "refinance",
+        confidence_level: "moderate",
+        confidence_score: "0.5500",
+        source_label: "Louisiana OMV auto refinance fee research",
+        source_url: @source_urls.louisiana_omv_fees,
+        last_verified_at: @verified_at,
+        notes:
+          "Louisiana auto refinance v1 profile. Models likely title/lien work from OMV-published fees; lender fees, GAP refunds, warranty refunds, and prepayment charges depend on the contract and final lender offer.",
+        enabled: true
+      },
       %{
         country_code: "US",
         loan_type: "mortgage",
@@ -25,6 +70,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
         confidence_level: "moderate",
         confidence_score: "0.5500",
         source_label: "Louisiana v1 statewide fee verification",
+        source_url: @source_urls.latisso,
+        last_verified_at: @verified_at,
         notes:
           "Louisiana v1 statewide profile. Uses statewide recorder fee schedule and generic title/settlement assumptions. Parish-specific fees still required.",
         enabled: true
@@ -38,6 +85,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
         confidence_level: "high",
         confidence_score: "0.7500",
         source_label: "Orleans Parish documentary transaction tax verification",
+        source_url: @source_urls.orleans,
+        last_verified_at: @verified_at,
         notes:
           "Orleans Parish v1 profile. Uses official Orleans land-record fee schedules checked May 2026 and includes the Orleans documentary transaction tax for normal residential refinance amounts over $9,000.",
         enabled: true
@@ -56,8 +105,10 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          amount_calculation_method: "louisiana_title_insurance_refinance",
          requires_local_verification: true,
          source_label: "Louisiana title insurance rate manual",
+         source_url: @source_urls.latisso,
+         last_verified_at: @verified_at,
          notes:
-           "Louisiana lender title policy estimate uses the filed title-rate tier schedule reported effective August 2024. Low and expected assume the refinance/reissue credit; high uses the standard premium until prior title-policy eligibility is confirmed."
+           "Louisiana lender title policy estimate uses the filed title-rate tier schedule reported effective August 2024. Low and expected assume an eligible refinance/reissue credit; high uses the standard premium until prior title-policy eligibility is confirmed."
        }},
       {"US", "LA", "mortgage", "refinance", "recording_fee",
        %{
@@ -66,6 +117,7 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "305.00",
          requires_local_verification: true,
          source_label: "LA R.S. 13:844 + LCRAA/parish practice",
+         last_verified_at: @verified_at,
          notes:
            "Louisiana recording estimate uses statewide recorder fee tiers plus common LCRAA/parish practice. Parish-specific recording/tax check needed."
        }},
@@ -76,6 +128,7 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "105.00",
          requires_local_verification: true,
          source_label: "LA R.S. 13:844 + LCRAA/parish practice",
+         last_verified_at: @verified_at,
          notes:
            "Louisiana mortgage cancellation/release estimate. Modeled as likely payoff/release-related government recording cost."
        }},
@@ -94,6 +147,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "305.00",
          requires_local_verification: true,
          source_label: "St. Charles Parish Clerk fee schedule via deeds.com",
+         source_url: @source_urls.st_charles,
+         last_verified_at: @verified_at,
          notes:
            "St. Charles Parish recording schedule checked May 2026: $105 / $205 / $305 page-tier model, including standard LCRAA practice. Direct clerk verification is still recommended."
        }},
@@ -104,6 +159,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "305.00",
          requires_local_verification: true,
          source_label: "Jefferson Parish Clerk fee schedule via deeds.com",
+         source_url: @source_urls.jefferson,
+         last_verified_at: @verified_at,
          notes:
            "Jefferson Parish recording schedule checked May 2026: $105 / $205 / $305 page-tier model. Cancellation fee still needs direct clerk confirmation."
        }},
@@ -114,6 +171,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "305.00",
          requires_local_verification: true,
          source_label: "St. John the Baptist Parish Clerk fee schedule via deeds.com",
+         source_url: @source_urls.st_john,
+         last_verified_at: @verified_at,
          notes:
            "St. John the Baptist Parish recording schedule checked May 2026: $105 / $205 / $305 page-tier model."
        }},
@@ -124,6 +183,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "40.00",
          requires_local_verification: true,
          source_label: "St. John the Baptist Parish Clerk fee schedule via deeds.com",
+         source_url: @source_urls.st_john,
+         last_verified_at: @verified_at,
          notes:
            "St. John the Baptist cancellation with original note is reported at $15; high includes related cancellation/clear-lien certificate room."
        }},
@@ -134,6 +195,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "310.00",
          requires_local_verification: false,
          source_label: "St. Tammany Parish Clerk fee sheet",
+         source_url: @source_urls.st_tammany,
+         last_verified_at: @verified_at,
          notes:
            "St. Tammany Parish official fee sheet checked May 2026: $110 / $210 / $310 recording tiers, including LCRAA and parish council fees."
        }},
@@ -144,6 +207,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "60.00",
          requires_local_verification: false,
          source_label: "St. Tammany Parish Clerk fee sheet",
+         source_url: @source_urls.st_tammany,
+         last_verified_at: @verified_at,
          notes: "St. Tammany Parish single mortgage release reported at $60."
        }},
       {la_parish_profile("East Baton Rouge"), "recording_fee",
@@ -153,6 +218,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "335.00",
          requires_local_verification: false,
          source_label: "East Baton Rouge Clerk fee schedule",
+         source_url: @source_urls.east_baton_rouge,
+         last_verified_at: @verified_at,
          notes:
            "East Baton Rouge mortgage-recording schedule checked May 2026: $135 / $235 / $335 page-tier model including judicial building fund."
        }},
@@ -163,6 +230,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "85.00",
          requires_local_verification: false,
          source_label: "East Baton Rouge Clerk fee schedule",
+         source_url: @source_urls.east_baton_rouge,
+         last_verified_at: @verified_at,
          notes: "East Baton Rouge mortgage or lien cancellation reported at $85."
        }},
       {la_parish_profile("Orleans"), "recording_fee",
@@ -172,6 +241,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "330.00",
          requires_local_verification: false,
          source_label: "Orleans Civil District Court land records fee schedule",
+         source_url: @source_urls.orleans,
+         last_verified_at: @verified_at,
          notes:
            "Orleans Parish recording schedule checked May 2026: $100 / $200 / $300 recording tiers plus reported $30 building fund fee."
        }},
@@ -182,6 +253,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          fixed_high_amount: "60.00",
          requires_local_verification: false,
          source_label: "Orleans Civil District Court land records fee schedule",
+         source_url: @source_urls.orleans,
+         last_verified_at: @verified_at,
          notes:
            "Orleans Parish single-mortgage cancellation reported at $50, with lower original-note handling noted separately in the clerk schedule."
        }},
@@ -193,8 +266,77 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
          requires_local_verification: false,
          source_label:
            "Orleans Civil Clerk / Notarial Archives documentary transaction tax guidance",
+         source_url: @source_urls.orleans,
+         last_verified_at: @verified_at,
          notes:
            "Orleans Parish documentary transaction tax included for normal residential refinance amounts over $9,000."
+       }},
+      {"US", nil, "auto", "refinance", "lender_origination_or_admin_fee",
+       %{
+         fixed_low_amount: "0.00",
+         fixed_expected_amount: "0.00",
+         fixed_high_amount: "150.00",
+         requires_local_verification: false,
+         source_label: "Auto refinance lender fee research",
+         notes:
+           "Banks and credit unions often advertise no origination/application fees; some online lenders disclose fixed origination fees. Treat as lender-specific until a quote is entered."
+       }},
+      {"US", "LA", "auto", "refinance", "auto_title_fee",
+       %{
+         fixed_low_amount: "68.50",
+         fixed_expected_amount: "68.50",
+         fixed_high_amount: "68.50",
+         requires_local_verification: false,
+         source_label: "Louisiana OMV title fee schedule",
+         source_url: @source_urls.louisiana_omv_fees,
+         last_verified_at: @verified_at,
+         notes: "Louisiana OMV-published certificate of title fee."
+       }},
+      {"US", "LA", "auto", "refinance", "auto_lien_recording_fee",
+       %{
+         fixed_low_amount: "10.00",
+         fixed_expected_amount: "10.00",
+         fixed_high_amount: "15.00",
+         requires_local_verification: false,
+         source_label: "Louisiana OMV lien recordation fee schedule",
+         source_url: @source_urls.louisiana_omv_fees,
+         last_verified_at: @verified_at,
+         notes:
+           "Louisiana lien recordation modeled as $10 low/expected and $15 high for UCC/lien variation."
+       }},
+      {"US", "LA", "auto", "refinance", "auto_title_handling_fee",
+       %{
+         fixed_low_amount: "8.00",
+         fixed_expected_amount: "8.00",
+         fixed_high_amount: "8.00",
+         requires_local_verification: false,
+         source_label: "Louisiana OMV handling fee schedule",
+         source_url: @source_urls.louisiana_omv_fees,
+         last_verified_at: @verified_at,
+         notes: "Louisiana OMV-published handling fee."
+       }},
+      {"US", "LA", "auto", "refinance", "auto_local_fee",
+       %{
+         fixed_low_amount: "0.00",
+         fixed_expected_amount: "0.00",
+         fixed_high_amount: "6.00",
+         requires_local_verification: true,
+         source_label: "Louisiana OMV local fee guidance",
+         source_url: @source_urls.louisiana_omv_fees,
+         last_verified_at: @verified_at,
+         notes: "Louisiana local fees may apply up to the researched maximum."
+       }},
+      {"US", "LA", "auto", "refinance", "auto_prepayment_charge",
+       %{
+         fixed_low_amount: "0.00",
+         fixed_expected_amount: "0.00",
+         fixed_high_amount: "25.00",
+         requires_local_verification: false,
+         source_label: "Louisiana motor vehicle credit prepayment rule",
+         source_url: @source_urls.louisiana_prepayment,
+         last_verified_at: @verified_at,
+         notes:
+           "Louisiana simple-interest motor vehicle credit transactions may include a contract prepayment charge; MoneyTree models $0 expected and $25 high pending contract review."
        }}
     ]
   end
@@ -388,18 +530,18 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
 
   defp louisiana_parish_profile_shells do
     [
-      {"St. Charles", "moderate", "0.5500",
+      {"St. Charles", "moderate", "0.5500", @source_urls.st_charles,
        "St. Charles Parish profile. Uses parish recording fee schedule checked May 2026 through aggregated clerk data; direct clerk verification is still recommended."},
-      {"Jefferson", "moderate", "0.5500",
+      {"Jefferson", "moderate", "0.5500", @source_urls.jefferson,
        "Jefferson Parish profile. Uses parish recording and mortgage-certificate schedule checked May 2026 through published clerk data; cancellation fee still needs direct confirmation."},
-      {"St. John the Baptist", "moderate", "0.5500",
+      {"St. John the Baptist", "moderate", "0.5500", @source_urls.st_john,
        "St. John the Baptist Parish profile. Uses parish recording, mortgage-certificate, and cancellation schedule checked May 2026 through published clerk data."},
-      {"St. Tammany", "high", "0.7000",
+      {"St. Tammany", "high", "0.7000", @source_urls.st_tammany,
        "St. Tammany Parish profile. Uses official clerk fee sheet checked May 2026, including parish council recording fee."},
-      {"East Baton Rouge", "high", "0.7000",
+      {"East Baton Rouge", "high", "0.7000", @source_urls.east_baton_rouge,
        "East Baton Rouge Parish profile. Uses official clerk fee schedule checked May 2026, including judicial building fund."}
     ]
-    |> Enum.map(fn {parish, confidence_level, confidence_score, notes} ->
+    |> Enum.map(fn {parish, confidence_level, confidence_score, source_url, notes} ->
       %{
         country_code: "US",
         state_code: "LA",
@@ -409,6 +551,8 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
         confidence_level: confidence_level,
         confidence_score: confidence_score,
         source_label: "Louisiana parish recording fee research",
+        source_url: source_url,
+        last_verified_at: @verified_at,
         notes: notes,
         enabled: true
       }
@@ -427,25 +571,145 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
   end
 
   defp generic_loan_fee_types do
-    for {loan_type, sort_order} <- [{"auto", 1000}, {"personal", 1010}, {"student", 1020}] do
-      base(loan_type, "refinance")
-      |> Map.merge(%{
-        code: "generic_processing_fee",
-        display_name: "#{String.capitalize(loan_type)} processing fee",
-        aliases: ["processing fee", "administration fee"],
-        trid_section: "not_applicable",
-        tolerance_bucket: "unknown",
-        finance_charge_treatment: "unknown",
-        amount_calculation_method: "fixed_amount",
-        fixed_low_amount: "0.00",
-        fixed_expected_amount: "0.00",
-        fixed_high_amount: "250.00",
-        confidence_level: "very_low",
+    auto_refinance_fee_types() ++
+      for {loan_type, sort_order} <- [{"personal", 1010}, {"student", 1020}] do
+        base(loan_type, "refinance")
+        |> Map.merge(%{
+          code: "generic_processing_fee",
+          display_name: "#{String.capitalize(loan_type)} processing fee",
+          aliases: ["processing fee", "administration fee"],
+          trid_section: "not_applicable",
+          tolerance_bucket: "unknown",
+          finance_charge_treatment: "unknown",
+          amount_calculation_method: "fixed_amount",
+          fixed_low_amount: "0.00",
+          fixed_expected_amount: "0.00",
+          fixed_high_amount: "250.00",
+          confidence_level: "very_low",
+          is_required: false,
+          sort_order: sort_order,
+          notes: "Sparse low-confidence placeholder pending loan-type-specific research."
+        })
+      end
+  end
+
+  defp auto_refinance_fee_types do
+    [
+      fixed(
+        "generic_processing_fee",
+        "Auto processing fee",
+        ["processing fee", "administration fee"],
+        0,
+        0,
+        0,
+        990,
+        enabled: false,
+        notes: "Disabled placeholder superseded by auto-specific refinance fee assumptions."
+      ),
+      fixed(
+        "auto_title_fee",
+        "Vehicle title fee",
+        ["title fee", "vehicle title fee", "certificate of title"],
+        0,
+        0,
+        0,
+        1000,
+        is_required: true,
+        is_government_fee: true,
+        is_state_localized: true,
+        requires_local_verification: true,
+        confidence_level: "low"
+      ),
+      fixed(
+        "auto_lien_recording_fee",
+        "Vehicle lien recordation",
+        ["lien fee", "lien recording", "record lien", "lien recordation"],
+        0,
+        0,
+        0,
+        1010,
+        is_required: true,
+        is_government_fee: true,
+        is_state_localized: true,
+        requires_local_verification: true,
+        confidence_level: "low"
+      ),
+      fixed(
+        "auto_title_handling_fee",
+        "Title handling fee",
+        ["handling fee", "title handling"],
+        0,
+        0,
+        0,
+        1020,
+        is_required: true,
+        is_government_fee: true,
+        is_state_localized: true,
+        requires_local_verification: true,
+        confidence_level: "low"
+      ),
+      fixed(
+        "auto_local_fee",
+        "Local title/lien fee",
+        ["local fee", "local title fee", "local lien fee"],
+        0,
+        0,
+        0,
+        1030,
         is_required: false,
-        sort_order: sort_order,
-        notes: "Sparse low-confidence placeholder pending loan-type-specific research."
-      })
-    end
+        is_government_fee: true,
+        is_state_localized: true,
+        requires_local_verification: true,
+        confidence_level: "low"
+      ),
+      fixed(
+        "lender_origination_or_admin_fee",
+        "Lender origination/admin fee",
+        ["origination fee", "application fee", "admin fee", "administration fee"],
+        0,
+        0,
+        150,
+        1040,
+        is_required: false,
+        is_lender_controlled: true,
+        confidence_level: "low",
+        notes:
+          "Bank and credit-union refis are often advertised at $0; online lenders can disclose fixed origination/admin fees."
+      ),
+      fixed(
+        "auto_prepayment_charge",
+        "Possible prepayment charge",
+        ["prepayment penalty", "prepayment charge"],
+        0,
+        0,
+        25,
+        1050,
+        is_required: false,
+        is_lender_controlled: true,
+        confidence_level: "moderate",
+        notes:
+          "Contract-dependent. Do not assume charged unless the existing loan contract includes it."
+      ),
+      %{
+        code: "gap_warranty_refund_review",
+        display_name: "GAP/warranty refund review",
+        aliases: ["gap", "gap insurance", "service contract", "warranty", "vsc"],
+        amount_calculation_method: "manual_only",
+        is_true_cost: false,
+        is_timing_cost: false,
+        is_offset: true,
+        is_required: false,
+        is_optional: true,
+        confidence_level: "low",
+        sort_order: 1060,
+        source_label: "CFPB GAP refund guidance",
+        source_url: @source_urls.cfpb_gap,
+        last_verified_at: @verified_at,
+        notes:
+          "Optional add-on/refund review item. GAP, warranty, and service-contract refunds depend on the original contract and provider."
+      }
+    ]
+    |> Enum.map(&Map.merge(base("auto", "refinance"), &1))
   end
 
   defp base(loan_type, transaction_type) do
@@ -479,12 +743,18 @@ defmodule MoneyTree.Loans.LoanFeeDefaults do
       finance_charge_treatment: Keyword.get(opts, :finance_charge_treatment, "excluded"),
       is_required: Keyword.get(opts, :is_required, false),
       is_optional: Keyword.get(opts, :is_optional, false),
+      is_lender_controlled: Keyword.get(opts, :is_lender_controlled, false),
       is_third_party: Keyword.get(opts, :is_third_party, false),
       is_government_fee: Keyword.get(opts, :is_government_fee, false),
       is_state_localized: Keyword.get(opts, :is_state_localized, false),
       requires_local_verification: Keyword.get(opts, :requires_local_verification, false),
       confidence_level: Keyword.get(opts, :confidence_level, "low"),
-      sort_order: sort_order
+      source_label: Keyword.get(opts, :source_label),
+      source_url: Keyword.get(opts, :source_url),
+      last_verified_at: Keyword.get(opts, :last_verified_at),
+      enabled: Keyword.get(opts, :enabled, true),
+      sort_order: sort_order,
+      notes: Keyword.get(opts, :notes)
     }
   end
 

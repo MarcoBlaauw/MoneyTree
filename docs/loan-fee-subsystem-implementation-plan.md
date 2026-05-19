@@ -18,22 +18,60 @@ This plan builds on `docs/loan-fee-regulatory-research.md` and the existing Loan
 
 ## Implementation status
 
-Status as of May 11, 2026:
+Status as of May 18, 2026:
 
 | Area | Status | Notes |
 | --- | --- | --- |
 | Persistent fee configuration | Done for v1 | Added fee types, jurisdiction profiles, jurisdiction rules, and default seed helpers. |
 | Louisiana starter profile | Done for v1 | State-level Louisiana refinance overrides are available; Orleans, St. Charles, Jefferson, St. John the Baptist, St. Tammany, and East Baton Rouge parish profiles are seeded from the deep research report. |
-| Sparse non-mortgage shell | Done for v1 | Auto, personal, and student placeholder fee types exist with very-low confidence. |
+| Sparse non-mortgage shell | Done for v1 | Auto has Louisiana title/lien assumptions plus structured manual fee entry. Personal and student have intentionally sparse very-low-confidence placeholders until source-backed fee research is available. |
 | Prediction engine | Done for v1 | Computes low / expected / high ranges, true costs, timing costs, offsets, confidence, and warnings. |
 | Quote fee-line model | Done for v1 | Lender quote fee lines persist classification, confidence, required/review flags, and notes. |
 | Quote analyzer | Done for v1 | Maps labels to canonical fee types, classifies known/unknown/high/duplicate lines, and reports missing required fees. |
-| Loan Center integration | Partial | Refinance workspace shows prediction ranges, “Add common fees,” editable/removable fee items, grouped fee assumptions, manual quote fee-line entry, and quote fee review. Remaining UX refinement is mostly deeper quote review workflows and localized data expansion. |
+| Loan Center integration | Done for v1 | Refinance workspace shows prediction ranges, “Add common fees,” editable/removable structured fee items, grouped fee assumptions, manual quote fee-line entry, quote fee review, auto benchmark scenario review, and explicit sparse-state messaging for personal/student loans. Remaining work is deeper quote review workflows and localized data expansion. |
 | Credit score support | Metadata only | Fee types can be marked credit-score-sensitive, but no pricing adjustment is applied. |
 | Deferred future work | Pending | Parish source URL hardening, exact endorsement pricing, prediction snapshots, opportunity scoring, and enterprise providers remain out of v1. |
 
 Louisiana verification details are tracked in `docs/loan-fee-louisiana-verification-notes.md`.
 The deep research source report is tracked in `docs/deep-research-report.md`.
+The normalized parish-level Louisiana mortgage/title research is tracked in `docs/louisiana-mortgage-title-fees-parish-level.md`.
+The source-bearing PDF export is tracked in `docs/loan-fee-deep-research-sources.pdf`.
+
+## Non-Mortgage Fee Status And Research Needed
+
+Mortgage refinance is the first full fee consumer. Auto refinance now has a
+limited but usable fee consumer with Louisiana title/lien assumptions, reviewed
+benchmark scenarios, Add common fees, and structured manual fee items. Personal
+and student loan fee support remains intentionally sparse.
+
+Before MoneyTree should broaden auto refinance or other non-mortgage closing
+cost prediction, collect source-backed fee data by loan type and jurisdiction.
+
+For auto loans, collect:
+
+- State title/lien filing fees for adding or changing lienholders.
+- DMV/title transfer or duplicate title fees that can apply during refinance.
+- Electronic lien/title processing fees where applicable.
+- Typical lender origination, processing, administration, or documentation fees.
+- Whether fees differ for refinance versus purchase loans.
+- Whether fees differ by new/used vehicle, vehicle age, loan size, LTV, or credit band.
+- Whether prepayment penalties are legal/common and how payoff quote fees are handled.
+- GAP, warranty, or add-on product payoff/refund handling where documented.
+- Source URLs, last verified dates, geography, confidence level, and whether fees are required, optional, or lender-specific.
+
+For personal and student loans, collect:
+
+- Origination fee ranges and whether they are deducted from proceeds or added to principal.
+- Prepayment penalty rules or common absence of penalties.
+- Disbursement, refinance, consolidation, or servicing-transfer fees where applicable.
+- Credit-tier or borrower-profile assumptions when rates/fees vary materially.
+- Source URLs, last verified dates, confidence level, and provider limitations.
+
+Until broader research is complete, personal and student workspaces should keep
+using user-entered rate assumptions. Auto workspaces may show FRED new-auto
+benchmarks as review-first market context, not personalized refinance offers.
+Non-mortgage fee estimates should appear only where a generic or state-level
+fee profile exists, and should clearly label confidence and source limits.
 
 ## Core product principle
 

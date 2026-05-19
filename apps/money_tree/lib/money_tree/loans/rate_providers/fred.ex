@@ -28,6 +28,33 @@ defmodule MoneyTree.Loans.RateProviders.Fred do
       notes: "15-year fixed-rate mortgage national average"
     },
     %{
+      series_key: "TERMCBAUTO48NS",
+      loan_type: "auto",
+      product_type: "new_auto_commercial_bank",
+      term_months: 48,
+      rate_type: "average",
+      notes:
+        "Commercial bank new-auto 48-month finance rate average; not used-auto or refinance-specific"
+    },
+    %{
+      series_key: "RIFLPBCIANM60NM",
+      loan_type: "auto",
+      product_type: "new_auto_commercial_bank",
+      term_months: 60,
+      rate_type: "average",
+      notes:
+        "Commercial bank new-auto 60-month finance rate average; not used-auto or refinance-specific"
+    },
+    %{
+      series_key: "RIFLPBCIANM72NM",
+      loan_type: "auto",
+      product_type: "new_auto_commercial_bank",
+      term_months: 72,
+      rate_type: "average",
+      notes:
+        "Commercial bank new-auto 72-month finance rate average; not used-auto or refinance-specific"
+    },
+    %{
       series_key: "DPRIME",
       loan_type: "prime",
       product_type: "bank_prime",

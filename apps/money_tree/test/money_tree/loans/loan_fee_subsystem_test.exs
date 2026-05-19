@@ -43,21 +43,25 @@ defmodule MoneyTree.Loans.LoanFeeSubsystemTest do
                transaction_type: "refinance"
              )
 
-      for {parish, confidence} <- [
-            {"St. Charles", "moderate"},
-            {"Jefferson", "moderate"},
-            {"St. John the Baptist", "moderate"},
-            {"St. Tammany", "high"},
-            {"East Baton Rouge", "high"}
+      for {parish, confidence, source_host} <- [
+            {"St. Charles", "moderate", "deeds.com"},
+            {"Jefferson", "moderate", "deeds.com"},
+            {"St. John the Baptist", "moderate", "deeds.com"},
+            {"St. Tammany", "high", "deeds.com"},
+            {"East Baton Rouge", "high", "squarespace.com"}
           ] do
-        assert Repo.get_by(LoanFeeJurisdictionProfile,
-                 country_code: "US",
-                 state_code: "LA",
-                 county_or_parish: parish,
-                 loan_type: "mortgage",
-                 transaction_type: "refinance",
-                 confidence_level: confidence
-               )
+        profile =
+          Repo.get_by!(LoanFeeJurisdictionProfile,
+            country_code: "US",
+            state_code: "LA",
+            county_or_parish: parish,
+            loan_type: "mortgage",
+            transaction_type: "refinance",
+            confidence_level: confidence
+          )
+
+        assert profile.source_url =~ source_host
+        assert %DateTime{} = profile.last_verified_at
       end
     end
   end
@@ -186,12 +190,100 @@ defmodule MoneyTree.Loans.LoanFeeSubsystemTest do
 
       assert Enum.any?(prediction.rows, fn row ->
                row.fee_type.code == "title_insurance_lender_policy" &&
-                 D.equal?(row.amount_range.expected, D.new("1011.84")) &&
-                 D.equal?(row.amount_range.high, D.new("2529.60"))
+                 D.equal?(row.amount_range.expected, D.new("1600.00")) &&
+                 D.equal?(row.amount_range.high, D.new("3200.00"))
              end)
 
       assert "Modeled fee range has low confidence." not in prediction.warnings
       assert "Parish-specific recording fees should be verified." not in prediction.warnings
+
+      assert "Louisiana title insurance is using a percentage fallback because the verified filed-rate table is only represented through $250,000 in MoneyTree." in prediction.warnings
+    end
+
+    test "uses fixed Louisiana title insurance table through verified amount range" do
+      assert :ok = Loans.ensure_default_loan_fee_configuration()
+
+      user = user_fixture()
+
+      mortgage =
+        mortgage_fixture(user, %{
+          state_region: "LA",
+          county_or_parish: "Orleans Parish",
+          current_balance: "200000.00"
+        })
+
+      {:ok, scenario} =
+        Loans.create_refinance_scenario(user, mortgage, %{
+          name: "Orleans table refinance",
+          product_type: "fixed",
+          new_term_months: 360,
+          new_interest_rate: "0.0600",
+          new_principal_amount: "200000.00",
+          status: "draft"
+        })
+
+      assert {:ok, prediction} = Loans.predict_loan_fee_range(scenario)
+
+      assert Enum.any?(prediction.rows, fn row ->
+               row.fee_type.code == "title_insurance_lender_policy" &&
+                 D.equal?(row.amount_range.expected, D.new("735.00")) &&
+                 D.equal?(row.amount_range.high, D.new("1470.00"))
+             end)
+
+      refute "Louisiana title insurance is using a percentage fallback because the verified filed-rate table is only represented through $250,000 in MoneyTree." in prediction.warnings
+    end
+
+    test "models Louisiana auto refinance title and lien assumptions" do
+      assert :ok = Loans.ensure_default_loan_fee_configuration()
+
+      user = user_fixture()
+
+      {:ok, loan} =
+        Loans.create_loan(user, %{
+          loan_type: "auto",
+          name: "Truck loan",
+          state_region: "LA",
+          current_balance: "25000.00",
+          current_interest_rate: "0.0799",
+          remaining_term_months: 50,
+          monthly_payment_total: "610.00"
+        })
+
+      {:ok, scenario} =
+        Loans.create_loan_refinance_scenario(user, loan, %{
+          name: "Auto refi",
+          product_type: "fixed",
+          new_term_months: 48,
+          new_interest_rate: "0.0599",
+          new_principal_amount: "25000.00",
+          status: "draft"
+        })
+
+      assert {:ok, prediction} = Loans.predict_loan_fee_range(scenario)
+
+      assert prediction.profile.loan_type == "auto"
+      assert prediction.profile.state_code == "LA"
+      assert D.equal?(prediction.true_cost.expected, D.new("86.50"))
+      assert D.equal?(prediction.true_cost.high, D.new("272.50"))
+
+      assert Enum.any?(prediction.rows, fn row ->
+               row.fee_type.code == "auto_title_fee" &&
+                 D.equal?(row.amount_range.expected, D.new("68.50"))
+             end)
+
+      assert Enum.any?(prediction.rows, fn row ->
+               row.fee_type.code == "auto_lien_recording_fee" &&
+                 D.equal?(row.amount_range.low, D.new("10.00")) &&
+                 D.equal?(row.amount_range.high, D.new("15.00"))
+             end)
+
+      assert Enum.any?(prediction.rows, fn row ->
+               row.fee_type.code == "auto_prepayment_charge" &&
+                 D.equal?(row.amount_range.expected, D.new("0.00")) &&
+                 D.equal?(row.amount_range.high, D.new("25.00"))
+             end)
+
+      assert "Louisiana title/lien fees are estimated from OMV-published fees. Lender fees, GAP refunds, warranty refunds, and prepayment charges depend on your contract and final lender offer." in prediction.warnings
     end
 
     test "adds editable generic refinance fee items without overwriting existing items" do
@@ -214,6 +306,15 @@ defmodule MoneyTree.Loans.LoanFeeSubsystemTest do
       assert Enum.any?(fee_items, &(&1.code == "origination_fee"))
       assert Enum.any?(fee_items, & &1.is_true_cost)
       assert Enum.any?(fee_items, & &1.is_prepaid_or_escrow)
+
+      assert Enum.any?(fee_items, fn item ->
+               item.code == "title_insurance_lender_policy" &&
+                 item.notes =~ "Louisiana title insurance rate manual" &&
+                 item.notes =~ "virtualunderwriter.com" &&
+                 item.notes =~ "Last verified 2026-05-10" &&
+                 item.notes =~
+                   "MoneyTree used a percentage fallback because the represented Louisiana filed-rate table currently stops at $250,000."
+             end)
 
       assert {:error, :fee_items_exist} = Loans.create_generic_refinance_fee_items(user, scenario)
     end

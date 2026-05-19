@@ -62,7 +62,7 @@ defmodule MoneyTree.Loans do
           last_payment_masked: String.t()
         }
 
-  @default_refinance_preload [:mortgage, :fee_items]
+  @default_refinance_preload [:mortgage, :loan, :fee_items]
   @analysis_version "2026-05-06-v1"
   @rate_provider_modules [Fred, ManualImport, ApiNinjas, EconomicIndicators]
   @readable_document_content_types ~w(text/plain text/markdown text/csv application/pdf image/png image/jpeg)
@@ -179,6 +179,25 @@ defmodule MoneyTree.Loans do
   end
 
   @doc """
+  Updates a generic non-mortgage loan baseline scoped to the current user.
+  """
+  @spec update_loan(User.t() | binary(), Loan.t() | binary(), map()) ::
+          {:ok, Loan.t()} | {:error, :not_found} | {:error, Ecto.Changeset.t()}
+  def update_loan(user, %Loan{} = loan, attrs) when is_map(attrs) do
+    with {:ok, scoped_loan} <- fetch_loan(user, loan) do
+      scoped_loan
+      |> Loan.changeset(normalize_attr_map(attrs))
+      |> Repo.update()
+    end
+  end
+
+  def update_loan(user, loan_id, attrs) when is_binary(loan_id) and is_map(attrs) do
+    with {:ok, loan} <- fetch_loan(user, loan_id) do
+      update_loan(user, loan, attrs)
+    end
+  end
+
+  @doc """
   Returns a generic loan changeset for forms and tests.
   """
   @spec change_loan(Loan.t(), map()) :: Ecto.Changeset.t()
@@ -237,6 +256,48 @@ defmodule MoneyTree.Loans do
       "new_interest_rate" => Decimal.to_string(loan.current_interest_rate, :normal),
       "new_principal_amount" => Decimal.to_string(loan.current_balance, :normal)
     }
+  end
+
+  @doc """
+  Lists persisted refinance scenarios for a generic non-mortgage loan.
+  """
+  @spec list_loan_refinance_scenarios(User.t() | binary(), Loan.t() | binary(), keyword()) :: [
+          RefinanceScenario.t()
+        ]
+  def list_loan_refinance_scenarios(user, loan_or_id, opts \\ []) do
+    loan_id = normalize_id(loan_or_id)
+    preload = Keyword.get(opts, :preload, @default_refinance_preload)
+
+    RefinanceScenario
+    |> where(
+      [scenario],
+      scenario.user_id == ^normalize_user_id(user) and scenario.loan_id == ^loan_id
+    )
+    |> order_by([scenario], desc: scenario.updated_at)
+    |> maybe_preload_query(preload)
+    |> Repo.all()
+  end
+
+  @doc """
+  Creates a persisted refinance scenario for a generic non-mortgage loan.
+  """
+  @spec create_loan_refinance_scenario(User.t() | binary(), Loan.t() | binary(), map(), keyword()) ::
+          {:ok, RefinanceScenario.t()} | {:error, Ecto.Changeset.t()} | {:error, :not_found}
+  def create_loan_refinance_scenario(user, loan_or_id, attrs, opts \\ []) when is_map(attrs) do
+    preload = Keyword.get(opts, :preload, @default_refinance_preload)
+
+    with {:ok, loan} <- fetch_loan(user, loan_or_id),
+         changeset <-
+           RefinanceScenario.changeset(
+             %RefinanceScenario{},
+             attrs
+             |> normalize_attr_map()
+             |> Map.put("user_id", normalize_user_id(user))
+             |> Map.put("loan_id", loan.id)
+           ),
+         {:ok, scenario} <- Repo.insert(changeset) do
+      {:ok, Repo.preload(scenario, preload)}
+    end
   end
 
   @doc """
@@ -311,10 +372,11 @@ defmodule MoneyTree.Loans do
   def predict_loan_fee_range(scenario_or_id, opts \\ [])
 
   def predict_loan_fee_range(%RefinanceScenario{} = scenario, opts) do
-    scenario = Repo.preload(scenario, mortgage: [:escrow_profile])
+    scenario = Repo.preload(scenario, loan: [], mortgage: [:escrow_profile])
+    loan_type = scenario_fee_loan_type(scenario)
 
     fee_types =
-      list_loan_fee_types(loan_type: "mortgage", transaction_type: "refinance", enabled: true)
+      list_loan_fee_types(loan_type: loan_type, transaction_type: "refinance", enabled: true)
 
     profile = fee_jurisdiction_profile_for_scenario(scenario, opts)
     rules = fee_jurisdiction_rules(profile)
@@ -333,7 +395,9 @@ defmodule MoneyTree.Loans do
     user = Keyword.fetch!(opts, :user)
 
     with {:ok, scenario} <-
-           fetch_refinance_scenario(user, scenario_id, preload: [:mortgage, :fee_items]) do
+           fetch_refinance_scenario(user, scenario_id,
+             preload: [:loan, mortgage: [:escrow_profile]]
+           ) do
       predict_loan_fee_range(scenario, opts)
     end
   end
@@ -351,7 +415,9 @@ defmodule MoneyTree.Loans do
   def create_generic_refinance_fee_items(user, scenario_or_id, opts \\ []) do
     with {:ok, scenario} <- fetch_scenario_for_child_write(user, scenario_or_id),
          {:ok, scenario} <-
-           fetch_refinance_scenario(user, scenario.id, preload: [:mortgage, :fee_items]),
+           fetch_refinance_scenario(user, scenario.id,
+             preload: [:loan, :fee_items, mortgage: [:escrow_profile]]
+           ),
          :ok <- ensure_no_existing_fee_items(scenario),
          {:ok, prediction} <- predict_loan_fee_range(scenario, opts) do
       prediction.fee_items
@@ -571,7 +637,7 @@ defmodule MoneyTree.Loans do
 
     if scenario.user_id == normalize_user_id(user) do
       scenario
-      |> RefinanceScenario.changeset(normalize_attr_map(attrs))
+      |> RefinanceScenario.changeset(normalize_refinance_scenario_update_attrs(attrs))
       |> Repo.update()
       |> case do
         {:ok, updated} -> {:ok, Repo.preload(updated, preload)}
@@ -848,18 +914,7 @@ defmodule MoneyTree.Loans do
       cash_to_close_timing_cost = sum_fee_items(scenario.fee_items, :timing_cost)
 
       analysis =
-        RefinanceCalculator.analyze(%{
-          current_principal: scenario.mortgage.current_balance,
-          current_rate: scenario.mortgage.current_interest_rate,
-          current_remaining_term_months: scenario.mortgage.remaining_term_months,
-          current_monthly_payment:
-            EscrowPaymentDisplay.principal_interest_payment(scenario.mortgage),
-          new_principal: scenario.new_principal_amount,
-          new_rate: scenario.new_interest_rate,
-          new_term_months: scenario.new_term_months,
-          true_refinance_cost: true_refinance_cost,
-          cash_to_close_timing_cost: cash_to_close_timing_cost
-        })
+        stored_scenario_analysis(scenario, true_refinance_cost, cash_to_close_timing_cost)
 
       attrs =
         analysis_result_attrs(
@@ -888,6 +943,7 @@ defmodule MoneyTree.Loans do
     RefinanceAnalysisResult
     |> where([result], result.user_id == ^normalize_user_id(user))
     |> maybe_filter_result_mortgage(opts)
+    |> maybe_filter_result_loan(opts)
     |> maybe_filter_result_scenario(opts)
     |> order_by([result], desc: result.computed_at)
     |> maybe_limit(limit)
@@ -1255,6 +1311,35 @@ defmodule MoneyTree.Loans do
   end
 
   @doc """
+  Returns an auto-loan-oriented market snapshot for Loan Center.
+
+  FRED auto series are commercial-bank new-auto averages. They provide market
+  context only and are not used-auto refinance offers.
+  """
+  @spec auto_market_snapshot(keyword()) :: map()
+  def auto_market_snapshot(opts \\ []) do
+    latest = latest_market_rates_for_loan_type("auto", opts)
+    series_keys = ["termcbauto48ns", "riflpbcianm60nm", "riflpbcianm72nm"]
+    direction = benchmark_rate_direction(series_keys: series_keys)
+
+    quality =
+      market_data_quality(latest,
+        direction: direction,
+        stale_after_days: Keyword.get(opts, :stale_after_days, 120)
+      )
+
+    %{
+      auto_rates: latest,
+      baseline_rates: [],
+      direction: direction,
+      quality: quality,
+      generated_at: DateTime.utc_now() |> DateTime.truncate(:second),
+      disclaimer:
+        "Auto benchmarks are commercial-bank new-auto averages, not used-auto refinance offers or personalized loan offers."
+    }
+  end
+
+  @doc """
   Returns market context for a refinance comparison.
   """
   @spec refinance_rate_context(Mortgage.t()) :: map()
@@ -1309,9 +1394,11 @@ defmodule MoneyTree.Loans do
       |> Enum.reject(&is_nil/1)
       |> Enum.max_by(&Date.to_gregorian_days/1, fn -> nil end)
 
+    stale_after_days = Keyword.get(opts, :stale_after_days, 14)
+
     stale? =
       case latest_effective_date do
-        %Date{} = date -> Date.diff(now, date) > 14
+        %Date{} = date -> Date.diff(now, date) > stale_after_days
         nil -> true
       end
 
@@ -1348,6 +1435,7 @@ defmodule MoneyTree.Loans do
     %{
       status: if(warnings == [], do: :ok, else: :warning),
       latest_effective_date: latest_effective_date,
+      stale_after_days: stale_after_days,
       stale?: stale?,
       warnings: Enum.reverse(warnings),
       incomplete_trend_windows: incomplete_trend_windows,
@@ -1756,9 +1844,23 @@ defmodule MoneyTree.Loans do
           {:ok, Oban.Job.t()} | {:error, :not_found} | {:error, term()}
   def enqueue_loan_document_extraction(user, document_or_id) do
     with {:ok, document} <- fetch_loan_document(user, document_or_id, preload: []) do
-      %{document_id: document.id, user_id: normalize_user_id(user)}
-      |> DocumentExtractionWorker.new()
-      |> Oban.insert()
+      case mark_loan_document_status(document, "queued") do
+        :ok ->
+          %{document_id: document.id, user_id: normalize_user_id(user)}
+          |> DocumentExtractionWorker.new()
+          |> Oban.insert()
+          |> case do
+            {:ok, job} ->
+              {:ok, job}
+
+            {:error, reason} ->
+              _ = mark_loan_document_status(document, "uploaded")
+              {:error, reason}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -3247,11 +3349,47 @@ defmodule MoneyTree.Loans do
   end
 
   defp fetch_scenario_for_analysis(user, %RefinanceScenario{} = scenario) do
-    fetch_refinance_scenario(user, scenario.id, preload: [:mortgage, :fee_items])
+    fetch_refinance_scenario(user, scenario.id, preload: [:mortgage, :loan, :fee_items])
   end
 
   defp fetch_scenario_for_analysis(user, scenario_id) do
-    fetch_refinance_scenario(user, scenario_id, preload: [:mortgage, :fee_items])
+    fetch_refinance_scenario(user, scenario_id, preload: [:mortgage, :loan, :fee_items])
+  end
+
+  defp stored_scenario_analysis(
+         %RefinanceScenario{mortgage: %Mortgage{} = mortgage} = scenario,
+         true_refinance_cost,
+         cash_to_close_timing_cost
+       ) do
+    RefinanceCalculator.analyze(%{
+      current_principal: mortgage.current_balance,
+      current_rate: mortgage.current_interest_rate,
+      current_remaining_term_months: mortgage.remaining_term_months,
+      current_monthly_payment: EscrowPaymentDisplay.principal_interest_payment(mortgage),
+      new_principal: scenario.new_principal_amount,
+      new_rate: scenario.new_interest_rate,
+      new_term_months: scenario.new_term_months,
+      true_refinance_cost: true_refinance_cost,
+      cash_to_close_timing_cost: cash_to_close_timing_cost
+    })
+  end
+
+  defp stored_scenario_analysis(
+         %RefinanceScenario{loan: %Loan{} = loan} = scenario,
+         true_refinance_cost,
+         cash_to_close_timing_cost
+       ) do
+    RefinanceCalculator.analyze(%{
+      current_principal: loan.current_balance,
+      current_rate: loan.current_interest_rate,
+      current_remaining_term_months: loan.remaining_term_months,
+      current_monthly_payment: loan.monthly_payment_total,
+      new_principal: scenario.new_principal_amount,
+      new_rate: scenario.new_interest_rate,
+      new_term_months: scenario.new_term_months,
+      true_refinance_cost: true_refinance_cost,
+      cash_to_close_timing_cost: cash_to_close_timing_cost
+    })
   end
 
   defp sum_fee_items(fee_items, :true_cost) do
@@ -3302,6 +3440,7 @@ defmodule MoneyTree.Loans do
     %{
       user_id: normalize_user_id(user),
       mortgage_id: scenario.mortgage_id,
+      loan_id: scenario.loan_id,
       refinance_scenario_id: scenario.id,
       analysis_version: @analysis_version,
       current_monthly_payment: analysis.current_monthly_payment,
@@ -3639,7 +3778,7 @@ defmodule MoneyTree.Loans do
       {profile_key, fee_code, attrs} = normalize_default_fee_rule(rule)
 
       with %LoanFeeJurisdictionProfile{} = profile <- default_fee_profile(profile_key),
-           %LoanFeeType{} = fee_type <- default_fee_type(fee_code) do
+           %LoanFeeType{} = fee_type <- default_fee_type(profile_key, fee_code) do
         attrs =
           attrs
           |> normalize_attr_map()
@@ -3707,10 +3846,10 @@ defmodule MoneyTree.Loans do
   defp profile_identity_filter(query, field, value),
     do: where(query, [profile], field(profile, ^field) == ^value)
 
-  defp default_fee_type(code) do
+  defp default_fee_type(%{loan_type: loan_type, transaction_type: transaction_type}, code) do
     Repo.get_by(LoanFeeType,
-      loan_type: "mortgage",
-      transaction_type: "refinance",
+      loan_type: loan_type,
+      transaction_type: transaction_type,
       code: code
     )
   end
@@ -3738,6 +3877,8 @@ defmodule MoneyTree.Loans do
   end
 
   defp fee_jurisdiction_profile_for_scenario(%RefinanceScenario{} = scenario, opts) do
+    loan_type = scenario_fee_loan_type(scenario)
+
     state_code =
       Keyword.get(opts, :state_code) ||
         scenario_state_code(scenario)
@@ -3750,7 +3891,7 @@ defmodule MoneyTree.Loans do
       LoanFeeJurisdictionProfile
       |> where([profile], profile.enabled == true)
       |> where([profile], profile.country_code == "US")
-      |> where([profile], profile.loan_type == "mortgage")
+      |> where([profile], profile.loan_type == ^loan_type)
       |> where([profile], profile.transaction_type == "refinance")
 
     parish_profile =
@@ -3779,7 +3920,17 @@ defmodule MoneyTree.Loans do
       |> Repo.one()
   end
 
+  defp scenario_fee_loan_type(%RefinanceScenario{loan: %Loan{loan_type: loan_type}})
+       when is_binary(loan_type),
+       do: loan_type
+
+  defp scenario_fee_loan_type(_scenario), do: "mortgage"
+
   defp scenario_state_code(%RefinanceScenario{mortgage: %Mortgage{state_region: state_region}}) do
+    normalize_state_code(state_region)
+  end
+
+  defp scenario_state_code(%RefinanceScenario{loan: %Loan{state_region: state_region}}) do
     normalize_state_code(state_region)
   end
 
@@ -3983,6 +4134,14 @@ defmodule MoneyTree.Loans do
     end
   end
 
+  defp maybe_filter_result_loan(query, opts) do
+    case Keyword.get(opts, :loan_id) do
+      nil -> query
+      %Loan{id: id} -> where(query, [result], result.loan_id == ^id)
+      id -> where(query, [result], result.loan_id == ^id)
+    end
+  end
+
   defp maybe_filter_result_scenario(query, opts) do
     case Keyword.get(opts, :refinance_scenario_id) do
       nil -> query
@@ -4089,6 +4248,12 @@ defmodule MoneyTree.Loans do
     |> Enum.reduce(%{}, fn {key, value}, acc ->
       Map.put(acc, normalize_key(key), value)
     end)
+  end
+
+  defp normalize_refinance_scenario_update_attrs(attrs) do
+    attrs
+    |> normalize_attr_map()
+    |> Map.drop(["user_id", "mortgage_id", "loan_id"])
   end
 
   defp stringify_keys(map) when is_map(map) do

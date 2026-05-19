@@ -45,5 +45,23 @@ defmodule MoneyTree.Loans.RateProviders.FredTest do
                  "observations" => [%{"date" => "2026-05-07", "value" => "."}]
                })
     end
+
+    test "normalizes FRED auto observations as context-only new-auto benchmarks" do
+      assert {:ok, [rate]} =
+               Fred.normalize_response("TERMCBAUTO48NS", %{
+                 "observations" => [
+                   %{"date" => "2026-02-01", "value" => "7.36", "realtime_start" => "2026-05-01"}
+                 ]
+               })
+
+      assert rate.series_key == "TERMCBAUTO48NS"
+      assert rate.loan_type == "auto"
+      assert rate.product_type == "new_auto_commercial_bank"
+      assert rate.term_months == 48
+      assert rate.effective_date == ~D[2026-02-01]
+      assert D.equal?(rate.rate, D.new("0.0736"))
+      assert rate.assumptions["not_personalized_offer"]
+      assert rate.notes =~ "not used-auto or refinance-specific"
+    end
   end
 end

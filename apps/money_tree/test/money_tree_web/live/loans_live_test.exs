@@ -50,6 +50,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     |> render_click()
 
     assert render(view) =~ "Import from document"
+    assert render(view) =~ "Create or open a loan workspace before importing documents"
 
     html =
       view
@@ -73,6 +74,34 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     assert [mortgage] = MoneyTree.Mortgages.list_mortgages(user)
     assert Decimal.equal?(mortgage.current_interest_rate, Decimal.new("0.0615"))
+  end
+
+  test "opens loan document import handoff from the add loan modal in a workspace", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    mortgage =
+      mortgage_fixture(user, %{
+        property_name: "Maple Residence",
+        current_balance: "350000.00",
+        remaining_term_months: 300
+      })
+
+    {:ok, view, _html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}")
+
+    view
+    |> element("button", "Add loan")
+    |> render_click()
+
+    assert render(view) =~ "Document import will extract and prefill loan details"
+
+    {:ok, _view, html} =
+      live(authed_conn, ~p"/app/loans/#{mortgage.id}/documents?new_document=true")
+
+    assert html =~ "Document review queue"
+    assert html =~ "Upload loan document"
+    assert html =~ "Advanced metadata"
+    assert html =~ "loan-document-form"
+    assert html =~ "Document file"
   end
 
   test "creates a non-mortgage auto loan baseline from Loan Center", %{conn: conn} do
@@ -102,7 +131,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
           "current_interest_rate_percent" => "7.99",
           "remaining_term_months" => "48",
           "monthly_payment_total" => "452.13",
-          "collateral_description" => "2023 hatchback"
+          "collateral_description" => "2023 hatchback",
+          "state_region" => "LA"
         }
       )
       |> render_submit()
@@ -114,12 +144,343 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Refinance preview"
     assert html =~ "Expected payment"
     assert html =~ "Full-term delta"
+    assert html =~ "Open workspace"
     refute html =~ "Escrow"
     refute html =~ "Property name"
 
     assert [loan] = Loans.list_loans(user)
     assert loan.loan_type == "auto"
+    assert loan.state_region == "LA"
     assert Decimal.equal?(loan.current_interest_rate, Decimal.new("0.0799"))
+
+    {:ok, _view, workspace_html} = live(authed_conn, ~p"/app/loans/#{loan.id}")
+
+    assert workspace_html =~ "Selected loan"
+    assert workspace_html =~ "Car loan"
+    assert workspace_html =~ "Auto • active"
+    assert workspace_html =~ "Loan portfolio"
+    assert workspace_html =~ "Loan overview"
+    assert workspace_html =~ "Review the generic loan baseline and refinance preview"
+    assert workspace_html =~ "Refinance preview"
+    assert workspace_html =~ "Portfolio preview only"
+
+    assert workspace_html =~
+             "Open the refinance workspace to review loan-type market context, scenarios, and fee assumptions."
+
+    assert workspace_html =~ "Expected savings"
+    assert workspace_html =~ "Monthly savings"
+    refute workspace_html =~ "Mortgage details"
+    refute workspace_html =~ "Lender quotes"
+
+    {:ok, workspace_view, _workspace_html} = live(authed_conn, ~p"/app/loans/#{loan.id}")
+
+    workspace_view
+    |> element("button[phx-click='edit-generic-loan'][phx-value-id='#{loan.id}']", "Edit loan")
+    |> render_click()
+
+    assert render(workspace_view) =~ "Update this generic loan baseline"
+
+    html =
+      workspace_view
+      |> form("#generic-loan-form",
+        loan: %{
+          "loan_type" => "auto",
+          "name" => "Updated car loan",
+          "lender_name" => "Example Credit Union",
+          "current_balance" => "17250.00",
+          "current_interest_rate_percent" => "7.49",
+          "remaining_term_months" => "42",
+          "monthly_payment_total" => "465.00",
+          "collateral_description" => "2023 hatchback",
+          "state_region" => "LA"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Loan updated."
+    assert html =~ "Updated car loan"
+    assert html =~ "7.49%"
+
+    assert {:ok, updated_loan} = Loans.fetch_loan(user, loan.id)
+    assert updated_loan.name == "Updated car loan"
+    assert updated_loan.state_region == "LA"
+    assert Decimal.equal?(updated_loan.current_interest_rate, Decimal.new("0.0749"))
+  end
+
+  test "creates persisted refinance scenarios for a generic auto loan workspace", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    {:ok, loan} =
+      Loans.create_loan(user, %{
+        loan_type: "auto",
+        name: "Car loan",
+        current_balance: "18500.00",
+        current_interest_rate: "0.0799",
+        remaining_term_months: 48,
+        monthly_payment_total: "452.13",
+        collateral_description: "2023 hatchback",
+        state_region: "LA"
+      })
+
+    {:ok, source} =
+      Loans.create_rate_source(%{
+        provider_key: "auto-refi-workspace-benchmark",
+        name: "Auto Refi Workspace Benchmark",
+        source_type: "public_benchmark",
+        attribution_label: "FRED test source",
+        attribution_url: "https://fred.stlouisfed.org/"
+      })
+
+    {:ok, observation} =
+      Loans.create_rate_observation(source, %{
+        loan_type: "auto",
+        product_type: "new_auto_commercial_bank",
+        term_months: 48,
+        rate: "0.0736",
+        series_key: "TERMCBAUTO48NS",
+        effective_date: Date.utc_today(),
+        observed_at: DateTime.new!(Date.utc_today(), ~T[00:00:00], "Etc/UTC"),
+        source_url: "https://fred.stlouisfed.org/series/TERMCBAUTO48NS"
+      })
+
+    {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{loan.id}/refinance")
+
+    assert html =~ "Refinance analysis"
+    assert html =~ "Reviewed benchmark assumptions"
+    assert html =~ "FRED new-auto benchmarks are available"
+    assert html =~ "They are not auto refinance offers"
+    assert html =~ "Fee estimates use available generic or state-level assumptions"
+    assert html =~ "Save a refinance scenario"
+    assert html =~ "Refinance"
+    refute html =~ "Include escrow"
+    refute html =~ "Market rate snapshot"
+    assert html =~ "Auto rate snapshot"
+    assert html =~ "48-month new auto"
+    assert html =~ "not used-auto refinance offers"
+    assert html =~ "Observed"
+    assert html =~ "Import FRED benchmarks"
+    assert html =~ "Create reviewed scenario"
+    refute html =~ "Benchmark rates"
+    refute html =~ "30-year national average"
+    assert html =~ "Cost assumptions"
+
+    html =
+      view
+      |> element(
+        "button[phx-click='review-auto-rate-scenario'][phx-value-id='#{observation.id}']",
+        "Create reviewed scenario"
+      )
+      |> render_click()
+
+    assert html =~ ~s(id="refinance-scenario-form")
+    assert html =~ "Market benchmark, not lender offer"
+    assert html =~ "Credit score band"
+    assert html =~ "does not change payment math yet"
+    assert html =~ ~s(value="7.36")
+    assert html =~ ~s(value="18500.00")
+    assert html =~ ~s(value="48")
+
+    html =
+      view
+      |> form("#refinance-scenario-form",
+        refinance_scenario: %{
+          "loan_id" => loan.id,
+          "scenario_type" => "rate_observation",
+          "rate_source_type" => "public_benchmark",
+          "name" => "Reviewed auto benchmark",
+          "product_type" => "new_auto_commercial_bank",
+          "new_term_months" => "48",
+          "new_interest_rate_percent" => "7.36",
+          "new_principal_amount" => "18500.00",
+          "credit_score_band" => "prime"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Refinance scenario saved."
+    assert html =~ "Reviewed auto benchmark"
+    assert html =~ "Prime / good"
+
+    view
+    |> element("button", "Add scenario")
+    |> render_click()
+
+    assert render(view) =~ ~s(id="refinance-scenario-form")
+    assert render(view) =~ "Car loan"
+    refute render(view) =~ "Mortgage</label>"
+
+    html =
+      view
+      |> form("#refinance-scenario-form",
+        refinance_scenario: %{
+          "loan_id" => loan.id,
+          "name" => "Credit union refinance",
+          "product_type" => "fixed",
+          "new_term_months" => "48",
+          "new_interest_rate_percent" => "5.99",
+          "new_principal_amount" => "18500.00",
+          "credit_score_band" => "superprime"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Refinance scenario saved."
+    assert html =~ "Credit union refinance"
+    assert html =~ "Lowest expected P&amp;I payment"
+    assert html =~ "Savings"
+    assert html =~ "Save analysis"
+    assert html =~ "Cost assumptions"
+    assert html =~ "Louisiana title/lien fees are estimated from OMV-published fees"
+    refute html =~ "30-year national average"
+    refute html =~ "Create scenario"
+
+    scenarios = Loans.list_loan_refinance_scenarios(user, loan)
+
+    assert Enum.any?(scenarios, fn scenario ->
+             scenario.name == "Reviewed auto benchmark" &&
+               scenario.scenario_type == "rate_observation" &&
+               scenario.rate_source_type == "public_benchmark" &&
+               scenario.credit_score_band == "prime" &&
+               Decimal.equal?(scenario.new_interest_rate, Decimal.new("0.0736"))
+           end)
+
+    assert %{name: "Reviewed auto benchmark"} =
+             reviewed_scenario =
+             Enum.find(scenarios, &(&1.name == "Reviewed auto benchmark"))
+
+    assert %{name: "Credit union refinance"} =
+             scenario =
+             Enum.find(scenarios, &(&1.name == "Credit union refinance"))
+
+    assert scenario.loan_id == loan.id
+    assert is_nil(scenario.mortgage_id)
+    assert scenario.credit_score_band == "superprime"
+    assert Decimal.equal?(scenario.new_interest_rate, Decimal.new("0.0599"))
+
+    html =
+      view
+      |> element("button", "Add fee item")
+      |> render_click()
+
+    assert html =~ ~s(id="refinance-fee-item-form")
+    assert html =~ "Vehicle title fee"
+    refute html =~ "Title insurance lender policy"
+
+    html =
+      view
+      |> form("#refinance-fee-item-form",
+        refinance_fee_item: %{
+          "refinance_scenario_id" => reviewed_scenario.id,
+          "loan_fee_type_code" => "auto_lien_recording_fee",
+          "expected_amount" => "15.00",
+          "kind" => "fee",
+          "is_true_cost" => "true",
+          "is_prepaid_or_escrow" => "false",
+          "sort_order" => "1"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Refinance fee item saved."
+
+    assert {:ok, reviewed_scenario_with_fees} =
+             Loans.fetch_refinance_scenario(user, reviewed_scenario.id, preload: [:fee_items])
+
+    assert Enum.any?(reviewed_scenario_with_fees.fee_items, fn fee_item ->
+             fee_item.code == "auto_lien_recording_fee" &&
+               fee_item.name == "Vehicle lien recordation" &&
+               Decimal.equal?(fee_item.expected_amount, Decimal.new("15.00"))
+           end)
+
+    html =
+      view
+      |> element("button[aria-label='View details'][phx-value-id='#{scenario.id}']")
+      |> render_click()
+
+    assert html =~ "Superprime / excellent"
+
+    html =
+      view
+      |> element("button[aria-label='Add common fees'][phx-value-id='#{scenario.id}']")
+      |> render_click()
+
+    assert html =~ "Added"
+
+    assert {:ok, scenario_with_fees} =
+             Loans.fetch_refinance_scenario(user, scenario.id, preload: [:fee_items])
+
+    assert Enum.any?(scenario_with_fees.fee_items, fn fee_item ->
+             fee_item.code == "auto_title_fee" &&
+               fee_item.name == "Vehicle title fee" &&
+               Decimal.equal?(fee_item.expected_amount, Decimal.new("68.50"))
+           end)
+
+    html =
+      view
+      |> element("button[aria-label='Save analysis'][phx-value-id='#{scenario.id}']")
+      |> render_click()
+
+    assert html =~ "Analysis snapshot saved."
+    assert html =~ "Analysis history"
+    assert html =~ "Credit union refinance"
+
+    assert [%{loan_id: loan_id, mortgage_id: nil}] =
+             Loans.list_refinance_analysis_results(user, loan_id: loan.id)
+
+    assert loan_id == loan.id
+  end
+
+  test "personal loan refinance workspace stays explicit about sparse assumptions", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    {:ok, loan} =
+      Loans.create_loan(user, %{
+        loan_type: "personal",
+        name: "Personal loan",
+        current_balance: "7200.00",
+        current_interest_rate: "0.1199",
+        remaining_term_months: 36,
+        monthly_payment_total: "239.00"
+      })
+
+    {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{loan.id}/refinance")
+
+    assert html =~ "User-entered assumptions"
+    assert html =~ "External market rates are not available for this loan type yet"
+    refute html =~ "Auto rate snapshot"
+    refute html =~ "FRED new-auto benchmarks are available"
+
+    view
+    |> element("button", "Add scenario")
+    |> render_click()
+
+    html =
+      view
+      |> form("#refinance-scenario-form",
+        refinance_scenario: %{
+          "loan_id" => loan.id,
+          "name" => "Credit union personal refinance",
+          "product_type" => "fixed",
+          "new_term_months" => "36",
+          "new_interest_rate_percent" => "9.49",
+          "new_principal_amount" => "7200.00"
+        }
+      )
+      |> render_submit()
+
+    assert html =~ "Refinance scenario saved."
+
+    assert %{name: "Credit union personal refinance"} =
+             scenario =
+             Loans.list_loan_refinance_scenarios(user, loan)
+             |> Enum.find(&(&1.name == "Credit union personal refinance"))
+
+    html =
+      view
+      |> element("button[aria-label='Add common fees'][phx-value-id='#{scenario.id}']")
+      |> render_click()
+
+    assert html =~ "No non-zero common fee assumptions are available for this loan type yet."
   end
 
   test "edits an existing loan baseline from Loan Center", %{conn: conn} do
@@ -236,6 +597,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     mortgage =
       mortgage_fixture(user, %{
         property_name: "Maple Residence",
+        state_region: "LA",
+        county_or_parish: "St. Tammany Parish",
         current_balance: "400000.00",
         current_interest_rate: "0.0625",
         monthly_payment_total: "2462.87",
@@ -247,7 +610,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert documents_html =~ "Loan workspace"
     assert documents_html =~ "Documents"
     assert documents_html =~ "Document review queue"
-    assert documents_html =~ "Document metadata will appear here"
+    assert documents_html =~ "Upload a loan document to create review-only extraction candidates"
     assert documents_html =~ "Maple Residence"
 
     {:ok, _view, quotes_html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/quotes")
@@ -557,10 +920,11 @@ defmodule MoneyTreeWeb.LoansLiveTest do
       )
       |> render_submit()
 
-    assert html =~ "Loan document metadata saved for review."
+    assert html =~ "Loan document saved and extraction queued for review."
     assert html =~ "loan-estimate.pdf"
     assert html =~ "Loan Estimate"
     assert html =~ "No extraction candidates"
+    assert html =~ "Extraction failed"
 
     assert [%{original_filename: "loan-estimate.pdf"}] = Loans.list_loan_documents(user, mortgage)
   end
@@ -608,7 +972,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
       )
       |> render_submit()
 
-    assert html =~ "Loan document metadata saved for review."
+    assert html =~ "Loan document saved and extraction queued for review."
     assert html =~ "statement.pdf"
     assert html =~ "Mortgage Statement"
 
@@ -624,6 +988,36 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     assert String.length(checksum) == 64
     assert String.contains?(storage_key, "statement.pdf")
+  end
+
+  test "shows failed document extraction state with a retry action", %{conn: conn} do
+    {:ok, %{conn: authed_conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    mortgage =
+      mortgage_fixture(user, %{
+        property_name: "Maple Residence",
+        current_balance: "400000.00",
+        current_interest_rate: "0.0625",
+        monthly_payment_total: "2462.87",
+        remaining_term_months: 360
+      })
+
+    {:ok, _document} =
+      Loans.create_loan_document(user, mortgage, %{
+        document_type: "mortgage_statement",
+        original_filename: "statement.pdf",
+        content_type: "application/pdf",
+        byte_size: 123_456,
+        storage_key: "loan-documents/#{Ecto.UUID.generate()}/statement.pdf",
+        checksum_sha256: String.duplicate("a", 64),
+        status: "failed"
+      })
+
+    {:ok, _view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/documents")
+
+    assert html =~ "Extraction failed"
+    assert html =~ "Check the file or run extraction again when ready"
+    assert html =~ "Run extraction"
   end
 
   test "runs stored document extraction from the documents workspace", %{conn: conn} do
@@ -741,6 +1135,14 @@ defmodule MoneyTreeWeb.LoansLiveTest do
 
     assert html =~ "Extraction candidates"
     assert html =~ "Pending Review"
+    assert html =~ "Review impact"
+
+    assert html =~
+             "Nothing updates the loan, quote, or scenario until you choose an apply action."
+
+    assert html =~ "Mortgage baseline"
+    assert html =~ "Lender quote"
+    assert html =~ "Scenario"
     assert html =~ "Current Balance"
     assert html =~ "390000.00"
     assert html =~ "Interest Rate"
@@ -973,7 +1375,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
         remaining_term_months: 360
       })
 
-    {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
+    {:ok, view, _html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
+    html = render(view)
 
     assert html =~ "Refinance analysis"
     assert html =~ "Save a refinance scenario"
@@ -1471,7 +1874,10 @@ defmodule MoneyTreeWeb.LoansLiveTest do
         new_principal_amount: "406000.00"
       })
 
-    {:ok, view, html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
+    assert :ok = Loans.ensure_default_loan_fee_configuration()
+
+    {:ok, view, _html} = live(authed_conn, ~p"/app/loans/#{mortgage.id}/refinance")
+    html = render(view)
 
     assert html =~ "Cost assumptions"
     refute html =~ ~s(id="refinance-fee-item-form")

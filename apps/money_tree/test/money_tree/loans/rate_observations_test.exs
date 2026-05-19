@@ -296,6 +296,41 @@ defmodule MoneyTree.Loans.RateObservationsTest do
       assert snapshot.quality.status in [:ok, :warning]
     end
 
+    test "returns latest auto snapshot without mortgage benchmark rows" do
+      assert {:ok, source} =
+               Loans.create_rate_source(%{
+                 provider_key: "auto-snapshot-benchmark",
+                 name: "Auto Snapshot Benchmark",
+                 source_type: "public_benchmark"
+               })
+
+      effective_date = Date.utc_today() |> Date.add(-100)
+
+      assert {:ok, _observation} =
+               Loans.create_rate_observation(source, %{
+                 loan_type: "auto",
+                 product_type: "new_auto_commercial_bank",
+                 term_months: 48,
+                 rate: "0.0736",
+                 series_key: "TERMCBAUTO48NS",
+                 effective_date: effective_date,
+                 observed_at: DateTime.new!(effective_date, ~T[00:00:00], "Etc/UTC"),
+                 source_url: "https://fred.stlouisfed.org/series/TERMCBAUTO48NS"
+               })
+
+      snapshot = Loans.auto_market_snapshot()
+
+      assert [%RateObservation{loan_type: "auto", series_key: "termcbauto48ns"}] =
+               snapshot.auto_rates
+
+      assert snapshot.baseline_rates == []
+      assert snapshot.disclaimer =~ "not used-auto refinance offers"
+      refute snapshot.quality.stale?
+      assert snapshot.quality.stale_after_days == 120
+      refute "Market data may be stale." in snapshot.quality.warnings
+      assert "riflpbcianm60nm" in snapshot.quality.missing_series
+    end
+
     test "quality reports incomplete trend windows and missing expected benchmark series" do
       assert {:ok, source} =
                Loans.create_rate_source(%{

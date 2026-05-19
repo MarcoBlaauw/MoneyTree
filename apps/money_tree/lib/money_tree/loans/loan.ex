@@ -22,6 +22,7 @@ defmodule MoneyTree.Loans.Loan do
     field :name, :string
     field :lender_name, :string
     field :servicer_name, :string
+    field :state_region, :string
     field :original_loan_amount, :decimal
     field :current_balance, :decimal
     field :original_interest_rate, :decimal
@@ -48,6 +49,7 @@ defmodule MoneyTree.Loans.Loan do
       :name,
       :lender_name,
       :servicer_name,
+      :state_region,
       :original_loan_amount,
       :current_balance,
       :original_interest_rate,
@@ -77,6 +79,7 @@ defmodule MoneyTree.Loans.Loan do
     |> validate_length(:name, min: 1, max: 160)
     |> validate_length(:lender_name, max: 160)
     |> validate_length(:servicer_name, max: 160)
+    |> validate_length(:state_region, max: 80)
     |> validate_length(:collateral_description, max: 255)
     |> validate_length(:source, max: 120)
     |> validate_number(:original_term_months, greater_than: 0)
