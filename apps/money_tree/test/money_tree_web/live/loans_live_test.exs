@@ -783,6 +783,8 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "Mystery review charge"
     assert html =~ "Review needed"
     assert html =~ "Unknown"
+    assert html =~ "Quote review warnings"
+    assert html =~ "Some quoted fees could not be mapped to known fee types."
 
     [%{fee_lines: fee_lines}] = Loans.list_lender_quotes(user, mortgage, preload: [:fee_lines])
     fee_line = Enum.find(fee_lines, &(&1.original_label == "Mystery review charge"))

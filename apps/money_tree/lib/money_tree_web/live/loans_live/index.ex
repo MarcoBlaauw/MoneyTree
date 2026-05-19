@@ -2023,6 +2023,13 @@ defmodule MoneyTreeWeb.LoansLive.Index do
                     <p class={if summary.missing_count > 0, do: "text-sm font-semibold text-amber-700", else: "text-sm font-semibold text-zinc-900"}><%= summary.missing_count %></p>
                   </div>
                 </div>
+                <section :if={quote_fee_review_warnings(row) != []}
+                         class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <h4 class="text-xs font-semibold uppercase tracking-wide">Quote review warnings</h4>
+                  <ul class="mt-2 space-y-1">
+                    <li :for={warning <- quote_fee_review_warnings(row)}><%= warning %></li>
+                  </ul>
+                </section>
                 <div :if={quote_fee_lines(row.quote) != []} class="mt-3 grid gap-3 lg:grid-cols-3">
                   <section :for={group <- quote_fee_line_groups(row.quote)}
                            class="rounded-lg border border-zinc-200 bg-white p-3">
@@ -5529,6 +5536,12 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   end
 
   defp quote_missing_required_fees(_row), do: []
+
+  defp quote_fee_review_warnings(%{fee_review: %{warnings: warnings}}) when is_list(warnings) do
+    warnings
+  end
+
+  defp quote_fee_review_warnings(_row), do: []
 
   defp quote_fee_review_summary(row) do
     lines = quote_fee_lines(row.quote)
