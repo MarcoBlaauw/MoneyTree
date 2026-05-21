@@ -31,6 +31,18 @@ defmodule MoneyTree.Institutions.ConnectionTest do
       refute Map.has_key?(errors_on(changeset), :webhook_secret)
       assert changeset.changes.sync_cursor == "next-cursor"
     end
+
+    test "accepts simplefin provider while rejecting unknown providers" do
+      attrs = %{
+        user_id: Ecto.UUID.generate(),
+        institution_id: Ecto.UUID.generate(),
+        provider: "simplefin"
+      }
+
+      assert Connection.changeset(%Connection{}, attrs).valid?
+
+      refute Connection.changeset(%Connection{}, Map.put(attrs, :provider, "unknown")).valid?
+    end
   end
 
   describe "encrypted credentials" do

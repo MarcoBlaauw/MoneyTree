@@ -59,6 +59,10 @@ config :money_tree, MoneyTree.Loans.RateProviders.Fred,
   api_key: nil,
   timeout_ms: 5000
 
+config :money_tree, MoneyTree.BankSync.ProviderRegistry,
+  enabled_providers: ["simplefin", "manual", "teller", "plaid"],
+  primary_provider: "simplefin"
+
 config :money_tree, :disable_oban_tracing, true
 
 config :logger, level: :warning

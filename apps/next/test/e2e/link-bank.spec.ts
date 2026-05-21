@@ -2,18 +2,8 @@ import { expect, test } from "@playwright/test";
 
 const SESSION_COOKIE = "_money_tree_session";
 
-function interceptJson(page: import("@playwright/test").Page, url: RegExp | string, body: unknown, status = 200) {
-  return page.route(url, async (route) => {
-    await route.fulfill({
-      status,
-      contentType: "application/json",
-      body: JSON.stringify(body),
-    });
-  });
-}
-
-test.describe("Bank linking widgets", () => {
-  test.beforeEach(async ({ context, page }) => {
+test.describe("SimpleFIN bank linking", () => {
+  test.beforeEach(async ({ context }) => {
     await context.addCookies([
       {
         name: SESSION_COOKIE,
@@ -22,75 +12,60 @@ test.describe("Bank linking widgets", () => {
         path: "/",
       },
     ]);
+  });
 
-    await interceptJson(page, /\/api\/teller\/connect_token/, {
-      data: { connect_token: "connect-token-9876" },
-    });
-
-    await page.route(/\/api\/teller\/exchange/, async (route) => {
-      const body = route.request().postDataJSON() as Record<string, unknown>;
-      expect(body.public_token).toBe("public-token-9876");
+  test("renders the workspace-style SimpleFIN flow", async ({ page }) => {
+    await page.route(/\/api\/simplefin\/connections/, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ data: { connection_id: "conn-123" } }),
+        body: JSON.stringify({ data: { connections: [] } }),
       });
     });
 
-    await page.addInitScript(() => {
-      const globalWindow = window as typeof window & {
-        __tellerConnectCalls?: unknown[];
-      };
+    await page.goto("/app/react/link-bank");
 
-      globalWindow.__tellerConnectCalls = [];
-      globalWindow.TellerConnect = {
-        setup(options) {
-          globalWindow.__tellerConnectCalls?.push(options);
-          return {
-            open() {
-              if (typeof options.onSuccess === "function") {
-                options.onSuccess({
-                  public_token: "public-token-9876",
-                  enrollment: { institution: { id: "demo-bank", name: "Demo Bank" } },
-                });
-              }
-            },
-            destroy() {
-              // noop
-            },
-          };
-        },
-      };
+    await expect(page.getByRole("heading", { name: "Manage institutions" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Back to Accounts" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Manage institutions" })).toBeVisible();
+    await expect(page.getByText("SimpleFIN Bridge")).toBeVisible();
+    await expect(page.getByText("Stripe")).toHaveCount(0);
+    await expect(page.getByText("Widget events")).toHaveCount(0);
+  });
+
+  test("claims setup token and renders discovered accounts", async ({ page }) => {
+    await page.route(/\/api\/simplefin\/connections/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: { connections: [] } }),
+      });
     });
-  });
 
-  test("renders Teller widget with sanitized telemetry", async ({ page }) => {
-    await page.goto("/app/react/link-bank");
+    await page.route(/\/api\/simplefin\/claim/, async (route) => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      expect(body.setup_token).toBe("setup-token");
 
-    await page.getByTestId("launch-teller").click();
-
-    const payloadLocator = page.getByTestId("event-payload").first();
-    await expect(payloadLocator).toBeVisible();
-    const payload = await payloadLocator.textContent();
-    expect(payload).not.toContain("connect-token-9876");
-    expect(payload).not.toContain("public-token-9876");
-    expect(payload).toContain("***9876");
-
-    await expect(page.getByTestId("widget-events")).toContainText("Teller exchange succeeded");
-  });
-
-  test("surfaces Plaid errors", async ({ page }) => {
-    await interceptJson(
-      page,
-      /\/api\/plaid\/link_token/,
-      { error: "sandbox limit reached" },
-      429,
-    );
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            connection_id: "conn-123",
+            institution_id: "inst-123",
+            accounts: [{ id: "acct-1", name: "Checking", currency: "USD", balance: "42.00" }],
+            errors: [],
+          },
+        }),
+      });
+    });
 
     await page.goto("/app/react/link-bank");
 
-    await page.getByTestId("launch-plaid").click();
+    await page.getByPlaceholder("Paste the one-time SimpleFIN setup token").fill("setup-token");
+    await page.getByRole("button", { name: "Connect" }).click();
 
-    await expect(page.getByTestId("error-plaid")).toContainText("sandbox limit reached");
+    await expect(page.getByText("Checking")).toBeVisible();
+    await expect(page.getByText("USD · Balance 42.00")).toBeVisible();
   });
 });

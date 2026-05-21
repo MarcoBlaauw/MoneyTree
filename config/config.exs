@@ -58,6 +58,21 @@ config :money_tree, MoneyTree.Plaid,
   finch: MoneyTree.Finch,
   telemetry_metadata: %{service: "money_tree", integration: "plaid"}
 
+config :money_tree, MoneyTree.BankSync.ProviderRegistry,
+  enabled_providers: ["simplefin", "manual"],
+  primary_provider: "simplefin"
+
+config :money_tree, MoneyTree.SimpleFin,
+  create_url: "https://bridge.simplefin.org/simplefin/create",
+  protocol_version: "2",
+  sync_interval_hours: 24,
+  max_requests_per_connection_per_day: 24,
+  initial_sync_days: 90,
+  include_pending: false,
+  timeout: :timer.seconds(10),
+  finch: MoneyTree.Finch,
+  telemetry_metadata: %{service: "money_tree", integration: "simplefin"}
+
 config :money_tree, MoneyTree.AI,
   enabled: false,
   require_confirmation: true,
@@ -89,6 +104,7 @@ config :money_tree, Oban,
     {Oban.Plugins.Lifeline, rescue_after: 60},
     {Oban.Plugins.Cron,
      crontab: [
+       {"0 * * * *", MoneyTree.SimpleFin.SyncWorker, args: %{"mode" => "dispatch"}},
        {"*/30 * * * *", MoneyTree.Teller.SyncWorker, args: %{"mode" => "dispatch"}},
        {"0 7 * * *", MoneyTree.Obligations.CheckWorker, args: %{}},
        {"30 7 * * *", MoneyTree.Loans.Workers.RateImportWorker, args: %{"provider" => "fred"}}

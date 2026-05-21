@@ -2443,10 +2443,12 @@ defmodule MoneyTree.Loans do
   end
 
   defp loan_account?(account) do
+    internal_kind = account.internal_account_kind |> to_string() |> String.downcase()
     type = account.type |> to_string() |> String.downcase()
     subtype = account.subtype |> to_string() |> String.downcase()
 
-    String.contains?(type, "loan") or subtype in ["mortgage", "student", "auto", "loan"]
+    internal_kind in ["loan", "mortgage"] or
+      String.contains?(type, "loan") or subtype in ["mortgage", "student", "auto", "loan"]
   end
 
   defp list_active_alert_rules_for_mortgage(%Mortgage{id: mortgage_id}, user) do

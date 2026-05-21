@@ -21,7 +21,7 @@ defmodule MoneyTreeWeb.ImportExportControllerTest do
       account_id: account.id,
       external_id: "txn-export-1",
       source: "manual_import",
-      posted_at: ~U[2026-04-20 12:00:00Z],
+      posted_at: Date.utc_today() |> DateTime.new!(~T[12:00:00], "Etc/UTC"),
       amount: Decimal.new("-12.34"),
       currency: "USD",
       description: "Coffee",

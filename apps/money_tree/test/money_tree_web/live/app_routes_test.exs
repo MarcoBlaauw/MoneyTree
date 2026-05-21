@@ -7,6 +7,7 @@ defmodule MoneyTreeWeb.AppRoutesTest do
     test "redirects unauthenticated users", %{conn: conn} do
       paths = [
         ~p"/app/dashboard",
+        ~p"/app/notifications",
         ~p"/app/accounts",
         ~p"/app/accounts/connect",
         ~p"/app/transactions",
@@ -41,8 +42,11 @@ defmodule MoneyTreeWeb.AppRoutesTest do
 
       assert render(dashboard) =~ "Dashboard"
 
+      {:ok, notifications, _html} = live(authed_conn, ~p"/app/notifications")
+      assert render(notifications) =~ "Notification inbox"
+
       {:ok, accounts, _html} = live(authed_conn, ~p"/app/accounts")
-      assert render(accounts) =~ "Linked institutions"
+      assert render(accounts) =~ "Connected accounts"
 
       {:ok, transactions, _html} = live(authed_conn, ~p"/app/transactions")
       assert render(transactions) =~ "Recent transactions"

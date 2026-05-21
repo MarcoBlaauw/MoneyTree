@@ -2,6 +2,85 @@ import Config
 
 base_teller_config = Application.get_env(:money_tree, MoneyTree.Teller, [])
 
+env = fn key ->
+  case System.get_env(key) do
+    nil -> nil
+    "" -> nil
+    value -> value
+  end
+end
+
+parse_csv_env = fn value ->
+  value
+  |> to_string()
+  |> String.split(",")
+  |> Enum.map(&String.trim/1)
+  |> Enum.reject(&(&1 == ""))
+end
+
+parse_bool_env = fn
+  value when value in [true, false] ->
+    value
+
+  value when is_binary(value) ->
+    String.downcase(String.trim(value)) in ["true", "1", "yes", "on"]
+
+  _value ->
+    false
+end
+
+base_provider_registry_config =
+  Application.get_env(:money_tree, MoneyTree.BankSync.ProviderRegistry, [])
+
+enabled_bank_sync_providers =
+  case env.("BANK_SYNC_ENABLED_PROVIDERS") do
+    nil -> Keyword.get(base_provider_registry_config, :enabled_providers, ["simplefin", "manual"])
+    value -> parse_csv_env.(value)
+  end
+
+bank_sync_primary_provider =
+  env.("BANK_SYNC_PRIMARY_PROVIDER") ||
+    Keyword.get(base_provider_registry_config, :primary_provider, "simplefin")
+
+config :money_tree, MoneyTree.BankSync.ProviderRegistry,
+  enabled_providers: enabled_bank_sync_providers,
+  primary_provider: bank_sync_primary_provider
+
+teller_enabled? =
+  "teller" in enabled_bank_sync_providers or parse_bool_env.(env.("TELLER_ENABLED"))
+
+plaid_enabled? =
+  "plaid" in enabled_bank_sync_providers or parse_bool_env.(env.("PLAID_ENABLED"))
+
+simplefin_runtime_config =
+  [
+    create_url: env.("SIMPLEFIN_CREATE_URL"),
+    protocol_version: env.("SIMPLEFIN_PROTOCOL_VERSION"),
+    sync_interval_hours: env.("SIMPLEFIN_SYNC_INTERVAL_HOURS"),
+    max_requests_per_connection_per_day: env.("SIMPLEFIN_MAX_REQUESTS_PER_CONNECTION_PER_DAY"),
+    initial_sync_days: env.("SIMPLEFIN_INITIAL_SYNC_DAYS"),
+    include_pending: env.("SIMPLEFIN_INCLUDE_PENDING")
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  |> Enum.map(fn
+    {key, value}
+    when key in [:sync_interval_hours, :max_requests_per_connection_per_day, :initial_sync_days] ->
+      {key, String.to_integer(value)}
+
+    {:include_pending, value} ->
+      {:include_pending, parse_bool_env.(value)}
+
+    pair ->
+      pair
+  end)
+
+config :money_tree,
+       MoneyTree.SimpleFin,
+       Keyword.merge(
+         Application.get_env(:money_tree, MoneyTree.SimpleFin, []),
+         simplefin_runtime_config
+       )
+
 default_next_upstream = [scheme: "http", host: "localhost", port: 3000, path: "/"]
 
 next_proxy_url = System.get_env("NEXT_PROXY_URL")
@@ -62,7 +141,7 @@ if client_timeout_overrides != [] do
   config :money_tree, MoneyTreeWeb.Plugs.NextProxy, client_opts: merged_client_opts
 end
 
-if config_env() == :prod do
+if config_env() == :prod and teller_enabled? do
   missing_teller_env =
     [
       "TELLER_CONNECT_APPLICATION_ID",
@@ -118,7 +197,7 @@ key_file =
 cert_pem = teller_env.("TELLER_CERT_PEM")
 key_pem = teller_env.("TELLER_KEY_PEM")
 
-if config_env() == :prod do
+if config_env() == :prod and teller_enabled? do
   cert_pair_present? =
     (is_binary(cert_pem) and is_binary(key_pem)) or
       (is_binary(cert_file) and is_binary(key_file))
@@ -148,13 +227,6 @@ teller_runtime_config =
 config :money_tree, MoneyTree.Teller, Keyword.merge(base_teller_config, teller_runtime_config)
 
 base_plaid_config = Application.get_env(:money_tree, MoneyTree.Plaid, [])
-
-parse_csv_env = fn value ->
-  value
-  |> String.split(",")
-  |> Enum.map(&String.trim/1)
-  |> Enum.reject(&(&1 == ""))
-end
 
 plaid_products =
   case teller_env.("PLAID_PRODUCTS") do
@@ -202,6 +274,18 @@ plaid_runtime_config =
 
 config :money_tree, MoneyTree.Plaid, Keyword.merge(base_plaid_config, plaid_runtime_config)
 
+if config_env() == :prod and plaid_enabled? do
+  missing_plaid_env =
+    ["PLAID_CLIENT_ID", "PLAID_SECRET"]
+    |> Enum.filter(fn key -> System.get_env(key) in [nil, ""] end)
+
+  if missing_plaid_env != [] do
+    raise """
+    environment variables #{Enum.join(missing_plaid_env, ", ")} are required in production when Plaid is enabled.
+    """
+  end
+end
+
 fred_env = fn key ->
   case System.get_env(key) do
     nil -> nil
@@ -229,17 +313,6 @@ ai_env = fn key ->
     "" -> nil
     value -> value
   end
-end
-
-parse_bool_env = fn
-  value when value in [true, false] ->
-    value
-
-  value when is_binary(value) ->
-    String.downcase(String.trim(value)) in ["true", "1", "yes", "on"]
-
-  _value ->
-    false
 end
 
 ai_runtime_config =

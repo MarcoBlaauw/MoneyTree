@@ -18,7 +18,7 @@ defmodule MoneyTree.Transactions.Transaction do
 
   @supported_statuses ~w(pending posted voided reversed)
   @supported_categorization_sources ~w(provider rule manual model)
-  @supported_sources ~w(unknown plaid teller manual_import user_manual pdf_extract screenshot_extract)
+  @supported_sources ~w(unknown plaid teller simplefin manual_import user_manual pdf_extract screenshot_extract)
   @supported_transaction_kinds ~w(
     unknown
     income
@@ -26,7 +26,19 @@ defmodule MoneyTree.Transactions.Transaction do
     internal_transfer
     credit_card_payment
     loan_payment
+    escrow_property_tax_disbursement
+    escrow_homeowners_insurance_disbursement
+    escrow_flood_insurance_disbursement
+    escrow_other_disbursement
+    escrow_refund
     adjustment
+  )
+  @escrow_transaction_kinds ~w(
+    escrow_property_tax_disbursement
+    escrow_homeowners_insurance_disbursement
+    escrow_flood_insurance_disbursement
+    escrow_other_disbursement
+    escrow_refund
   )
 
   schema "transactions" do
@@ -106,11 +118,11 @@ defmodule MoneyTree.Transactions.Transaction do
     |> update_change(:currency, &normalize_currency/1)
     |> validate_currency(:currency)
     |> validate_length(:source, max: 60)
-    |> validate_length(:source_transaction_id, max: 120)
+    |> validate_length(:source_transaction_id, max: 512)
     |> validate_length(:source_reference, max: 255)
     |> validate_length(:source_fingerprint, max: 128)
     |> validate_length(:normalized_fingerprint, max: 128)
-    |> validate_length(:external_id, min: 1, max: 120)
+    |> validate_length(:external_id, min: 1, max: 512)
     |> validate_length(:description, min: 1, max: 255)
     |> validate_length(:original_description, max: 255)
     |> validate_length(:category, max: 120)
@@ -121,6 +133,7 @@ defmodule MoneyTree.Transactions.Transaction do
     |> validate_change(:source, &validate_source/2)
     |> validate_change(:transaction_kind, &validate_transaction_kind/2)
     |> validate_change(:status, &validate_status/2)
+    |> exclude_escrow_transactions()
     |> validate_decimal(:amount)
     |> foreign_key_constraint(:account_id)
     |> foreign_key_constraint(:manual_import_batch_id)
@@ -166,6 +179,14 @@ defmodule MoneyTree.Transactions.Transaction do
       categorization_source:
         "must be one of #{Enum.join(@supported_categorization_sources, ", ")}"
     ]
+
+  defp exclude_escrow_transactions(changeset) do
+    if get_field(changeset, :transaction_kind) in @escrow_transaction_kinds do
+      put_change(changeset, :excluded_from_spending, true)
+    else
+      changeset
+    end
+  end
 
   defp validate_decimal(changeset, field) do
     validate_change(changeset, field, fn ^field, value ->

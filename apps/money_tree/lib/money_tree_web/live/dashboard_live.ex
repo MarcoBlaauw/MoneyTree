@@ -254,7 +254,20 @@ defmodule MoneyTreeWeb.DashboardLive do
   def render(assigns) do
     ~H"""
     <section class="space-y-8">
-      <.header title="Dashboard" subtitle="Monitor balances and recent activity." />
+      <.header title="Dashboard" subtitle="Monitor balances and recent activity.">
+        <:actions>
+          <.link navigate={~p"/app/notifications"}
+                 class="relative inline-flex h-10 w-10 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-100"
+                 aria-label="Open notifications"
+                 title="Open notifications">
+            <.notification_bell_icon />
+            <span :if={length(@metrics.notifications) > 0}
+                  class="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-500 px-1 text-[11px] font-semibold text-white">
+              <%= length(@metrics.notifications) %>
+            </span>
+          </.link>
+        </:actions>
+      </.header>
 
       <.dashboard_toolbar locked?={@locked?} show_balances?={@show_balances?} />
 
@@ -267,8 +280,6 @@ defmodule MoneyTreeWeb.DashboardLive do
 
       <div class="grid gap-6 xl:grid-cols-[minmax(0,2.1fr)_minmax(22rem,0.95fr)] xl:items-start">
         <div class="min-w-0 space-y-6">
-          <.accounts_panel summary={@summary} show_balances?={@show_balances?} />
-
           <.assets_panel
             asset_summary={@asset_summary}
             asset_accounts={@asset_accounts}
@@ -303,8 +314,6 @@ defmodule MoneyTreeWeb.DashboardLive do
         </div>
 
         <div class="min-w-0 space-y-6 xl:sticky xl:top-4">
-          <.notifications_panel notifications={@metrics.notifications} />
-
           <.subscriptions_panel
             subscription={@metrics.subscription}
             show_balances?={@show_balances?}
@@ -531,49 +540,19 @@ defmodule MoneyTreeWeb.DashboardLive do
     """
   end
 
-  attr :notifications, :list, required: true
-
-  defp notifications_panel(assigns) do
+  defp notification_bell_icon(assigns) do
     ~H"""
-    <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <h3 class="text-lg font-semibold text-zinc-900">Notifications</h3>
-          <p class="text-xs text-zinc-500">Automated insights and actionable alerts</p>
-        </div>
-        <span class="rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-          <%= length(@notifications) %> open
-        </span>
-      </div>
-
-      <ul class="space-y-2 text-sm">
-        <li :for={notification <- @notifications}
-            class="space-y-3 rounded-lg border border-zinc-100 bg-zinc-50 p-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="font-medium text-zinc-900"><%= notification.message %></p>
-              <p :if={notification.action} class="mt-1 text-xs text-emerald-600"><%= notification.action %></p>
-            </div>
-            <span class={notification_severity_badge_class(notification.severity)}>
-              <%= Atom.to_string(notification.severity) %>
-            </span>
-          </div>
-
-          <div class="flex items-center justify-between gap-3 text-xs">
-            <span class="text-zinc-500">
-              <%= if notification.durable, do: "Durable event", else: "Computed advisory" %>
-            </span>
-            <button :if={notification.durable && notification.event_id}
-                    type="button"
-                    class="btn btn-ghost shrink-0 text-xs text-zinc-600"
-                    phx-click="resolve-notification"
-                    phx-value-id={notification.event_id}>
-              Dismiss
-            </button>
-          </div>
-        </li>
-      </ul>
-    </div>
+    <svg viewBox="0 0 24 24"
+         class="h-4 w-4"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round"
+         aria-hidden="true">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
     """
   end
 
@@ -654,84 +633,6 @@ defmodule MoneyTreeWeb.DashboardLive do
         </li>
         <li :if={Enum.empty?(@rollups)} class="text-xs text-zinc-500">Not enough activity yet.</li>
       </ul>
-    </div>
-    """
-  end
-
-  attr :summary, :map, required: true
-  attr :show_balances?, :boolean, required: true
-
-  defp accounts_panel(assigns) do
-    ~H"""
-    <div class="space-y-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-zinc-900">Accounts</h2>
-        <span class="text-xs text-zinc-500">Balances mask until revealed</span>
-      </div>
-
-      <ul class="space-y-3">
-        <li :for={summary <- @summary.accounts}
-            class="flex flex-col gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3">
-          <div class="flex items-center justify-between">
-            <span class="font-medium text-zinc-900"><%= summary.account.name %></span>
-            <span class="text-xs uppercase text-zinc-500"><%= summary.account.type %></span>
-          </div>
-
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-zinc-600">Current balance</span>
-            <span class="font-semibold text-zinc-800">
-              <%= visible_value(@show_balances?, summary.current_balance, summary.current_balance_masked) %>
-            </span>
-          </div>
-
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-zinc-600">Available</span>
-            <span class="text-zinc-700">
-              <%= visible_value(@show_balances?, summary.available_balance, summary.available_balance_masked) %>
-            </span>
-          </div>
-
-          <div class="grid gap-1 text-xs text-zinc-500 sm:grid-cols-2">
-            <div :if={summary.apr} class="flex items-center justify-between">
-              <span>APR</span>
-              <span class="text-zinc-700"><%= summary.apr %></span>
-            </div>
-
-            <div :if={summary.minimum_balance} class="flex items-center justify-between">
-              <span>Min balance</span>
-              <span class="text-zinc-700">
-                <%= visible_value(@show_balances?, summary.minimum_balance, summary.minimum_balance_masked) %>
-              </span>
-            </div>
-
-            <div :if={summary.maximum_balance} class="flex items-center justify-between">
-              <span>Max balance</span>
-              <span class="text-zinc-700">
-                <%= visible_value(@show_balances?, summary.maximum_balance, summary.maximum_balance_masked) %>
-              </span>
-            </div>
-          </div>
-
-          <p :if={summary.fee_schedule} class="text-xs text-zinc-500">
-            <span class="font-medium text-zinc-600">Fees:</span>
-            <span class="text-zinc-700"><%= summary.fee_schedule %></span>
-          </p>
-        </li>
-
-        <li :if={Enum.empty?(@summary.accounts)}
-            class="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500">
-          Connect an institution to start tracking balances.
-        </li>
-      </ul>
-
-      <div class="grid gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3 sm:grid-cols-2">
-        <div :for={total <- @summary.totals} class="flex items-center justify-between text-sm">
-          <dt class="text-zinc-600"><%= total.currency %> • <%= total.account_count %> accounts</dt>
-          <dd class="font-semibold text-zinc-800">
-            <%= visible_value(@show_balances?, total.current_balance, total.current_balance_masked) %>
-          </dd>
-        </div>
-      </div>
     </div>
     """
   end
@@ -1924,26 +1825,6 @@ defmodule MoneyTreeWeb.DashboardLive do
 
   defp autopay_bar_class(true), do: "h-full rounded-full bg-emerald-500 transition-all"
   defp autopay_bar_class(false), do: "h-full rounded-full bg-rose-500 transition-all"
-
-  defp notification_severity_badge_class(:warning),
-    do:
-      "shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700"
-
-  defp notification_severity_badge_class(:danger),
-    do:
-      "shrink-0 rounded-full bg-rose-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700"
-
-  defp notification_severity_badge_class(:error),
-    do:
-      "shrink-0 rounded-full bg-rose-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700"
-
-  defp notification_severity_badge_class(:success),
-    do:
-      "shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700"
-
-  defp notification_severity_badge_class(_),
-    do:
-      "shrink-0 rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-600"
 
   defp toolbar_status_badge_class(:active),
     do:

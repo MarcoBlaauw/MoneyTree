@@ -22,8 +22,11 @@ defmodule MoneyTree.SyncWorker do
 
       @impl Oban.Worker
       def perform(%Job{args: %{"mode" => "dispatch"} = args}) do
-        schedule_opts = [schedule_in: Map.get(args, "schedule_in", 0), provider: @provider]
-        Synchronization.dispatch_incremental_syncs(schedule_opts)
+        if MoneyTree.BankSync.ProviderRegistry.enabled?(@provider) do
+          schedule_opts = [schedule_in: Map.get(args, "schedule_in", 0), provider: @provider]
+          Synchronization.dispatch_incremental_syncs(schedule_opts)
+        end
+
         :ok
       end
 
@@ -40,14 +43,18 @@ defmodule MoneyTree.SyncWorker do
             :discard
 
           %Connection{} = connection ->
-            opts =
-              [mode: mode, telemetry_metadata: telemetry_metadata]
-              |> maybe_put_client(client)
+            if MoneyTree.BankSync.ProviderRegistry.enabled?(@provider) do
+              opts =
+                [mode: mode, telemetry_metadata: telemetry_metadata]
+                |> maybe_put_client(client)
 
-            case @synchronizer.sync(connection, opts) do
-              {:ok, _result} -> :ok
-              {:error, {:rate_limited, info}} -> {:snooze, snooze_duration(info, attempt)}
-              {:error, reason} -> {:error, reason}
+              case @synchronizer.sync(connection, opts) do
+                {:ok, _result} -> :ok
+                {:error, {:rate_limited, info}} -> {:snooze, snooze_duration(info, attempt)}
+                {:error, reason} -> {:error, reason}
+              end
+            else
+              :discard
             end
         end
       end

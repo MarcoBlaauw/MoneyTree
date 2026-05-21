@@ -67,7 +67,7 @@ defmodule MoneyTree.Institutions.Connection do
     |> validate_required([:user_id, :institution_id, :provider])
     |> normalize_cursor()
     |> update_change(:provider, &normalize_provider/1)
-    |> validate_inclusion(:provider, ["teller", "plaid"])
+    |> validate_inclusion(:provider, ["simplefin", "teller", "plaid"])
     |> validate_length(:teller_enrollment_id, max: 120)
     |> validate_length(:teller_user_id, max: 120)
     |> validate_length(:sync_cursor, max: 1024)

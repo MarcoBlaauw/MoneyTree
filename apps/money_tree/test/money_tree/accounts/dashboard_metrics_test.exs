@@ -45,6 +45,7 @@ defmodule MoneyTree.Accounts.DashboardMetricsTest do
       account_fixture(user, %{
         name: "Savings",
         type: "depository",
+        subtype: "savings",
         current_balance: Decimal.new("5000.00")
       })
 
@@ -60,7 +61,25 @@ defmodule MoneyTree.Accounts.DashboardMetricsTest do
       assert snapshot.net_worth == "USD 12000.00"
       assert snapshot.assets == "USD 15000.00"
       assert snapshot.liabilities == "USD 3000.00"
-      assert [%{label: "Savings"} | _] = snapshot.breakdown.assets
+      assert Enum.any?(snapshot.breakdown.assets, &(&1.label == "Savings"))
+    end
+
+    test "groups accounts by internal account kind before provider metadata" do
+      user = user_fixture()
+
+      account_fixture(user, %{
+        name: "Imported Provider Account",
+        type: "account",
+        subtype: nil,
+        internal_account_kind: "mortgage",
+        liability_type: "mortgage",
+        current_balance: Decimal.new("1000.00")
+      })
+
+      snapshot = Accounts.net_worth_snapshot(user)
+
+      assert Enum.any?(snapshot.breakdown.liabilities, &(&1.label == "Mortgages"))
+      refute Enum.any?(snapshot.breakdown.assets, &(&1.label == "Accounts"))
     end
   end
 

@@ -3,6 +3,7 @@ defmodule MoneyTree.Synchronization do
   Coordinates provider-agnostic synchronization workflows.
   """
 
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
   alias Oban
@@ -25,21 +26,37 @@ defmodule MoneyTree.Synchronization do
     unique_period = Keyword.get(opts, :unique_period, @default_unique_period)
     provider = Keyword.get(opts, :provider)
 
-    Institutions.list_connections_for_sync(provider: provider)
-    |> Enum.reduce_while(:ok, fn connection, acc ->
-      case schedule_incremental_sync(connection,
-             schedule_in: schedule_in,
-             unique_period: unique_period
-           ) do
-        :ok -> {:cont, acc}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
+    if provider_disabled?(provider) do
+      :ok
+    else
+      Institutions.list_connections_for_sync(provider: provider)
+      |> Enum.filter(&ProviderRegistry.enabled?(&1.provider))
+      |> Enum.reduce_while(:ok, fn connection, acc ->
+        case schedule_incremental_sync(connection,
+               schedule_in: schedule_in,
+               unique_period: unique_period
+             ) do
+          :ok -> {:cont, acc}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+    end
   end
 
   defp enqueue_connection_sync(%Connection{} = connection, mode, opts) do
     provider = provider_name(connection)
 
+    if not ProviderRegistry.enabled?(provider) do
+      {:error, :provider_disabled}
+    else
+      do_enqueue_connection_sync(connection, provider, mode, opts)
+    end
+  end
+
+  defp provider_disabled?(nil), do: false
+  defp provider_disabled?(provider), do: not ProviderRegistry.enabled?(provider)
+
+  defp do_enqueue_connection_sync(%Connection{} = connection, provider, mode, opts) do
     args =
       %{
         "connection_id" => connection.id,
@@ -65,6 +82,7 @@ defmodule MoneyTree.Synchronization do
     end
   end
 
+  def sync_worker_module("simplefin"), do: MoneyTree.SimpleFin.SyncWorker
   def sync_worker_module("plaid"), do: MoneyTree.Plaid.SyncWorker
   def sync_worker_module(_), do: MoneyTree.Teller.SyncWorker
 

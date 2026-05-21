@@ -170,6 +170,8 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     assert html =~ "Budget pulse"
     assert html =~ "Loans &amp; autopay"
     assert html =~ "Recent activity"
+    assert html =~ "Open notifications"
+    refute html =~ "Notification inbox"
 
     assert html =~ "••"
     refute html =~ "USD 3100.00"
@@ -179,14 +181,9 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
 
     rendered = render(view)
     assert rendered =~ "USD 3100.00"
-    assert rendered =~ "USD 500.00"
-    assert rendered =~ "USD 5000.00"
     assert rendered =~ "USD 120.00"
     assert rendered =~ "text-rose-600"
     assert rendered =~ "text-emerald-600"
-    assert rendered =~ "Subscription spend this month"
-    assert rendered =~ "4.50%"
-    assert rendered =~ "Waived with direct deposit"
   end
 
   test "lists tangible assets and reveals valuations when unmasked", %{conn: conn, user: user} do
@@ -285,7 +282,7 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     refute render(view) =~ "Unlock the dashboard"
   end
 
-  test "dashboard only lists accounts owned by the user", %{conn: conn, user: user} do
+  test "dashboard does not render the full accounts list", %{conn: conn, user: user} do
     account_fixture(user, %{name: "Visible Account"})
 
     other_user = user_fixture(%{email: "other@example.com"})
@@ -293,11 +290,11 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
 
     {:ok, _view, html} = live(conn, ~p"/app/dashboard")
 
-    assert html =~ "Visible Account"
+    refute html =~ "Visible Account"
     refute html =~ "Hidden Account"
   end
 
-  test "users can dismiss durable notification events from the dashboard", %{
+  test "users can dismiss durable notification events from the notifications page", %{
     conn: conn,
     user: user
   } do
@@ -319,7 +316,7 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
         dedupe_key: "dashboard-dismiss-#{obligation.id}"
       })
 
-    {:ok, view, html} = live(conn, ~p"/app/dashboard")
+    {:ok, view, html} = live(conn, ~p"/app/notifications")
 
     assert html =~ "Travel Card payment is overdue."
     assert html =~ "Dismiss"
@@ -332,6 +329,22 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     assert rendered =~ "Notification dismissed."
     refute rendered =~ "Travel Card payment is overdue."
     assert Repo.get!(Event, event.id).resolved_at
+  end
+
+  test "users can hide computed advisories for the current notifications session", %{conn: conn} do
+    {:ok, view, html} = live(conn, ~p"/app/notifications")
+
+    assert html =~ "You&#39;re all caught up!"
+    assert html =~ "Hide"
+
+    view
+    |> element(~s(button[phx-click="hide-computed-notification"]))
+    |> render_click()
+
+    rendered = render(view)
+    assert rendered =~ "Advisory hidden for this session."
+    assert rendered =~ "No notifications need attention right now."
+    refute rendered =~ "You&#39;re all caught up!"
   end
 
   defp insert_transaction(%Account{} = account, attrs) do

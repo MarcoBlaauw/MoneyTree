@@ -47,6 +47,8 @@ defmodule MoneyTree.AccountsFixtures do
       currency: Map.get(attrs, :currency, "USD"),
       type: Map.get(attrs, :type, "depository"),
       subtype: Map.get(attrs, :subtype, "checking"),
+      internal_account_kind: Map.get(attrs, :internal_account_kind),
+      liability_type: Map.get(attrs, :liability_type),
       external_id: Map.get(attrs, :external_id, unique_account_external_id()),
       current_balance: Map.get(attrs, :current_balance, Decimal.new("0")),
       available_balance: Map.get(attrs, :available_balance, Decimal.new("0")),

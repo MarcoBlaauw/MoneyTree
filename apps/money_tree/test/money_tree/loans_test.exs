@@ -31,6 +31,22 @@ defmodule MoneyTree.LoansTest do
     assert entry.last_payment_masked =~ "••"
   end
 
+  test "overview includes accounts classified as MoneyTree loans" do
+    user = user_fixture()
+
+    account_fixture(user, %{
+      name: "Imported Loan",
+      type: "account",
+      subtype: nil,
+      internal_account_kind: "loan",
+      current_balance: Decimal.new("12000.00")
+    })
+
+    [entry] = Loans.overview(user)
+
+    assert entry.account.name == "Imported Loan"
+  end
+
   defp insert_transaction(%Account{} = account, amount) do
     params = %{
       external_id: System.unique_integer([:positive]) |> Integer.to_string(),

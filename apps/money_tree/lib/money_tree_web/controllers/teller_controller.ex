@@ -3,6 +3,7 @@ defmodule MoneyTreeWeb.TellerController do
 
   alias Ecto.Association.NotLoaded
   alias Ecto.Changeset
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Repo
@@ -16,10 +17,14 @@ defmodule MoneyTreeWeb.TellerController do
     user = conn.assigns.current_user
     bucket = {:teller_connect_token, user.id, maybe_client_ip(conn)}
 
-    with :ok <- RateLimiter.check(bucket, @connect_token_limit, @connect_token_period_seconds),
+    with :ok <- ensure_enabled(),
+         :ok <- RateLimiter.check(bucket, @connect_token_limit, @connect_token_period_seconds),
          {:ok, payload} <- teller_client().create_connect_token(params) do
       json(conn, %{data: payload})
     else
+      {:error, :provider_disabled} ->
+        disabled(conn)
+
       {:error, :rate_limited} ->
         conn
         |> put_status(:too_many_requests)
@@ -33,7 +38,8 @@ defmodule MoneyTreeWeb.TellerController do
   def exchange(conn, %{"public_token" => public_token} = params) do
     user = conn.assigns.current_user
 
-    with {:ok, institution_id} <- fetch_institution_id(params),
+    with :ok <- ensure_enabled(),
+         {:ok, institution_id} <- fetch_institution_id(params),
          {:ok, exchange_payload} <- teller_client().exchange_public_token(public_token),
          {:ok, connection} <- persist_connection(user, institution_id, exchange_payload, params),
          :ok <- schedule_initial_sync(connection) do
@@ -56,6 +62,9 @@ defmodule MoneyTreeWeb.TellerController do
         |> put_status(:not_found)
         |> json(%{error: "connection not found"})
 
+      {:error, :provider_disabled} ->
+        disabled(conn)
+
       {:error, %Changeset{} = changeset} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -69,7 +78,8 @@ defmodule MoneyTreeWeb.TellerController do
   def exchange(conn, %{"access_token" => access_token} = params) when is_binary(access_token) do
     user = conn.assigns.current_user
 
-    with {:ok, institution_id} <- fetch_or_create_institution_id(params),
+    with :ok <- ensure_enabled(),
+         {:ok, institution_id} <- fetch_or_create_institution_id(params),
          {:ok, connection} <-
            persist_connection_with_access_token(user, institution_id, access_token, params),
          :ok <- schedule_initial_sync(connection) do
@@ -85,6 +95,9 @@ defmodule MoneyTreeWeb.TellerController do
         conn
         |> put_status(:not_found)
         |> json(%{error: "institution not found"})
+
+      {:error, :provider_disabled} ->
+        disabled(conn)
 
       {:error, %Changeset{} = changeset} ->
         conn
@@ -145,6 +158,16 @@ defmodule MoneyTreeWeb.TellerController do
       {:error, :not_found} ->
         Institutions.create_connection(user, institution_id, attrs)
     end
+  end
+
+  defp ensure_enabled do
+    if ProviderRegistry.enabled?("teller"), do: :ok, else: {:error, :provider_disabled}
+  end
+
+  defp disabled(conn) do
+    conn
+    |> put_status(:service_unavailable)
+    |> json(%{error: "Teller is disabled for new connections"})
   end
 
   defp build_connection_attrs(exchange_payload) do

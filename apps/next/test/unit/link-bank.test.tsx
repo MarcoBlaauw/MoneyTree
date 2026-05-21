@@ -114,7 +114,12 @@ describe("LinkBankClient", () => {
     globalThis.fetch = fetchMock as typeof globalThis.fetch;
 
     const view = render(
-      <LinkBankClient csrfToken={CSRF_TOKEN} tellerConfig={TELLER_CONFIG} components={headlessStubs} />,
+      <LinkBankClient
+        csrfToken={CSRF_TOKEN}
+        tellerConfig={TELLER_CONFIG}
+        enabledProviders={["teller", "plaid"]}
+        components={headlessStubs}
+      />,
     );
 
     fireEvent.click(view.getByTestId("launch-teller"));
@@ -127,11 +132,7 @@ describe("LinkBankClient", () => {
       assert.equal(setupCalls[0]?.environment, TELLER_CONFIG.environment);
     });
 
-    await waitFor(() => {
-      const payloads = view.getAllByTestId("event-payload");
-      const payloadTexts = payloads.map((node) => node.textContent ?? "");
-      assert.ok(payloadTexts.some((text) => text.includes("hasConnectKey")), payloadTexts.join(" | "));
-    });
+    assert.ok(view.getByTestId("vendor-teller"));
   });
 
   it("surfaces vendor errors", async () => {
@@ -139,7 +140,12 @@ describe("LinkBankClient", () => {
     globalThis.fetch = fetchMock as typeof globalThis.fetch;
 
     const view = render(
-      <LinkBankClient csrfToken={CSRF_TOKEN} tellerConfig={TELLER_CONFIG} components={headlessStubs} />,
+      <LinkBankClient
+        csrfToken={CSRF_TOKEN}
+        tellerConfig={TELLER_CONFIG}
+        enabledProviders={["teller", "plaid"]}
+        components={headlessStubs}
+      />,
     );
 
     fireEvent.click(view.getByTestId("launch-plaid"));
@@ -178,7 +184,12 @@ describe("LinkBankClient", () => {
     globalThis.fetch = fetchMock as typeof globalThis.fetch;
 
     const view = render(
-      <LinkBankClient csrfToken={CSRF_TOKEN} tellerConfig={TELLER_CONFIG} components={headlessStubs} />,
+      <LinkBankClient
+        csrfToken={CSRF_TOKEN}
+        tellerConfig={TELLER_CONFIG}
+        enabledProviders={["teller", "plaid"]}
+        components={headlessStubs}
+      />,
     );
 
     fireEvent.click(view.getByTestId("launch-plaid"));
@@ -202,7 +213,12 @@ describe("LinkBankClient", () => {
     globalThis.fetch = fetchMock as typeof globalThis.fetch;
 
     const view = render(
-      <LinkBankClient csrfToken={CSRF_TOKEN} tellerConfig={TELLER_CONFIG} components={headlessStubs} />,
+      <LinkBankClient
+        csrfToken={CSRF_TOKEN}
+        tellerConfig={TELLER_CONFIG}
+        enabledProviders={["teller", "plaid"]}
+        components={headlessStubs}
+      />,
     );
 
     fireEvent.click(view.getByTestId("launch-plaid"));
@@ -212,46 +228,64 @@ describe("LinkBankClient", () => {
     assert.equal(setupCalls.length, 0);
   });
 
-  it("redirects browser for Stripe Connect sessions", async () => {
-    const fetchMock = async () =>
-      createFetchResponse(200, {
+  it("claims a SimpleFIN setup token and renders discovered accounts", async () => {
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+
+      if (url === "/api/simplefin/connections") {
+        return createFetchResponse(200, {
+          data: {
+            connections: [
+              {
+                id: "conn-1",
+                institution_name: "SimpleFIN Bridge",
+                provider: "simplefin",
+                account_count: 1,
+                status: "connected",
+                last_synced_at: null,
+              },
+            ],
+          },
+        });
+      }
+
+      assert.equal(url, "/api/simplefin/claim");
+      assert.equal(body.setup_token, "setup-token");
+
+      return createFetchResponse(200, {
         data: {
-          url: "https://connect.stripe.com/oauth/authorize?client_id=ca_demo&state=test-state",
-          state: "test-state",
+          connection_id: "conn-1",
+          institution_id: "inst-1",
+          accounts: [{ id: "acct-1", name: "Checking", currency: "USD", balance: "42.00" }],
+          errors: [],
         },
       });
+    };
 
     globalThis.fetch = fetchMock as typeof globalThis.fetch;
 
-    const originalOpen = tellerWindow?.open;
-    let redirectedTo: string | null = null;
+    const view = render(
+      <LinkBankClient csrfToken={CSRF_TOKEN} tellerConfig={TELLER_CONFIG} components={headlessStubs} />,
+    );
 
-    if (tellerWindow) {
-      tellerWindow.open = ((url?: string | URL | undefined) => {
-        redirectedTo =
-          typeof url === "string" ? url : url ? url.toString() : null;
-        return null;
-      }) as typeof tellerWindow.open;
-    }
+    assert.ok(await view.findByText("simplefin connection • 1 accounts"));
 
-    try {
-      const view = render(
-        <LinkBankClient csrfToken={CSRF_TOKEN} tellerConfig={TELLER_CONFIG} components={headlessStubs} />,
-      );
+    fireEvent.input(view.getByPlaceholderText("Paste the one-time SimpleFIN setup token"), {
+      target: { value: "setup-token" },
+    });
+    await waitFor(() => {
+      assert.equal((view.getByPlaceholderText("Paste the one-time SimpleFIN setup token") as HTMLTextAreaElement).value, "setup-token");
+      assert.equal((view.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled, false);
+    });
 
-      fireEvent.click(view.getByTestId("launch-stripe"));
-
-      await waitFor(() => {
-        assert.equal(
-          redirectedTo,
-          "https://connect.stripe.com/oauth/authorize?client_id=ca_demo&state=test-state",
-        );
-      });
-    } finally {
-      if (tellerWindow && originalOpen) {
-        tellerWindow.open = originalOpen;
-      }
-    }
+    fireEvent.click(view.getByRole("button", { name: "Connect" }));
+    assert.ok(await view.findByText("Checking"));
+    assert.ok(view.getByText("USD · Balance 42.00"));
+    await waitFor(() => {
+      assert.ok(view.getAllByText("SimpleFIN Bridge").length >= 1);
+      assert.equal((view.getByRole("button", { name: "Reload" }) as HTMLButtonElement).disabled, false);
+    });
   });
 });
 

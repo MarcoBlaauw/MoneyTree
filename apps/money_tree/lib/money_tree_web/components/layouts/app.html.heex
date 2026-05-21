@@ -1,9 +1,50 @@
 <div class="min-h-screen bg-zinc-50">
-  <div class="mx-auto flex min-h-screen w-full max-w-[96rem] flex-col lg:flex-row">
-    <aside class="hidden w-72 shrink-0 border-r border-zinc-200 bg-white lg:flex lg:flex-col">
+  <button type="button"
+          data-app-sidebar-open
+          class="fixed left-4 top-4 z-30 hidden h-9 w-9 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-700 shadow-sm hover:bg-zinc-100"
+          aria-label="Open sidebar"
+          title="Open sidebar">
+    <svg viewBox="0 0 24 24"
+         class="h-4 w-4"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="2"
+         stroke-linecap="round"
+         stroke-linejoin="round"
+         aria-hidden="true">
+      <path d="M4 5h16" />
+      <path d="M4 12h16" />
+      <path d="M4 19h16" />
+    </svg>
+  </button>
+
+  <div data-app-shell class="mx-auto flex min-h-screen w-full max-w-[96rem] flex-col lg:flex-row">
+    <aside data-app-sidebar class="hidden w-72 shrink-0 border-r border-zinc-200 bg-white lg:flex lg:flex-col">
       <div class="border-b border-zinc-200 px-6 py-6">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-600">MoneyTree</p>
-        <h1 class="mt-2 text-2xl font-semibold text-zinc-900">Workspace</h1>
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-600">MoneyTree</p>
+            <h1 class="mt-2 text-2xl font-semibold text-zinc-900">Workspace</h1>
+          </div>
+          <button type="button"
+                  data-app-sidebar-close
+                  class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-100 lg:inline-flex"
+                  aria-label="Close sidebar"
+                  title="Close sidebar">
+            <svg viewBox="0 0 24 24"
+                 class="h-4 w-4"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2"
+                 stroke-linecap="round"
+                 stroke-linejoin="round"
+                 aria-hidden="true">
+              <path d="M9 4v16" />
+              <path d="M4 5h16" />
+              <path d="M4 19h16" />
+            </svg>
+          </button>
+        </div>
         <p class="mt-1 text-sm text-zinc-500">Budgets, transfers, alerts, and account operations in one place.</p>
       </div>
 

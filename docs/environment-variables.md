@@ -70,7 +70,36 @@ authentication emails share one delivery path.
 | `MAILER_SMTP_AUTH` | No | `always` | SMTP auth policy: `always`, `never`, or `if_available`. |
 | `MAILER_SMTP_VERIFY` | No | `verify_peer` | SMTP TLS certificate verification mode. Use `none` only for development against a server with a non-standard certificate chain. |
 
+## Bank sync providers
+
+SimpleFIN Bridge and manual imports are the default provider set for new links. Teller and Plaid
+remain readable for historical data, but are legacy-disabled for new connections unless explicitly
+enabled.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `BANK_SYNC_ENABLED_PROVIDERS` | No | `simplefin,manual` | Comma-separated provider list available for new user connections. Add `teller` or `plaid` only when those legacy providers are configured. |
+| `BANK_SYNC_PRIMARY_PROVIDER` | No | `simplefin` | Provider shown first in the bank-linking UI. |
+
+## SimpleFIN Bridge
+
+SimpleFIN uses a user-created one-time setup token. MoneyTree claims that token server-side and
+stores only the resulting Access URL in encrypted connection credentials.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `SIMPLEFIN_CREATE_URL` | No | `https://bridge.simplefin.org/simplefin/create` | URL users visit to create a SimpleFIN setup token. |
+| `SIMPLEFIN_PROTOCOL_VERSION` | No | `2` | Protocol version requested in `/accounts` calls. |
+| `SIMPLEFIN_SYNC_INTERVAL_HOURS` | No | `24` | Default automatic sync cadence. |
+| `SIMPLEFIN_MAX_REQUESTS_PER_CONNECTION_PER_DAY` | No | `24` | Safety cap for `/accounts` requests per stored Access URL. |
+| `SIMPLEFIN_INITIAL_SYNC_DAYS` | No | `90` | Initial lookback window. Keep at or below SimpleFIN Bridge's range limit. |
+| `SIMPLEFIN_INCLUDE_PENDING` | No | `false` | Whether to request pending transactions using `pending=1`. |
+
 ## Teller integration
+
+Teller is a legacy provider for new links and is disabled by default. The variables below are
+required in production only when `BANK_SYNC_ENABLED_PROVIDERS` contains `teller` or
+`TELLER_ENABLED=true`.
 
 Teller integration requires app-level Connect/webhook configuration plus a client certificate/private
 key pair for mTLS. End-user account access tokens are not configured globally; they are returned by
@@ -78,8 +107,9 @@ Teller during the exchange flow and stored on each institution connection.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `TELLER_CONNECT_APPLICATION_ID` | Yes (production) | — | Connect application ID embedded in Teller Connect sessions. |
-| `TELLER_WEBHOOK_SECRET` | Yes (production) | — | Webhook signing secret used to verify Teller webhook payloads. |
+| `TELLER_ENABLED` | No | `false` | Compatibility flag for enabling legacy Teller code paths. Prefer `BANK_SYNC_ENABLED_PROVIDERS`. |
+| `TELLER_CONNECT_APPLICATION_ID` | Yes (production when Teller enabled) | — | Connect application ID embedded in Teller Connect sessions. |
+| `TELLER_WEBHOOK_SECRET` | Yes (production when Teller enabled) | — | Webhook signing secret used to verify Teller webhook payloads. |
 | `TELLER_API_HOST` | No | Teller default | Override the Teller API base URL when instructed by Teller support. |
 | `TELLER_CONNECT_HOST` | No | Teller default | Override the Teller Connect base URL for non-standard environments. |
 | `TELLER_WEBHOOK_HOST` | No | Teller default | Override the webhook host when using alternative tunnels or sandbox endpoints. |
@@ -102,11 +132,15 @@ Stripe Connect is optional and only required if you want to launch Stripe OAuth 
 
 ## Plaid integration
 
+Plaid is a legacy provider for new links and is disabled by default. The variables below are
+required only when `BANK_SYNC_ENABLED_PROVIDERS` contains `plaid` or `PLAID_ENABLED=true`.
+
 Plaid integration is used by the `/app/react/link-bank` flow to create Link tokens, exchange
 public tokens, and synchronize accounts and transactions through Phoenix.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
+| `PLAID_ENABLED` | No | `false` | Compatibility flag for enabling legacy Plaid code paths. Prefer `BANK_SYNC_ENABLED_PROVIDERS`. |
 | `PLAID_CLIENT_ID` | Yes (when Plaid flow enabled) | — | Plaid API client identifier for server-side requests. |
 | `PLAID_SECRET` | Yes (when Plaid flow enabled) | — | Plaid API secret used by Phoenix for authenticated API calls. |
 | `PLAID_ENV` | No | `sandbox` | Plaid environment name (`sandbox`, `development`, `production`) used to select the default API host. |

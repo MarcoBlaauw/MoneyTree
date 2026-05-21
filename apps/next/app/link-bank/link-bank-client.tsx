@@ -3,9 +3,9 @@
 import React from "react";
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle, Tab, TabGroup, TabList, TabPanel, TabPanels } from "@headlessui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { WidgetEventLog, useWidgetEvents } from "../components/widget-flow";
+import { useWidgetEvents } from "../components/widget-flow";
 
-type VendorId = "teller" | "plaid" | "stripe";
+type VendorId = "teller" | "plaid";
 
 interface TellerConnectConfig {
   applicationId?: string;
@@ -35,6 +35,7 @@ const DEFAULT_COMPONENTS: HeadlessComponents = {
   TabPanel,
   Tab,
 };
+const DEFAULT_ENABLED_PROVIDERS = ["simplefin", "manual"];
 
 interface VendorConfig {
   id: VendorId;
@@ -43,7 +44,7 @@ interface VendorConfig {
   cta: string;
   endpoint: string;
   requestBody: Record<string, unknown>;
-  launchMode: "widget" | "redirect";
+  launchMode: "widget";
   frameUrl: (tokenPayload: Record<string, unknown>) => string;
   errorHint: string;
 }
@@ -51,6 +52,8 @@ interface VendorConfig {
 interface LinkBankClientProps {
   csrfToken: string;
   tellerConfig?: TellerConnectConfig;
+  enabledProviders?: string[];
+  simplefinCreateUrl?: string;
   components?: Partial<HeadlessComponents>;
 }
 
@@ -58,6 +61,24 @@ interface ModalState {
   open: boolean;
   vendor?: VendorConfig;
   payload?: Record<string, unknown>;
+}
+
+interface SimpleFinAccount {
+  id?: string;
+  name?: string;
+  currency?: string;
+  balance?: string;
+  available_balance?: string;
+}
+
+interface SimpleFinConnection {
+  id: string;
+  provider?: string;
+  institution_name?: string;
+  account_count?: number;
+  status?: string;
+  last_synced_at?: string | null;
+  last_sync_error?: unknown;
 }
 
 type TellerConnectSuccessEvent = Record<string, unknown>;
@@ -285,19 +306,6 @@ const VENDORS: VendorConfig[] = [
     },
     errorHint: "Verify the Plaid sandbox credentials and ensure the Phoenix session cookie is present.",
   },
-  {
-    id: "stripe",
-    name: "Stripe Connect",
-    description:
-      "Starts Stripe Connect OAuth in a secure redirect flow. The session URL is generated server-side by Phoenix.",
-    cta: "Link with Stripe",
-    endpoint: "/api/stripe/session",
-    requestBody: {},
-    launchMode: "redirect",
-    frameUrl: () => "",
-    errorHint:
-      "Verify STRIPE_CONNECT_CLIENT_ID and STRIPE_CONNECT_REDIRECT_URI are configured in the Phoenix environment.",
-  },
 ];
 
 function createFetchOptions(csrfToken: string, body: Record<string, unknown>): RequestInit {
@@ -310,6 +318,23 @@ function createFetchOptions(csrfToken: string, body: Record<string, unknown>): R
     },
     body: JSON.stringify(body),
   } satisfies RequestInit;
+}
+
+function createJsonFetchOptions(csrfToken: string, method = "GET", body?: Record<string, unknown>): RequestInit {
+  const options: RequestInit = {
+    method,
+    credentials: "include",
+    headers: {
+      "content-type": "application/json",
+      "x-csrf-token": csrfToken,
+    },
+  };
+
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+
+  return options;
 }
 
 async function parseResponsePayload(response: Response): Promise<Record<string, unknown>> {
@@ -330,16 +355,50 @@ async function parseResponsePayload(response: Response): Promise<Record<string, 
   };
 }
 
-export default function LinkBankClient({ csrfToken, tellerConfig, components }: LinkBankClientProps) {
-  const { events, logEvent } = useWidgetEvents();
-  const [activeVendor, setActiveVendor] = useState<VendorId>("teller");
+function formatConnectionDate(value: string | null | undefined): string {
+  if (!value) {
+    return "Not synced yet";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+export default function LinkBankClient({
+  csrfToken,
+  tellerConfig,
+  enabledProviders = DEFAULT_ENABLED_PROVIDERS,
+  simplefinCreateUrl = "https://bridge.simplefin.org/simplefin/create",
+  components,
+}: LinkBankClientProps) {
+  const { logEvent } = useWidgetEvents();
+  const legacyVendors = VENDORS.filter((vendor) => enabledProviders.includes(vendor.id));
+  const [activeVendor, setActiveVendor] = useState<VendorId>(legacyVendors[0]?.id ?? "teller");
   const [modalState, setModalState] = useState<ModalState>({ open: false });
   const [errors, setErrors] = useState<Record<VendorId, string>>({
     teller: "",
     plaid: "",
-    stripe: "",
   });
   const [loadingVendor, setLoadingVendor] = useState<VendorId | null>(null);
+  const [setupToken, setSetupToken] = useState("");
+  const [simplefinLoading, setSimplefinLoading] = useState(false);
+  const [simplefinError, setSimplefinError] = useState("");
+  const [simplefinProviderErrors, setSimplefinProviderErrors] = useState<string[]>([]);
+  const [simplefinAccounts, setSimplefinAccounts] = useState<SimpleFinAccount[]>([]);
+  const [simplefinConnections, setSimplefinConnections] = useState<SimpleFinConnection[]>([]);
+  const [connectionsLoading, setConnectionsLoading] = useState(false);
+  const [connectionActionId, setConnectionActionId] = useState<string | null>(null);
   const tellerConnectRef = useRef<TellerConnectInstance | null>(null);
   const plaidRef = useRef<PlaidHandler | null>(null);
   const tellerApplicationId = tellerConfig?.applicationId;
@@ -470,6 +529,96 @@ export default function LinkBankClient({ csrfToken, tellerConfig, components }: 
     [],
   );
 
+  const loadSimpleFinConnections = useCallback(async () => {
+    setConnectionsLoading(true);
+
+    try {
+      const response = await fetch("/api/simplefin/connections", createJsonFetchOptions(csrfToken));
+      const payload = await parseResponsePayload(response);
+
+      if (!response.ok) {
+        setSimplefinError(asString(payload.error) ?? "Unable to load existing SimpleFIN connections.");
+        return;
+      }
+
+      const data = maybeRecord(payload.data) ?? {};
+      const connections = Array.isArray(data.connections)
+        ? (data.connections as SimpleFinConnection[])
+        : [];
+      setSimplefinConnections(connections);
+    } catch (error) {
+      setSimplefinError(error instanceof Error ? error.message : "Unable to load existing SimpleFIN connections.");
+    } finally {
+      setConnectionsLoading(false);
+    }
+  }, [csrfToken]);
+
+  useEffect(() => {
+    if (enabledProviders.includes("simplefin")) {
+      void loadSimpleFinConnections();
+    }
+  }, [enabledProviders, loadSimpleFinConnections]);
+
+  const refreshSimpleFinConnection = useCallback(
+    async (connectionId: string) => {
+      setConnectionActionId(connectionId);
+      setSimplefinError("");
+
+      try {
+        const response = await fetch(
+          "/api/simplefin/sync",
+          createFetchOptions(csrfToken, { connection_id: connectionId }),
+        );
+        const payload = await parseResponsePayload(response);
+
+        if (!response.ok) {
+          setSimplefinError(asString(payload.error) ?? "Unable to refresh this connection.");
+          return;
+        }
+
+        logEvent("SimpleFIN refresh scheduled", { level: "success", payload: maybeRecord(payload.data) ?? {} });
+        await loadSimpleFinConnections();
+      } catch (error) {
+        setSimplefinError(error instanceof Error ? error.message : "Unable to refresh this connection.");
+      } finally {
+        setConnectionActionId(null);
+      }
+    },
+    [csrfToken, loadSimpleFinConnections, logEvent],
+  );
+
+  const revokeSimpleFinConnection = useCallback(
+    async (connectionId: string) => {
+      if (!window.confirm("Disconnect this institution from MoneyTree?")) {
+        return;
+      }
+
+      setConnectionActionId(connectionId);
+      setSimplefinError("");
+
+      try {
+        const response = await fetch(
+          `/api/simplefin/connections/${connectionId}`,
+          createJsonFetchOptions(csrfToken, "DELETE"),
+        );
+        const payload = await parseResponsePayload(response);
+
+        if (!response.ok) {
+          setSimplefinError(asString(payload.error) ?? "Unable to revoke this connection.");
+          return;
+        }
+
+        logEvent("SimpleFIN connection revoked", { level: "success", payload: maybeRecord(payload.data) ?? {} });
+        await loadSimpleFinConnections();
+      } catch (error) {
+        setSimplefinError(error instanceof Error ? error.message : "Unable to revoke this connection.");
+      } finally {
+        setConnectionActionId(null);
+      }
+    },
+    [csrfToken, loadSimpleFinConnections, logEvent],
+  );
+
   const launchTellerConnect = useCallback(
     (connectToken?: string) => {
       const api = typeof window === "undefined" ? undefined : window.TellerConnect;
@@ -586,27 +735,6 @@ export default function LinkBankClient({ csrfToken, tellerConfig, components }: 
           return;
         }
 
-        if (vendor.launchMode === "redirect") {
-          const redirectUrl = asString(data.url);
-
-          if (!redirectUrl) {
-            setErrors((prev) => ({
-              ...prev,
-              [vendor.id]: "Redirect URL missing from Stripe session response.",
-            }));
-            logEvent("Stripe session missing redirect URL", { level: "error", payload: data });
-            return;
-          }
-
-          logEvent("Redirecting to Stripe Connect", {
-            level: "info",
-            payload: { url: redirectUrl, state: data.state },
-          });
-
-          window.open(redirectUrl, "_self");
-          return;
-        }
-
         if (vendor.id === "plaid") {
           const linkToken = asString(data.link_token) ?? asString(data.linkToken);
 
@@ -702,14 +830,213 @@ export default function LinkBankClient({ csrfToken, tellerConfig, components }: 
     [csrfToken, launchTellerConnect, logEvent, tellerApplicationId, tellerEnvironment],
   );
 
+  const claimSimpleFinToken = useCallback(async () => {
+    setSimplefinLoading(true);
+    setSimplefinError("");
+    setSimplefinProviderErrors([]);
+    setSimplefinAccounts([]);
+
+    try {
+      const response = await fetch("/api/simplefin/claim", createFetchOptions(csrfToken, { setup_token: setupToken }));
+      const payload = await parseResponsePayload(response);
+
+      if (!response.ok) {
+        setSimplefinError(asString(payload.error) ?? "SimpleFIN setup failed.");
+        logEvent("SimpleFIN claim failed", { level: "error", payload });
+        return;
+      }
+
+      const data = maybeRecord(payload.data) ?? {};
+      const accounts = Array.isArray(data.accounts) ? (data.accounts as SimpleFinAccount[]) : [];
+      const providerErrors = Array.isArray(data.errors)
+        ? data.errors
+            .map((error) => maybeRecord(error)?.msg)
+            .map(asString)
+            .filter((message): message is string => Boolean(message))
+        : [];
+      setSimplefinAccounts(accounts);
+      setSimplefinProviderErrors(providerErrors);
+      setSetupToken("");
+      logEvent("SimpleFIN connection claimed", {
+        level: "success",
+        payload: {
+          connection_id: data.connection_id,
+          institution_id: data.institution_id,
+          accounts: accounts.length,
+          provider_errors: providerErrors.length,
+        },
+      });
+      await loadSimpleFinConnections();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setSimplefinError(message);
+      logEvent("SimpleFIN claim crashed", { level: "error", payload: { message } });
+    } finally {
+      setSimplefinLoading(false);
+    }
+  }, [csrfToken, loadSimpleFinConnections, logEvent, setupToken]);
+
   return (
     <>
-      <TabGroupComponent
-        selectedIndex={VENDORS.findIndex((vendor) => vendor.id === activeVendor)}
-        onChange={(index) => setActiveVendor(VENDORS[index]?.id ?? "teller")}
-      >
+      {enabledProviders.includes("simplefin") ? (
+        <section className="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-zinc-900">Existing connections</h2>
+              <p className="text-sm text-zinc-500">
+                Active SimpleFIN Bridge connections and current sync state.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={connectionsLoading}
+              onClick={() => void loadSimpleFinConnections()}
+            >
+              {connectionsLoading ? "Loading..." : "Reload"}
+            </button>
+          </header>
+
+          {simplefinConnections.length > 0 ? (
+            <div className="grid gap-3">
+              {simplefinConnections.map((connection) => (
+                <div
+                  key={connection.id}
+                  className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-zinc-900">
+                        {connection.institution_name ?? "SimpleFIN Bridge"}
+                      </p>
+                      <span
+                        className={
+                          connection.status === "needs_attention"
+                            ? "rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700"
+                            : "rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700"
+                        }
+                      >
+                        {connection.status === "needs_attention" ? "Needs attention" : "Connected"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">
+                      {connection.provider ?? "simplefin"} connection • {connection.account_count ?? 0} accounts
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-500">
+                      Last synced {formatConnectionDate(connection.last_synced_at)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      disabled={connectionActionId === connection.id}
+                      onClick={() => void refreshSimpleFinConnection(connection.id)}
+                    >
+                      {connectionActionId === connection.id ? "Working..." : "Refresh"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost text-rose-600"
+                      disabled={connectionActionId === connection.id}
+                      onClick={() => void revokeSimpleFinConnection(connection.id)}
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-zinc-200 px-4 py-6 text-center text-sm text-zinc-500">
+              {connectionsLoading ? "Loading connections..." : "No SimpleFIN connections are active yet."}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {enabledProviders.includes("simplefin") ? (
+        <section className="space-y-5 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <header className="space-y-1">
+            <h2 className="text-lg font-semibold text-zinc-900">SimpleFIN Bridge</h2>
+            <p className="text-sm text-zinc-500">
+              SimpleFIN Bridge lets you connect read-only financial data to MoneyTree using a setup token.
+              Create the token in SimpleFIN, paste it here, and MoneyTree will import balances and transactions.
+            </p>
+          </header>
+          <div className="flex flex-wrap items-center gap-3">
+            <a
+              className="btn"
+              href={simplefinCreateUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Create SimpleFIN token
+            </a>
+            <span className="text-xs text-zinc-500">MoneyTree never sees your bank credentials.</span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-zinc-700">Setup token</span>
+              <textarea
+                className="min-h-24 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm placeholder:text-zinc-400"
+                value={setupToken}
+                onChange={(event) => setSetupToken(event.target.value)}
+                onInput={(event) => setSetupToken(event.currentTarget.value)}
+                placeholder="Paste the one-time SimpleFIN setup token"
+              />
+            </label>
+            <button
+              type="button"
+              className="btn self-end"
+              disabled={simplefinLoading || setupToken.trim().length === 0}
+              onClick={claimSimpleFinToken}
+            >
+              {simplefinLoading ? "Connecting..." : "Connect"}
+            </button>
+          </div>
+          {simplefinError ? (
+            <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {simplefinError}
+            </p>
+          ) : null}
+          {simplefinProviderErrors.length > 0 ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <p className="font-medium">Connected, with SimpleFIN items needing attention</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {simplefinProviderErrors.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {simplefinAccounts.length > 0 ? (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-zinc-800">Discovered accounts</h3>
+              <div className="grid gap-2">
+                {simplefinAccounts.map((account) => (
+                  <div key={account.id ?? account.name} className="rounded-md border border-zinc-200 px-3 py-2 text-sm">
+                    <div className="font-medium text-zinc-900">{account.name ?? "Account"}</div>
+                    <div className="text-zinc-500">
+                      {[account.currency, account.balance ? `Balance ${account.balance}` : undefined]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {legacyVendors.length > 0 ? (
+        <TabGroupComponent
+        selectedIndex={Math.max(legacyVendors.findIndex((vendor) => vendor.id === activeVendor), 0)}
+        onChange={(index) => setActiveVendor(legacyVendors[index]?.id ?? legacyVendors[0]?.id ?? "teller")}
+        >
         <TabListComponent className="flex gap-2">
-          {VENDORS.map((vendor) => (
+          {legacyVendors.map((vendor) => (
             <TabComponent
               key={vendor.id}
               className={({ selected }) =>
@@ -721,7 +1048,7 @@ export default function LinkBankClient({ csrfToken, tellerConfig, components }: 
           ))}
         </TabListComponent>
         <TabPanelsComponent className="mt-6">
-          {VENDORS.map((vendor) => (
+          {legacyVendors.map((vendor) => (
             <TabPanelComponent key={vendor.id} className="focus:outline-none">
               <article className="card space-y-4" data-testid={`vendor-${vendor.id}`}>
                 <header className="space-y-1">
@@ -752,9 +1079,8 @@ export default function LinkBankClient({ csrfToken, tellerConfig, components }: 
             </TabPanelComponent>
           ))}
         </TabPanelsComponent>
-      </TabGroupComponent>
-
-      <WidgetEventLog events={events} />
+        </TabGroupComponent>
+      ) : null}
 
       <DialogComponent
         open={modalState.open}

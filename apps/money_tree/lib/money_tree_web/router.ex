@@ -156,6 +156,12 @@ defmodule MoneyTreeWeb.Router do
       patch "/manual-imports/:id/rows", ManualImportController, :update_rows
       post "/manual-imports/:id/commit", ManualImportController, :commit
       post "/manual-imports/:id/rollback", ManualImportController, :rollback
+
+      get "/simplefin/config", SimpleFinController, :config
+      get "/simplefin/connections", SimpleFinController, :connections
+      post "/simplefin/claim", SimpleFinController, :claim
+      post "/simplefin/sync", SimpleFinController, :sync
+      delete "/simplefin/connections/:connection_id", SimpleFinController, :revoke
     end
 
     scope "/plaid" do
@@ -221,6 +227,7 @@ defmodule MoneyTreeWeb.Router do
     live_session :app,
       on_mount: [MoneyTreeWeb.Plugs.RequireAuthenticatedUser] do
       live "/app/dashboard", DashboardLive
+      live "/app/notifications", NotificationsLive.Index
       live "/app/accounts", AccountsLive.Index
       live "/app/transactions", TransactionsLive.Index
       live "/app/transactions/categorization", CategorizationLive.Index

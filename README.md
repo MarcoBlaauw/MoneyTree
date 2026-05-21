@@ -96,9 +96,18 @@ credentials and set:
 
 Development mailbox preview remains available at `/dev/mailbox` when dev routes are enabled.
 
+### Bank Sync Integrations
+
+MoneyTree now uses SimpleFIN Bridge as the default connected-account provider. Users create a
+one-time SimpleFIN setup token outside MoneyTree, paste it into `/app/react/link-bank`, and
+MoneyTree stores only the claimed Access URL in encrypted connection credentials.
+
+Manual imports remain supported. Teller and Plaid are legacy-disabled for new links unless
+`BANK_SYNC_ENABLED_PROVIDERS` explicitly includes them.
+
 ### Teller Integration
 
-MoneyTree ships with a Teller integration for account aggregation. Teller separates sandbox and production credentials, so
+MoneyTree still ships with a legacy Teller integration for account aggregation. Teller separates sandbox and production credentials, so
 start by creating a sandbox account at [Teller](https://teller.io) and generating the following values from the Console:
 
 - **Connect application ID** – embedded in Connect URLs (`TELLER_CONNECT_APPLICATION_ID`).
@@ -140,8 +149,8 @@ Optional overrides (`TELLER_API_HOST`, `TELLER_CONNECT_HOST`, and `TELLER_WEBHOO
 they differ from the defaults, but most teams can omit them. The `req` HTTP client already targets the shared
 `MoneyTree.Finch` pool, so outbound Teller requests reuse the configured Finch connection pool.
 
-In production deployments MoneyTree will fail to boot unless all required Teller variables are set, ensuring the integration is
-fully configured before serving traffic.
+In production deployments MoneyTree requires Teller variables only when Teller is enabled for new
+links through `BANK_SYNC_ENABLED_PROVIDERS` or `TELLER_ENABLED=true`.
 
 ## Database Tasks
 

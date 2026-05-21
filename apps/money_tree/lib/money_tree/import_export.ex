@@ -20,9 +20,9 @@ defmodule MoneyTree.ImportExport do
     safe_days = normalize_days(days)
 
     since =
-      DateTime.utc_now()
-      |> DateTime.truncate(:second)
-      |> DateTime.add(-(safe_days * 86_400), :second)
+      Date.utc_today()
+      |> Date.add(-safe_days)
+      |> DateTime.new!(~T[00:00:00], "Etc/UTC")
 
     rows =
       from(transaction in Transaction,

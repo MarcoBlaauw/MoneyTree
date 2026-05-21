@@ -8,7 +8,6 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
   import Phoenix.LiveViewTest
 
   alias Decimal
-  alias MoneyTree.Institutions
   alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Repo
 
@@ -31,7 +30,7 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
     :ok
   end
 
-  test "accounts page renders linked institutions and accounts", %{conn: conn} do
+  test "accounts page renders account summary and accounts", %{conn: conn} do
     {:ok, %{conn: conn, user: user}} = register_and_log_in_user(%{conn: conn})
     institution = institution_fixture(%{name: "Northwind Credit Union"})
     connection = connection_fixture(user, %{institution: institution})
@@ -46,34 +45,105 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
 
     {:ok, _view, html} = live(conn, ~p"/app/accounts")
 
-    assert html =~ "Linked institutions"
-    assert html =~ "Northwind Credit Union"
+    assert html =~ "Institutions"
+    assert html =~ "Manage institutions"
     assert html =~ "Daily Checking"
+    refute html =~ "Linked institutions"
   end
 
-  test "accounts page supports sync and revoke actions", %{conn: conn} do
+  test "accounts page supports account edit and remove icon actions", %{conn: conn} do
     {:ok, %{conn: conn, user: user}} = register_and_log_in_user(%{conn: conn})
-    institution = institution_fixture(%{name: "Harbor Bank"})
-    connection = connection_fixture(user, %{institution: institution})
 
-    {:ok, view, _html} = live(conn, ~p"/app/accounts")
+    account =
+      account_fixture(user, %{
+        name: "Old Checking",
+        type: "depository",
+        subtype: "checking"
+      })
+
+    {:ok, view, html} = live(conn, ~p"/app/accounts")
+
+    assert html =~ ~s(aria-label="Edit Old Checking")
+    assert html =~ ~s(aria-label="Remove Old Checking")
 
     view
-    |> element(~s(button[phx-click="refresh-connection"][phx-value-id="#{connection.id}"]))
+    |> element(~s(button[phx-click="edit-account"][phx-value-id="#{account.id}"]))
     |> render_click()
 
-    assert render(view) =~ "Sync requested for Harbor Bank."
+    edit_html = render(view)
+    assert edit_html =~ "Account category"
+    refute edit_html =~ ~s(name="account[type]")
+    refute edit_html =~ ~s(name="account[subtype]")
 
     view
-    |> element(~s(button[phx-click="revoke-connection"][phx-value-id="#{connection.id}"]))
+    |> form(~s(form[phx-submit="update-account"][phx-value-id="#{account.id}"]), %{
+      "account" => %{
+        "name" => "Renamed Checking",
+        "internal_account_kind" => "savings"
+      }
+    })
+    |> render_submit()
+
+    rendered = render(view)
+    assert rendered =~ "Renamed Checking"
+    assert rendered =~ "Savings"
+
+    view
+    |> element(~s(button[phx-click="delete-account"][phx-value-id="#{account.id}"]))
     |> render_click()
 
     rendered = render(view)
-    assert rendered =~ "Revoked Harbor Bank."
-    assert rendered =~ "No institutions linked yet."
+    assert rendered =~ "Account removed."
+    refute rendered =~ "Renamed Checking"
+  end
 
-    assert {:error, :revoked} ==
-             Institutions.get_active_connection_for_user(user, connection.id)
+  test "accounts page supports categorized view and account sorting", %{conn: conn} do
+    {:ok, %{conn: conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    account_fixture(user, %{
+      name: "Small Checking",
+      internal_account_kind: "checking",
+      current_balance: Decimal.new("100.00"),
+      available_balance: Decimal.new("80.00")
+    })
+
+    account_fixture(user, %{
+      name: "Large Savings",
+      internal_account_kind: "savings",
+      current_balance: Decimal.new("5000.00"),
+      available_balance: Decimal.new("4900.00")
+    })
+
+    account_fixture(user, %{
+      name: "Card Debt",
+      internal_account_kind: "credit_card",
+      current_balance: Decimal.new("-1000.00"),
+      available_balance: Decimal.new("250.00")
+    })
+
+    {:ok, view, html} = live(conn, ~p"/app/accounts")
+
+    assert html =~ "Categorized"
+    assert html =~ "Checking"
+    assert html =~ "Savings"
+    assert html =~ "Credit card"
+    assert html =~ "Operating cash"
+    assert html =~ "Cash reserves"
+    assert html =~ "Revolving debt"
+    assert html =~ "Category total"
+    assert html =~ "USD 4900.00"
+    assert html =~ "USD -1000.00"
+
+    html =
+      view
+      |> form(~s(form[phx-change="change-account-list-preferences"]), %{
+        "account_view" => "list",
+        "account_sort" => "balance_desc"
+      })
+      |> render_change()
+
+    assert_before(html, "Large Savings", "Small Checking")
+    assert_before(html, "Small Checking", "Card Debt")
   end
 
   test "obligations page renders obligations summary", %{conn: conn} do
@@ -155,4 +225,9 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
     assert rendered =~ "Collector Car"
   end
 
+  defp assert_before(html, left, right) do
+    assert {left_index, _length} = :binary.match(html, left)
+    assert {right_index, _length} = :binary.match(html, right)
+    assert left_index < right_index
+  end
 end

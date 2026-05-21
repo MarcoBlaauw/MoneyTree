@@ -341,8 +341,49 @@ const mountSecurityPasskeysFromDom = () => {
   document.querySelectorAll("#security-settings").forEach((root) => mountSecurityPasskeys(root));
 };
 
+const mountAppSidebar = () => {
+  const shell = document.querySelector("[data-app-shell]");
+  const sidebar = document.querySelector("[data-app-sidebar]");
+  const closeButton = document.querySelector("[data-app-sidebar-close]");
+  const openButton = document.querySelector("[data-app-sidebar-open]");
+
+  if (!shell || !sidebar || !closeButton || !openButton || shell.dataset.sidebarMounted === "true") {
+    return;
+  }
+
+  shell.dataset.sidebarMounted = "true";
+
+  const positionOpenButton = () => {
+    const shellLeft = shell.getBoundingClientRect().left;
+    openButton.style.left = `${Math.max(16, shellLeft + 16)}px`;
+  };
+
+  const setCollapsed = (collapsed) => {
+    if (collapsed) {
+      positionOpenButton();
+      sidebar.style.display = "none";
+      openButton.classList.remove("hidden");
+      openButton.classList.add("lg:inline-flex");
+    } else {
+      sidebar.style.display = "";
+      openButton.classList.add("hidden");
+      openButton.classList.remove("lg:inline-flex");
+    }
+
+    window.localStorage.setItem("moneytree.sidebarCollapsed", collapsed ? "true" : "false");
+  };
+
+  setCollapsed(window.localStorage.getItem("moneytree.sidebarCollapsed") === "true");
+
+  closeButton.addEventListener("click", () => setCollapsed(true));
+  openButton.addEventListener("click", () => setCollapsed(false));
+  window.addEventListener("resize", positionOpenButton);
+};
+
 document.addEventListener("DOMContentLoaded", mountLoginPasskeys);
 document.addEventListener("DOMContentLoaded", mountSecurityPasskeysFromDom);
+document.addEventListener("DOMContentLoaded", mountAppSidebar);
 window.addEventListener("phx:page-loading-stop", mountSecurityPasskeysFromDom);
+window.addEventListener("phx:page-loading-stop", mountAppSidebar);
 
 export { Hooks, liveSocket };
