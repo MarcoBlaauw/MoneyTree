@@ -60,6 +60,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/evaluations/status-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get current user financial evaluation status summary */
+        get: operations["getEvaluationStatusSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/loans/{loan_id}/refinance_scenarios": {
         parameters: {
             query?: never;
@@ -625,6 +642,34 @@ export interface components {
         };
         ErrorResponse: {
             error: string;
+        };
+        EvaluationStatusCounts: {
+            incomplete: number;
+            stale: number;
+            needs_review: number;
+            opportunity: number;
+            expiring: number;
+        };
+        EvaluationStatusItem: {
+            id: string;
+            domain: string;
+            resource_id: string;
+            /** @enum {string} */
+            status: "incomplete" | "stale" | "needs_review" | "opportunity" | "expiring";
+            /** @enum {string} */
+            severity: "info" | "warning" | "critical";
+            title: string;
+            summary: string;
+            reasons: string[];
+            /** @enum {string} */
+            source: "deterministic";
+            target_path: string;
+        };
+        EvaluationStatusSummary: {
+            /** Format: date-time */
+            generated_at: string;
+            counts: components["schemas"]["EvaluationStatusCounts"];
+            items: components["schemas"]["EvaluationStatusItem"][];
         };
         MortgageEscrowProfile: {
             id?: string;
@@ -1345,6 +1390,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEvaluationStatusSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Evaluation status summary for the authenticated user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["EvaluationStatusSummary"];
+                    };
                 };
             };
         };

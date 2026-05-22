@@ -125,6 +125,23 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/evaluations/status-summary:
+    get:
+      summary: Get current user financial evaluation status summary
+      operationId: getEvaluationStatusSummary
+      responses:
+        '200':
+          description: Evaluation status summary for the authenticated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/EvaluationStatusSummary'
+                required:
+                  - data
+
   /api/loans/{loan_id}/refinance_scenarios:
     parameters:
       - in: path
@@ -1191,6 +1208,92 @@ components:
           type: string
       required:
         - error
+
+    EvaluationStatusCounts:
+      type: object
+      properties:
+        incomplete:
+          type: integer
+        stale:
+          type: integer
+        needs_review:
+          type: integer
+        opportunity:
+          type: integer
+        expiring:
+          type: integer
+      required:
+        - incomplete
+        - stale
+        - needs_review
+        - opportunity
+        - expiring
+
+    EvaluationStatusItem:
+      type: object
+      properties:
+        id:
+          type: string
+        domain:
+          type: string
+        resource_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - incomplete
+            - stale
+            - needs_review
+            - opportunity
+            - expiring
+        severity:
+          type: string
+          enum:
+            - info
+            - warning
+            - critical
+        title:
+          type: string
+        summary:
+          type: string
+        reasons:
+          type: array
+          items:
+            type: string
+        source:
+          type: string
+          enum:
+            - deterministic
+        target_path:
+          type: string
+      required:
+        - id
+        - domain
+        - resource_id
+        - status
+        - severity
+        - title
+        - summary
+        - reasons
+        - source
+        - target_path
+
+    EvaluationStatusSummary:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        counts:
+          $ref: '#/components/schemas/EvaluationStatusCounts'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvaluationStatusItem'
+      required:
+        - generated_at
+        - counts
+        - items
 
     MortgageEscrowProfile:
       type: object

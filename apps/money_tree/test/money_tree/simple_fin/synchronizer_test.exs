@@ -142,6 +142,48 @@ defmodule MoneyTree.SimpleFin.SynchronizerTest do
       assert Decimal.equal?(updated.current_balance, Decimal.new("200.00"))
     end
 
+    test "preserves user-renamed accounts during later syncs" do
+      user = AccountsFixtures.user_fixture()
+      connection = simplefin_connection(user)
+
+      assert {:ok, _result} =
+               Synchronizer.sync(connection, client: SuccessClient, mode: "initial")
+
+      account = Repo.one!(Account)
+
+      account
+      |> Account.changeset(%{name: "Household Checking"})
+      |> Repo.update!()
+
+      assert {:ok, _result} =
+               Synchronizer.sync(Repo.get!(Connection, connection.id), client: SuccessClient)
+
+      updated = Repo.one!(Account)
+      assert updated.name == "Household Checking"
+      assert Decimal.equal?(updated.current_balance, Decimal.new("125.50"))
+    end
+
+    test "imports only SimpleFIN accounts selected during review" do
+      user = AccountsFixtures.user_fixture()
+
+      connection =
+        simplefin_connection(user, %{
+          provider_metadata: %{
+            "simplefin" => %{
+              "import_review" => %{
+                "status" => "confirmed",
+                "account_ids" => ["account-" <> String.duplicate("x", 150)]
+              }
+            }
+          }
+        })
+
+      assert {:ok, result} = Synchronizer.sync(connection, client: MovedAccountClient)
+
+      assert result.accounts_synced == 0
+      assert Repo.aggregate(Account, :count) == 0
+    end
+
     test "persists provider errors without treating them as fatal" do
       user = AccountsFixtures.user_fixture()
       connection = simplefin_connection(user)

@@ -60,7 +60,7 @@ defmodule MoneyTreeWeb.AIController do
   end
 
   def create_categorization_run(%{assigns: %{current_user: current_user}} = conn, params) do
-    opts = Map.take(params, ["limit"])
+    opts = Map.take(params, ["limit", "transaction_id"])
 
     case AI.create_categorization_run(current_user, opts) do
       {:ok, %SuggestionRun{} = run} ->

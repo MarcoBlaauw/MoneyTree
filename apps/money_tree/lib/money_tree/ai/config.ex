@@ -4,7 +4,7 @@ defmodule MoneyTree.AI.Config do
   """
 
   @default_provider "ollama"
-  @default_timeout_ms 60_000
+  @default_timeout_ms 120_000
   @default_max_input_transactions 200
   @default_ollama_base_url "http://localhost:11434"
   @default_ollama_model "llama3.1:8b"

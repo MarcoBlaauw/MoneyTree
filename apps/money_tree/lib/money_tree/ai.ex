@@ -13,8 +13,13 @@ defmodule MoneyTree.AI do
   alias MoneyTree.AI.Suggestion
   alias MoneyTree.AI.SuggestionRun
   alias MoneyTree.AI.UserPreference
+  alias MoneyTree.Categorization
+  alias MoneyTree.Categorization.CategoryRule
   alias MoneyTree.ManualImports
   alias MoneyTree.ManualImports.Row, as: ManualImportRow
+  alias MoneyTree.Obligations
+  alias MoneyTree.Obligations.Obligation
+  alias MoneyTree.Recurring.Series
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Users.User
@@ -22,6 +27,8 @@ defmodule MoneyTree.AI do
 
   @prompt_version "categorization-v1"
   @schema_version "categorization-v1"
+  @default_categorization_limit 1
+  @auto_apply_confidence Decimal.new("0.85")
   @import_timeout_ms 120_000
   @import_retry_row_limit 25
   @import_prompt_category_limit 60
@@ -69,11 +76,40 @@ defmodule MoneyTree.AI do
     "Fuel",
     "Utilities",
     "Insurance",
+    "Medical",
     "Fees",
     "Income",
-    "Transfer",
-    "Uncategorized"
+    "Subscription",
+    "Streaming",
+    "Software",
+    "Transfer"
   ]
+
+  @transaction_kinds ~w(
+    unknown
+    income
+    expense
+    internal_transfer
+    credit_card_payment
+    loan_payment
+    escrow_property_tax_disbursement
+    escrow_homeowners_insurance_disbursement
+    escrow_flood_insurance_disbursement
+    escrow_other_disbursement
+    escrow_refund
+    adjustment
+  )
+
+  @excluded_transaction_kinds ~w(
+    internal_transfer
+    credit_card_payment
+    loan_payment
+    escrow_property_tax_disbursement
+    escrow_homeowners_insurance_disbursement
+    escrow_flood_insurance_disbursement
+    escrow_other_disbursement
+    escrow_refund
+  )
 
   @spec settings_snapshot(User.t() | binary()) :: map()
   def settings_snapshot(user) do
@@ -394,6 +430,7 @@ defmodule MoneyTree.AI do
          {:ok, response} <- provider_module(runtime.provider).generate_json(runtime, prompt, []),
          {:ok, suggestions} <- normalize_categorization_output(response, transactions, categories),
          {:ok, _} <- persist_suggestions(running_run, suggestions),
+         {:ok, _} <- auto_apply_confident_suggestions(running_run),
          {:ok, _} <- complete_run(running_run, started_at) do
       :ok
     else
@@ -490,6 +527,29 @@ defmodule MoneyTree.AI do
     end)
   end
 
+  defp auto_apply_confident_suggestions(%SuggestionRun{} = run) do
+    suggestions =
+      Suggestion
+      |> where([suggestion], suggestion.ai_suggestion_run_id == ^run.id)
+      |> where([suggestion], suggestion.status == "pending")
+      |> where([suggestion], not is_nil(suggestion.confidence))
+      |> Repo.all()
+
+    applied =
+      Enum.reduce(suggestions, 0, fn suggestion, count ->
+        if Decimal.compare(suggestion.confidence, @auto_apply_confidence) in [:gt, :eq] do
+          case accept_suggestion(run.user_id, suggestion.id) do
+            {:ok, _suggestion} -> count + 1
+            {:error, _reason} -> count
+          end
+        else
+          count
+        end
+      end)
+
+    {:ok, applied}
+  end
+
   defp complete_run(run, started_at) do
     completed_at = DateTime.utc_now() |> DateTime.truncate(:microsecond)
 
@@ -519,7 +579,7 @@ defmodule MoneyTree.AI do
   end
 
   defp normalize_categorization_output(response, transactions, categories)
-       when is_map(response) do
+       when is_map(response) or is_list(response) or is_binary(response) do
     with {:ok, suggestions} <- extract_suggestions(response) do
       normalize_categorization_suggestions(suggestions, transactions, categories)
     end
@@ -538,9 +598,10 @@ defmodule MoneyTree.AI do
       suggestions
       |> Enum.flat_map(fn suggestion ->
         with %{} <- suggestion,
-             tx_id when is_binary(tx_id) <- get(suggestion, "transaction_id"),
+             tx_id when is_binary(tx_id) <-
+               suggestion_transaction_id(suggestion, transactions),
              %Transaction{} <- Map.get(transactions_by_id, tx_id),
-             category when is_binary(category) <- get(suggestion, "category"),
+             category when is_binary(category) <- suggestion_category(suggestion),
              category when is_binary(category) <-
                resolve_allowed_category(category, category_lookup),
              true <- MapSet.member?(allowed_categories, category),
@@ -550,11 +611,18 @@ defmodule MoneyTree.AI do
               target_id: tx_id,
               payload: %{
                 "category" => category,
-                "reason" => get(suggestion, "reason")
+                "reason" => suggestion_reason(suggestion),
+                "transaction_kind" =>
+                  normalize_transaction_kind(suggestion_transaction_kind(suggestion)),
+                "recurring_candidate" => truthy?(suggestion_recurring_candidate(suggestion)),
+                "recurring_reason" => suggestion_recurring_reason(suggestion)
               },
               confidence: confidence,
-              reason: get(suggestion, "reason"),
-              evidence: %{"source" => "ollama_categorization"}
+              reason: normalize_reason(suggestion_reason(suggestion)),
+              evidence: %{
+                "source" => "ollama_categorization",
+                "auto_apply_threshold" => Decimal.to_string(@auto_apply_confidence, :normal)
+              }
             }
           ]
         else
@@ -604,7 +672,7 @@ defmodule MoneyTree.AI do
                 "reason" => get(suggestion, "reason")
               },
               confidence: confidence,
-              reason: get(suggestion, "reason"),
+              reason: normalize_reason(get(suggestion, "reason")),
               evidence: %{"source" => "ollama_import_categorization"}
             }
           ]
@@ -618,6 +686,69 @@ defmodule MoneyTree.AI do
 
   defp normalize_import_categorization_suggestions(_suggestions, _rows, _categories),
     do: {:error, :invalid_output}
+
+  defp suggestion_transaction_id(suggestion, transactions) when is_map(suggestion) do
+    Enum.find_value(["transaction_id", "id", "target_id"], fn key ->
+      case get(suggestion, key) do
+        value when is_binary(value) and value != "" -> value
+        _ -> nil
+      end
+    end) || single_transaction_id(transactions)
+  end
+
+  defp single_transaction_id([%Transaction{id: id}]) when is_binary(id), do: id
+  defp single_transaction_id(_transactions), do: nil
+
+  defp suggestion_category(suggestion) when is_map(suggestion) do
+    first_string_value(suggestion, [
+      "category",
+      "suggested_category",
+      "category_name",
+      "recommended_category",
+      "classification"
+    ])
+  end
+
+  defp suggestion_reason(suggestion) when is_map(suggestion) do
+    first_string_value(suggestion, ["reason", "rationale", "explanation"])
+  end
+
+  defp suggestion_transaction_kind(suggestion) when is_map(suggestion) do
+    first_string_value(suggestion, [
+      "transaction_kind",
+      "kind",
+      "type",
+      "suggested_transaction_kind"
+    ])
+  end
+
+  defp suggestion_recurring_candidate(suggestion) when is_map(suggestion) do
+    Enum.find_value(
+      ["recurring_candidate", "is_recurring", "recurring", "subscription_candidate"],
+      &get(suggestion, &1)
+    )
+  end
+
+  defp suggestion_recurring_reason(suggestion) when is_map(suggestion) do
+    first_string_value(suggestion, [
+      "recurring_reason",
+      "recurring_rationale",
+      "subscription_reason"
+    ])
+  end
+
+  defp first_string_value(map, keys) do
+    Enum.find_value(keys, fn key ->
+      case get(map, key) do
+        value when is_binary(value) ->
+          value = String.trim(value)
+          if value == "", do: nil, else: value
+
+        _ ->
+          nil
+      end
+    end)
+  end
 
   defp normalize_loan_document_extraction_output(response) when is_map(response) do
     payload =
@@ -793,7 +924,23 @@ defmodule MoneyTree.AI do
     end
   end
 
+  defp normalize_reason(reason) when is_binary(reason) do
+    reason
+    |> String.trim()
+    |> String.slice(0, 255)
+  end
+
+  defp normalize_reason(_reason), do: nil
+
   defp categorization_prompt(transactions, categories) do
+    user_id =
+      transactions
+      |> List.first()
+      |> case do
+        %Transaction{account: %{user_id: user_id}} -> user_id
+        _ -> nil
+      end
+
     transactions_payload =
       Enum.map(transactions, fn transaction ->
         %{
@@ -802,6 +949,10 @@ defmodule MoneyTree.AI do
           amount: transaction.amount,
           description: transaction.description,
           merchant_name: transaction.merchant_name,
+          current_category: transaction.category,
+          current_transaction_kind: transaction.transaction_kind,
+          excluded_from_spending: transaction.excluded_from_spending,
+          account: account_prompt_payload(transaction.account),
           account_type: transaction.account.type,
           direction: transaction_direction(transaction.amount)
         }
@@ -812,16 +963,26 @@ defmodule MoneyTree.AI do
         "You are a personal finance categorization assistant.",
         "Return JSON only with shape {\"suggestions\":[...]}",
         "Only use categories from allowed_categories.",
+        "Use related_accounts to identify internal transfers, credit card payments, loan payments, mortgage payments, and escrow activity.",
+        "Set transaction_kind when the transaction is a transfer/payment/escrow movement instead of ordinary spending.",
+        "Set recurring_candidate true only when the transaction appears to be a subscription or recurring payment.",
         "Do not invent transaction ids.",
         "Confidence must be between 0 and 1."
       ],
       allowed_categories: categories,
+      allowed_transaction_kinds: @transaction_kinds,
+      related_accounts: related_accounts_payload(user_id),
+      existing_rules: rules_payload(user_id),
+      known_recurring_context: recurring_context_payload(user_id),
       transactions: transactions_payload,
       output_schema: %{
         suggestions: [
           %{
             transaction_id: "transaction_id",
             category: "allowed_category",
+            transaction_kind: "allowed_transaction_kind",
+            recurring_candidate: false,
+            recurring_reason: "brief recurring rationale or null",
             confidence: 0.0,
             reason: "brief reason"
           }
@@ -924,6 +1085,95 @@ defmodule MoneyTree.AI do
     end
   end
 
+  defp account_prompt_payload(nil), do: nil
+
+  defp account_prompt_payload(account) do
+    %{
+      account_id: account.id,
+      name: account.name,
+      type: account.type,
+      subtype: account.subtype,
+      internal_account_kind: account.internal_account_kind,
+      liability_type: account.liability_type,
+      currency: account.currency,
+      is_internal: account.is_internal,
+      include_in_cash_flow: account.include_in_cash_flow
+    }
+  end
+
+  defp related_accounts_payload(nil), do: []
+
+  defp related_accounts_payload(user_id) do
+    user_id
+    |> Accounts.list_accessible_accounts(order_by: {:asc, :name})
+    |> Enum.map(&account_prompt_payload/1)
+  end
+
+  defp rules_payload(nil), do: []
+
+  defp rules_payload(user_id) do
+    CategoryRule
+    |> where([rule], rule.user_id == ^user_id)
+    |> order_by([rule], desc: rule.priority, desc: rule.inserted_at)
+    |> limit(50)
+    |> Repo.all()
+    |> Enum.map(fn rule ->
+      %{
+        category: rule.category,
+        merchant_regex: rule.merchant_regex,
+        description_keywords: rule.description_keywords,
+        min_amount: rule.min_amount,
+        max_amount: rule.max_amount,
+        account_types: rule.account_types,
+        priority: rule.priority,
+        source: rule.source
+      }
+    end)
+  end
+
+  defp recurring_context_payload(nil), do: %{obligations: [], recurring_series: []}
+
+  defp recurring_context_payload(user_id) do
+    obligations =
+      Obligation
+      |> where([obligation], obligation.user_id == ^user_id and obligation.active == true)
+      |> limit(40)
+      |> Repo.all()
+      |> Enum.map(fn obligation ->
+        %{
+          creditor_payee: obligation.creditor_payee,
+          obligation_type: obligation.obligation_type,
+          due_rule: obligation.due_rule,
+          due_day: obligation.due_day,
+          minimum_due_amount: obligation.minimum_due_amount,
+          currency: obligation.currency,
+          linked_funding_account_id: obligation.linked_funding_account_id
+        }
+      end)
+
+    recurring_series =
+      Series
+      |> where([series], series.user_id == ^user_id and series.status in ["active", "tentative"])
+      |> preload([:account, :last_transaction])
+      |> limit(40)
+      |> Repo.all()
+      |> Enum.map(fn series ->
+        %{
+          account_id: series.account_id,
+          account_name: series.account && series.account.name,
+          cadence: series.cadence,
+          expected_amount_min: series.expected_amount_min,
+          expected_amount_max: series.expected_amount_max,
+          next_expected_at: series.next_expected_at,
+          confidence: series.confidence,
+          last_description: series.last_transaction && series.last_transaction.description,
+          last_merchant_name: series.last_transaction && series.last_transaction.merchant_name
+        }
+      end)
+
+    %{obligations: obligations, recurring_series: recurring_series}
+  end
+
   defp run_transactions(%SuggestionRun{} = run) do
     ids = get(run.input_scope || %{}, "transaction_ids") || []
 
@@ -960,20 +1210,7 @@ defmodule MoneyTree.AI do
   end
 
   defp categories_for_user(user_id) do
-    transaction_categories =
-      from(transaction in Transaction,
-        join: account in subquery(Accounts.accessible_accounts_query(user_id)),
-        on: transaction.account_id == account.id,
-        where: not is_nil(transaction.category),
-        select: transaction.category,
-        distinct: true
-      )
-      |> Repo.all()
-      |> Enum.filter(&is_binary/1)
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-
-    (transaction_categories ++ @default_categories)
+    (Categorization.category_names(user_id) ++ @default_categories)
     |> Enum.uniq()
     |> Enum.sort()
   end
@@ -989,7 +1226,7 @@ defmodule MoneyTree.AI do
 
     with :ok <- ensure_pending_or_reviewable(suggestion),
          category when is_binary(category) and category != "" <- get(payload, "category"),
-         :ok <- apply_category_target(user_id, suggestion, category) do
+         :ok <- apply_category_target(user_id, suggestion, payload, category) do
       suggestion
       |> Suggestion.changeset(%{
         status: status,
@@ -1024,12 +1261,14 @@ defmodule MoneyTree.AI do
 
   defp ensure_pending_or_reviewable(_suggestion), do: {:error, :invalid_status}
 
-  defp apply_category_target(user_id, %Suggestion{} = suggestion, category) do
+  defp apply_category_target(user_id, %Suggestion{} = suggestion, payload, category) do
     case {suggestion.target_type, suggestion.suggestion_type} do
       {"transaction", "set_category"} ->
         with {:ok, transaction} <- fetch_accessible_transaction(user_id, suggestion.target_id),
              {:ok, _updated_tx} <-
-               update_transaction_category(transaction, category, suggestion.confidence) do
+               update_transaction_category(transaction, category, suggestion.confidence, payload),
+             _ <- Categorization.ensure_category(user_id, category, source: "model"),
+             _ <- maybe_create_recurring_obligation(user_id, transaction, payload) do
           :ok
         end
 
@@ -1045,13 +1284,27 @@ defmodule MoneyTree.AI do
     end
   end
 
-  defp update_transaction_category(%Transaction{} = transaction, category, confidence) do
-    transaction
-    |> Transaction.changeset(%{
+  defp update_transaction_category(%Transaction{} = transaction, category, confidence, payload) do
+    transaction_kind = normalize_transaction_kind(get(payload, "transaction_kind"))
+
+    attrs = %{
       category: category,
       categorization_source: "model",
       categorization_confidence: confidence
-    })
+    }
+
+    attrs =
+      if transaction_kind do
+        Map.merge(attrs, %{
+          transaction_kind: transaction_kind,
+          excluded_from_spending: transaction_kind in @excluded_transaction_kinds
+        })
+      else
+        attrs
+      end
+
+    transaction
+    |> Transaction.changeset(attrs)
     |> Repo.update()
   end
 
@@ -1061,7 +1314,8 @@ defmodule MoneyTree.AI do
       from(transaction in Transaction,
         join: account in subquery(Accounts.accessible_accounts_query(user)),
         on: transaction.account_id == account.id,
-        where: transaction.id == ^transaction_id
+        where: transaction.id == ^transaction_id,
+        preload: [account: account]
       )
       |> Repo.one()
 
@@ -1072,6 +1326,39 @@ defmodule MoneyTree.AI do
   end
 
   defp fetch_accessible_transaction(_user, _transaction_id), do: {:error, :not_found}
+
+  defp maybe_create_recurring_obligation(user_id, %Transaction{} = transaction, payload) do
+    if truthy?(get(payload, "recurring_candidate")) do
+      _ =
+        Obligations.create_from_transaction(user_id, transaction, %{
+          "creditor_payee" => recurring_payee_from_payload(transaction, payload),
+          "obligation_type" => recurring_obligation_type(payload),
+          "source" => "model"
+        })
+    end
+
+    :ok
+  end
+
+  defp recurring_payee_from_payload(%Transaction{} = transaction, payload) do
+    [get(payload, "payee"), transaction.merchant_name, transaction.description]
+    |> Enum.find_value(fn
+      value when is_binary(value) ->
+        value = String.trim(value)
+        if value == "", do: nil, else: value
+
+      _ ->
+        nil
+    end)
+  end
+
+  defp recurring_obligation_type(payload) do
+    case normalize_transaction_kind(get(payload, "transaction_kind")) do
+      "loan_payment" -> "loan_payment"
+      "credit_card_payment" -> "credit_card_payment"
+      _ -> "subscription"
+    end
+  end
 
   defp update_import_row_category(%ManualImportRow{} = row, category, _confidence) do
     row
@@ -1099,29 +1386,38 @@ defmodule MoneyTree.AI do
   defp fetch_accessible_import_row(_user_id, _row_id), do: {:error, :not_found}
 
   defp candidate_transactions(user_id, opts) do
-    limit =
-      get(opts, "limit") ||
-        Config.max_input_transactions()
-        |> normalize_limit()
+    limit = normalize_limit(get(opts, "limit") || @default_categorization_limit)
+    transaction_id = get(opts, "transaction_id")
 
-    from(transaction in Transaction,
-      join: account in subquery(Accounts.accessible_accounts_query(user_id)),
-      on: transaction.account_id == account.id,
-      where: is_nil(transaction.category) or transaction.category == "Uncategorized",
-      where: transaction.status == "posted",
-      order_by: [desc: transaction.posted_at, desc: transaction.inserted_at],
-      preload: [account: account],
-      limit: ^limit
+    Transaction
+    |> join(
+      :inner,
+      [transaction],
+      account in subquery(Accounts.accessible_accounts_query(user_id)),
+      on: transaction.account_id == account.id
     )
+    |> where(
+      [transaction],
+      is_nil(transaction.category) or transaction.category == "Uncategorized"
+    )
+    |> where([transaction], transaction.status == "posted")
+    |> maybe_filter_transaction_id(transaction_id)
+    |> order_by([transaction], desc: transaction.posted_at, desc: transaction.inserted_at)
+    |> preload([transaction, account], account: account)
+    |> limit(^limit)
     |> Repo.all()
   end
 
+  defp maybe_filter_transaction_id(query, transaction_id)
+       when is_binary(transaction_id) and transaction_id != "" do
+    where(query, [transaction], transaction.id == ^transaction_id)
+  end
+
+  defp maybe_filter_transaction_id(query, _transaction_id), do: query
+
   defp candidate_import_rows(user_id, batch_id, opts)
        when is_binary(user_id) and is_binary(batch_id) and is_map(opts) do
-    limit =
-      get(opts, "limit") ||
-        Config.max_input_transactions()
-        |> normalize_limit()
+    limit = normalize_limit(get(opts, "limit") || Config.max_input_transactions())
 
     from(row in ManualImportRow,
       join: batch in assoc(row, :manual_import_batch),
@@ -1261,6 +1557,23 @@ defmodule MoneyTree.AI do
 
   defp normalize_limit(_value), do: Config.max_input_transactions()
 
+  defp normalize_transaction_kind(kind) when kind in @transaction_kinds, do: kind
+
+  defp normalize_transaction_kind(kind) when is_binary(kind) do
+    normalized =
+      kind
+      |> String.trim()
+      |> String.downcase()
+      |> String.replace(~r/[^a-z0-9]+/u, "_")
+
+    if normalized in @transaction_kinds, do: normalized, else: nil
+  end
+
+  defp normalize_transaction_kind(_kind), do: nil
+
+  defp truthy?(value) when value in [true, "true", "yes", "1", 1], do: true
+  defp truthy?(_value), do: false
+
   defp ensure_min_timeout(runtime, min_timeout_ms)
        when is_map(runtime) and is_integer(min_timeout_ms) do
     current_timeout = Map.get(runtime, :timeout_ms, min_timeout_ms)
@@ -1321,6 +1634,14 @@ defmodule MoneyTree.AI do
   defp extract_suggestions(_response), do: {:error, :invalid_output}
 
   defp extract_suggestions_from_map(response) when is_map(response) do
+    if suggestion_like?(response) do
+      {:ok, [response]}
+    else
+      extract_suggestions_container_from_map(response)
+    end
+  end
+
+  defp extract_suggestions_container_from_map(response) when is_map(response) do
     direct_keys = [
       "suggestions",
       "results",
@@ -1328,7 +1649,8 @@ defmodule MoneyTree.AI do
       "predictions",
       "recommendations",
       "hints",
-      "categorizations"
+      "categorizations",
+      "transactions"
     ]
 
     container_keys = [
@@ -1344,8 +1666,11 @@ defmodule MoneyTree.AI do
 
     direct_match =
       Enum.find_value(direct_keys, fn key ->
-        value = get(response, key)
-        if is_list(value), do: {:ok, value}, else: nil
+        case get(response, key) do
+          value when is_list(value) -> {:ok, value}
+          value when is_map(value) -> extract_suggestions_from_map(value)
+          _ -> nil
+        end
       end)
 
     nested_match =
@@ -1366,6 +1691,12 @@ defmodule MoneyTree.AI do
       end)
 
     direct_match || nested_match || single_match || :error
+  end
+
+  defp suggestion_like?(value) when is_map(value) do
+    is_binary(suggestion_category(value)) and
+      (is_binary(get(value, "transaction_id")) or is_binary(get(value, "row_id")) or
+         is_binary(get(value, "id")) or is_nil(get(value, "suggestions")))
   end
 
   defp extract_json_candidate(value) when is_map(value) do

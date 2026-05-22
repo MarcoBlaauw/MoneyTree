@@ -5,7 +5,7 @@ defmodule MoneyTree.AI.Providers.Ollama do
 
   @behaviour MoneyTree.AI.Provider
 
-  @default_timeout_ms 60_000
+  @default_timeout_ms 120_000
 
   @impl MoneyTree.AI.Provider
   def health_check(settings) when is_map(settings) do
@@ -55,7 +55,7 @@ defmodule MoneyTree.AI.Providers.Ollama do
   defp parse_json_response(%{"response" => response}) when is_binary(response) do
     case Jason.decode(response) do
       {:ok, %{} = value} -> {:ok, value}
-      {:ok, _value} -> {:error, :invalid_json_shape}
+      {:ok, value} when is_list(value) -> {:ok, value}
       {:error, _reason} -> {:error, :invalid_json}
     end
   end

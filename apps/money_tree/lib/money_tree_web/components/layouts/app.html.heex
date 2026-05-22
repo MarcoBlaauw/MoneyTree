@@ -19,8 +19,8 @@
   </button>
 
   <div data-app-shell class="mx-auto flex min-h-screen w-full max-w-[96rem] flex-col lg:flex-row">
-    <aside data-app-sidebar class="hidden w-72 shrink-0 border-r border-zinc-200 bg-white lg:flex lg:flex-col">
-      <div class="border-b border-zinc-200 px-6 py-6">
+    <aside data-app-sidebar class="hidden h-screen w-72 shrink-0 flex-col border-r border-zinc-200 bg-white lg:sticky lg:top-0 lg:flex">
+      <div class="shrink-0 border-b border-zinc-200 px-6 py-6">
         <div class="flex items-start justify-between gap-3">
           <div>
             <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-600">MoneyTree</p>
@@ -48,7 +48,7 @@
         <p class="mt-1 text-sm text-zinc-500">Budgets, transfers, alerts, and account operations in one place.</p>
       </div>
 
-      <nav class="flex-1 space-y-6 px-4 py-6">
+      <nav class="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-6">
         <div class="space-y-2">
           <p class="px-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400">Primary</p>
           <.link :for={item <- app_nav_items()}
@@ -68,7 +68,7 @@
         </div>
       </nav>
 
-      <div :if={assigns[:current_user]} class="border-t border-zinc-200 px-4 py-4">
+      <div :if={assigns[:current_user]} class="shrink-0 border-t border-zinc-200 bg-white px-4 py-4">
         <details class="group">
           <summary class="flex cursor-pointer list-none items-center gap-3 rounded-xl px-2 py-2 hover:bg-zinc-100">
             <div class="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700">

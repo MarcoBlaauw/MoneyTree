@@ -15,6 +15,25 @@ The product goal is not just to calculate a new mortgage payment. RefiSignal sho
 - create alerts when rates or lender quotes make a refinance worth reviewing
 - reuse MoneyTree's existing UI, auth, contracts, background jobs, mailer, and notifications where possible
 
+## End Goal
+
+RefiSignal should be a production-usable refinance decision and monitoring tool inside MoneyTree, with
+boundaries clean enough to package as a standalone product later. The MoneyTree implementation should be
+complete before standalone packaging work begins.
+
+The desired finished state is:
+
+- Users can maintain a reviewed current-loan baseline through manual entry and document extraction.
+- Users can create, compare, and save refinance scenarios with deterministic amortization, break-even,
+  lifetime-interest, cash-to-close, escrow/prepaid, and fee analysis.
+- Benchmark rates and lender quotes are tracked separately, with freshness, source, and expiration labels.
+- Alerts notify users when rates or quotes make a refinance worth reviewing, with cooldowns to prevent noise.
+- AI extraction is review-first and cannot mutate mortgage data without confirmation.
+- RefiSignal UI is integrated into MoneyTree's authenticated app shell and uses existing auth, contracts,
+  jobs, notifications, and mailer.
+- Standalone mode is a later packaging layer that reuses the same domain model and calculations rather
+  than forking a second implementation.
+
 ## Current repo comparison
 
 ### Existing MoneyTree foundation

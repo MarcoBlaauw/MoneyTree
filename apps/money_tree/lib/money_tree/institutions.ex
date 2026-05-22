@@ -361,6 +361,51 @@ defmodule MoneyTree.Institutions do
   end
 
   @doc """
+  Lists all connections for a user, including revoked records.
+  """
+  @spec list_connections_for_user(user_ref(), keyword()) :: [Connection.t()]
+  def list_connections_for_user(user, opts \\ []) do
+    user
+    |> normalize_user_id()
+    |> authorized_connections_query()
+    |> maybe_filter_provider(Keyword.get(opts, :provider))
+    |> apply_preloads(opts)
+    |> Repo.all()
+  end
+
+  @doc """
+  Removes stored credentials for disabled legacy providers without deleting connection history.
+  """
+  @spec purge_legacy_credentials(user_ref(), binary()) ::
+          {:ok, Connection.t()} | {:error, :not_found | :not_legacy_provider | Changeset.t()}
+  def purge_legacy_credentials(user, connection_id) when is_binary(connection_id) do
+    with {:ok, %Connection{} = connection} <- fetch_owned_connection(user, connection_id),
+         :ok <- ensure_legacy_provider(connection) do
+      now = DateTime.utc_now()
+
+      metadata =
+        connection.metadata
+        |> normalize_metadata()
+        |> Map.put("credentials_purged_at", DateTime.to_iso8601(now))
+        |> Map.put("credentials_purged", true)
+
+      connection
+      |> Connection.changeset(%{
+        encrypted_credentials: nil,
+        webhook_secret: nil,
+        teller_enrollment_id: nil,
+        teller_user_id: nil,
+        sync_cursor: nil,
+        accounts_cursor: nil,
+        transactions_cursor: nil,
+        metadata: metadata,
+        provider_metadata: %{}
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
   Preloads accounts and institutions for the provided connection or collection of connections.
   """
   @spec preload_defaults(Connection.t() | [Connection.t()]) :: Connection.t() | [Connection.t()]
@@ -518,6 +563,15 @@ defmodule MoneyTree.Institutions do
     normalized = provider |> String.trim() |> String.downcase()
     where(query, [c], c.provider == ^normalized)
   end
+
+  defp ensure_legacy_provider(%Connection{provider: provider})
+       when provider in ["teller", "plaid"],
+       do: :ok
+
+  defp ensure_legacy_provider(%Connection{}), do: {:error, :not_legacy_provider}
+
+  defp normalize_metadata(metadata) when is_map(metadata), do: metadata
+  defp normalize_metadata(_metadata), do: %{}
 
   defp apply_preloads(query, opts) do
     preloads = Keyword.get(opts, :preload, [])

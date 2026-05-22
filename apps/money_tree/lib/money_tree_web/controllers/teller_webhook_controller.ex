@@ -2,6 +2,7 @@ defmodule MoneyTreeWeb.TellerWebhookController do
   use MoneyTreeWeb, :controller
 
   alias MoneyTree.Audit
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Synchronization
@@ -26,7 +27,8 @@ defmodule MoneyTreeWeb.TellerWebhookController do
     base_metadata = audit_metadata(remote_ip: client_ip)
     bucket = {:teller_webhook, client_ip}
 
-    with :ok <- RateLimiter.check(bucket, @rate_limit, @rate_period),
+    with :ok <- ensure_enabled(),
+         :ok <- RateLimiter.check(bucket, @rate_limit, @rate_period),
          {:ok, raw_body} <- fetch_raw_body(conn),
          {:ok, timestamp, signatures} <- parse_signature(conn),
          :ok <- ensure_fresh(timestamp),
@@ -38,6 +40,13 @@ defmodule MoneyTreeWeb.TellerWebhookController do
          result <- process_event(connection_id, nonce, timestamp, event, payload, base_metadata) do
       respond(conn, result)
     else
+      {:error, :provider_disabled} ->
+        Audit.log(:teller_webhook_provider_disabled, base_metadata)
+
+        conn
+        |> put_status(:ok)
+        |> json(%{status: "ignored", reason: "provider_disabled"})
+
       {:error, :rate_limited} ->
         Audit.log(:teller_webhook_rate_limited, base_metadata)
 
@@ -94,6 +103,10 @@ defmodule MoneyTreeWeb.TellerWebhookController do
         |> put_status(:bad_request)
         |> json(%{error: "missing connection"})
     end
+  end
+
+  defp ensure_enabled do
+    if ProviderRegistry.enabled?("teller"), do: :ok, else: {:error, :provider_disabled}
   end
 
   defp process_event(connection_id, nonce, timestamp, event, payload, base_metadata) do

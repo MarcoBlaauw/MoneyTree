@@ -86,6 +86,7 @@ defmodule MoneyTreeWeb.Router do
              SettingsController,
              :revoke_webauthn_credential
 
+      get "/evaluations/status-summary", EvaluationController, :status_summary
       get "/obligations", ObligationController, :index
       post "/obligations", ObligationController, :create
       get "/obligations/:id", ObligationController, :show
@@ -134,7 +135,11 @@ defmodule MoneyTreeWeb.Router do
       delete "/accounts/:account_id/invitations/:id", InvitationController, :revoke
       get "/categorization/rules", CategorizationController, :list_rules
       post "/categorization/rules", CategorizationController, :create_rule
+      delete "/categorization/rules", CategorizationController, :clear_rules
       delete "/categorization/rules/:id", CategorizationController, :delete_rule
+      get "/categorization/categories", CategorizationController, :list_categories
+      post "/categorization/categories", CategorizationController, :create_category
+      delete "/categorization/categories/:id", CategorizationController, :delete_category
       post "/categorization/recategorize", CategorizationController, :recategorize
       get "/ai/settings", AIController, :settings
       put "/ai/settings", AIController, :update_settings
@@ -160,8 +165,19 @@ defmodule MoneyTreeWeb.Router do
       get "/simplefin/config", SimpleFinController, :config
       get "/simplefin/connections", SimpleFinController, :connections
       post "/simplefin/claim", SimpleFinController, :claim
+
+      post "/simplefin/connections/:connection_id/imports/confirm",
+           SimpleFinController,
+           :confirm_import
+
       post "/simplefin/sync", SimpleFinController, :sync
       delete "/simplefin/connections/:connection_id", SimpleFinController, :revoke
+
+      get "/legacy-bank-connections", LegacyBankConnectionController, :index
+
+      post "/legacy-bank-connections/:connection_id/purge-credentials",
+           LegacyBankConnectionController,
+           :purge_credentials
     end
 
     scope "/plaid" do
@@ -173,12 +189,6 @@ defmodule MoneyTreeWeb.Router do
         post "/link_token", PlaidController, :link_token
         post "/exchange", PlaidController, :exchange
       end
-    end
-
-    scope "/stripe" do
-      pipe_through :api_auth
-
-      post "/session", StripeController, :session
     end
 
     scope "/kyc" do

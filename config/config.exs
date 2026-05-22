@@ -84,7 +84,7 @@ config :money_tree, MoneyTree.AI,
   ollama: [
     base_url: "http://localhost:11434",
     model: "llama3.1:8b",
-    timeout_ms: 60_000
+    timeout_ms: 120_000
   ]
 
 config :money_tree, MoneyTree.Loans.RateProviders.Fred,

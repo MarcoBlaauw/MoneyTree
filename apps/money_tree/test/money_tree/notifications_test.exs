@@ -1,7 +1,9 @@
 defmodule MoneyTree.NotificationsTest do
   use MoneyTree.DataCase, async: false
 
+  import Ecto.Query
   import MoneyTree.AccountsFixtures
+  import MoneyTree.MortgagesFixtures
   import MoneyTree.ObligationsFixtures
 
   alias Decimal
@@ -136,6 +138,54 @@ defmodule MoneyTree.NotificationsTest do
 
     notifications = Notifications.pending(user)
     assert Enum.any?(notifications, &(&1.message == "Travel Card is overdue."))
+  end
+
+  test "sync_evaluation_events records deduped durable evaluation events" do
+    user = user_fixture()
+
+    mortgage_fixture(user, %{
+      nickname: "Home loan",
+      home_value_estimate: nil,
+      last_reviewed_at: nil
+    })
+
+    now = %{~U[2026-05-22 12:00:00Z] | microsecond: {0, 6}}
+
+    assert {:ok, %{processed: 2}} = Notifications.sync_evaluation_events(user, now: now)
+    assert {:ok, %{processed: 2}} = Notifications.sync_evaluation_events(user, now: now)
+
+    events =
+      Event
+      |> where([event], event.user_id == ^user.id and event.kind == "financial_evaluation")
+      |> Repo.all()
+
+    assert length(events) == 2
+    assert Enum.any?(events, &(&1.status == "incomplete"))
+    assert Enum.any?(events, &(&1.status == "needs_review"))
+
+    incomplete = Enum.find(events, &(&1.status == "incomplete"))
+    assert incomplete.title == "Home loan is missing a home value estimate"
+    assert incomplete.action == "Review evaluation"
+    assert incomplete.metadata["domain"] == "mortgage"
+    assert incomplete.metadata["target_path"] =~ "/app/loans?mortgage_id="
+  end
+
+  test "pending includes synced durable evaluation events" do
+    user = user_fixture()
+
+    mortgage_fixture(user, %{
+      nickname: "Home loan",
+      home_value_estimate: nil,
+      last_reviewed_at: nil
+    })
+
+    notifications =
+      Notifications.pending(user, now: %{~U[2026-05-22 12:00:00Z] | microsecond: {0, 6}})
+
+    assert Enum.any?(
+             notifications,
+             &(&1.durable and &1.message =~ "Mortgage evaluations that depend on equity")
+           )
   end
 
   test "deliver_event can use the sms application layer with a configured adapter" do

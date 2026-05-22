@@ -11,6 +11,8 @@ defmodule MoneyTree.AI.TestProvider do
 
   @impl MoneyTree.AI.Provider
   def generate_json(_settings, prompt, _opts) do
+    Process.put(:ai_test_provider_last_prompt, prompt)
+
     case next_queued_response() || Process.get(:ai_test_provider_response) do
       nil ->
         if String.contains?(prompt, "\"loan_document_text\"") do

@@ -3,6 +3,7 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
 
   import MoneyTree.AccountsFixtures
   import MoneyTree.AssetsFixtures
+  import MoneyTree.MortgagesFixtures
   import MoneyTree.ObligationsFixtures
   import Phoenix.LiveViewTest
 
@@ -92,10 +93,17 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     view |> element("#toggle-balances") |> render_click()
 
     monthly = render(view)
-    assert monthly =~ "Monthly insights"
+    assert monthly =~ "Monthly overview"
+    assert monthly =~ "Planned"
+    assert monthly =~ "Actual"
+    assert monthly =~ "Remaining"
+    assert monthly =~ "Budget watchlist"
+    assert monthly =~ "Planner"
     assert monthly =~ "Income vs. expenses"
-    assert monthly =~ "Freelance"
-    assert monthly =~ "Dining"
+    assert monthly =~ "Open budgets"
+    assert monthly =~ "USD 8600.00"
+    assert monthly =~ "USD 8470.00"
+    assert monthly =~ "USD 130.00"
     assert monthly =~ "USD 5650.00"
     assert monthly =~ "USD 2820.00"
     assert monthly =~ "USD -180.00"
@@ -106,10 +114,11 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     |> render_click()
 
     weekly = render(view)
-    assert weekly =~ "Weekly insights"
-    assert weekly =~ "USD 138.46"
-    assert weekly =~ "USD 2400.00"
-    assert weekly =~ "USD 281.54"
+    assert weekly =~ "Weekly overview"
+    assert weekly =~ "Weekly totals"
+    assert weekly =~ "Income vs. expenses"
+    assert weekly =~ "Fixed vs. variable"
+    refute weekly =~ "Monthly overview"
   end
 
   test "renders dashboard metrics and masks balances by default", %{conn: conn, user: user} do
@@ -166,12 +175,32 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     {:ok, view, html} = live(conn, ~p"/app/dashboard")
 
     assert html =~ "<meta name=\"csp-nonce\""
-    assert html =~ "Dashboard controls"
+    assert html =~ "Controls"
+    assert html =~ "Balances masked"
+    assert html =~ "Cash &amp; savings"
+    assert html =~ "Budget status"
+    assert html =~ "Credit cards"
+    assert html =~ "Due soon"
+    assert html =~ "Needs review"
+    assert html =~ "Needs attention"
+    assert html =~ "Notifications and review prompts"
     assert html =~ "Budget pulse"
-    assert html =~ "Loans &amp; autopay"
+    assert html =~ "Account snapshot"
+    assert html =~ "Category-level account composition"
+    assert html =~ "Cash &amp; reserves"
+    assert html =~ "Loans"
     assert html =~ "Recent activity"
+    assert html =~ "View all transactions"
     assert html =~ "Open notifications"
     refute html =~ "Notification inbox"
+    refute html =~ "FICO &amp; insights"
+    refute html =~ "Placeholder"
+    refute html =~ "Connected financial accounts"
+    refute html =~ "Tangible asset records"
+    refute html =~ "Monthly recurring spend"
+
+    refute html =~
+             "Reveal values only when needed, lock the session when you step away, and refresh the latest activity without leaving the dashboard."
 
     assert html =~ "••"
     refute html =~ "USD 3100.00"
@@ -180,10 +209,26 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     view |> element("#toggle-balances") |> render_click()
 
     rendered = render(view)
-    assert rendered =~ "USD 3100.00"
     assert rendered =~ "USD 120.00"
     assert rendered =~ "text-rose-600"
     assert rendered =~ "text-emerald-600"
+  end
+
+  test "surfaces evaluation status summary on the dashboard", %{conn: conn, user: user} do
+    mortgage_fixture(user, %{
+      nickname: "Home loan",
+      home_value_estimate: nil,
+      last_reviewed_at: nil
+    })
+
+    {:ok, _view, html} = live(conn, ~p"/app/dashboard")
+
+    assert html =~ "Evaluation status"
+    assert html =~ "Missing facts, stale data, review queues, and expiring items"
+    assert html =~ "Needs review"
+    assert html =~ "Incomplete"
+    assert html =~ "Home loan is missing a home value estimate"
+    assert html =~ ~s(href="/app/react/evaluations")
   end
 
   test "lists tangible assets and reveals valuations when unmasked", %{conn: conn, user: user} do
@@ -211,8 +256,83 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     assert rendered =~ "USD 450000.00"
   end
 
+  test "empty tangible assets are linked to the assets page", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/app/dashboard")
+
+    assert html =~ "No tangible assets are tracked yet."
+    assert html =~ ~s(href="/app/assets")
+    refute html =~ ~s(id="new-asset")
+    refute html =~ "Record tangible assets to include their valuations in your dashboard metrics."
+  end
+
+  test "recent activity is limited on the dashboard", %{conn: conn, user: user} do
+    account = account_fixture(user, %{name: "Activity Account"})
+    today = Date.utc_today()
+
+    for index <- 1..6 do
+      insert_transaction(account, %{
+        amount: Decimal.new("#{index}.00"),
+        description: "Dashboard Activity #{index}",
+        posted_at: DateTime.new!(Date.add(today, index), ~T[12:00:00], "Etc/UTC")
+      })
+    end
+
+    {:ok, _view, html} = live(conn, ~p"/app/dashboard")
+
+    assert html =~ "Dashboard Activity 6"
+    assert html =~ "Dashboard Activity 2"
+    refute html =~ "Dashboard Activity 1"
+    assert html =~ ~s(href="/app/transactions")
+  end
+
+  test "needs attention panel combines notifications and evaluation prompts", %{
+    conn: conn,
+    user: user
+  } do
+    obligation = obligation_fixture(user, %{creditor_payee: "Travel Card"})
+
+    {:ok, _event} =
+      Notifications.record_event(%{
+        user_id: user.id,
+        obligation_id: obligation.id,
+        kind: "payment_obligation",
+        status: "overdue",
+        severity: "critical",
+        title: "Travel Card overdue",
+        message: "Travel Card payment is overdue.",
+        action: "Verify payment",
+        event_date: Date.utc_today(),
+        occurred_at: DateTime.utc_now(),
+        metadata: %{},
+        dedupe_key: "dashboard-attention-#{obligation.id}"
+      })
+
+    mortgage_fixture(user, %{
+      nickname: "Home loan",
+      home_value_estimate: nil,
+      last_reviewed_at: nil
+    })
+
+    {:ok, _view, html} = live(conn, ~p"/app/dashboard")
+
+    assert html =~ "Needs attention"
+    assert html =~ "Notification"
+    assert html =~ "Travel Card payment is overdue."
+    assert html =~ ~s(href="/app/notifications")
+    assert html =~ "Evaluation"
+    assert html =~ "Home loan is missing a home value estimate"
+    assert html =~ ~s(href="/app/react/evaluations")
+  end
+
   test "users can manage assets from the dashboard", %{conn: conn, user: user} do
     account = account_fixture(user, %{name: "Asset Account"})
+
+    asset_fixture(account, %{
+      name: "Existing Asset",
+      valuation_amount: Decimal.new("5000.00"),
+      valuation_currency: "USD",
+      asset_type: "vehicle"
+    })
 
     {:ok, view, _html} = live(conn, ~p"/app/dashboard")
 
@@ -354,7 +474,7 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
         amount: Map.get(attrs, :amount, Decimal.new("1.00")),
         currency: account.currency,
         type: Map.get(attrs, :type, "card"),
-        posted_at: DateTime.utc_now(),
+        posted_at: Map.get(attrs, :posted_at, DateTime.utc_now()),
         description: Map.get(attrs, :description, "Test"),
         category: Map.get(attrs, :category),
         status: "posted",

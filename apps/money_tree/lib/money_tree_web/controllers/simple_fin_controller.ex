@@ -46,8 +46,7 @@ defmodule MoneyTreeWeb.SimpleFinController do
          {:ok, access_url} <- simplefin_client().claim_setup_token(setup_token),
          {:ok, validation} <- simplefin_client().get_balances(access_url),
          {:ok, institution} <- ensure_institution(validation, params),
-         {:ok, connection} <- persist_connection(user, institution, access_url, validation),
-         :ok <- schedule_initial_sync(connection) do
+         {:ok, connection} <- persist_connection(user, institution, access_url, validation) do
       json(conn, %{
         data: %{
           connection_id: connection.id,
@@ -56,7 +55,8 @@ defmodule MoneyTreeWeb.SimpleFinController do
           accounts: serialize_accounts(validation["accounts"]),
           connections: serialize_connections(validation["connections"]),
           errors: Redaction.redact(validation["errors"] || []),
-          status: claim_status(validation)
+          status: claim_status(validation),
+          import_review: serialize_import_review(connection)
         }
       })
     else
@@ -107,6 +107,56 @@ defmodule MoneyTreeWeb.SimpleFinController do
     conn
     |> put_status(:bad_request)
     |> json(%{error: "connection_id is required"})
+  end
+
+  def confirm_import(conn, %{"connection_id" => connection_id, "account_ids" => account_ids})
+      when is_binary(connection_id) and is_list(account_ids) do
+    user = conn.assigns.current_user
+    account_ids = account_ids |> Enum.filter(&is_binary/1) |> Enum.uniq()
+
+    with :ok <- ensure_enabled(conn),
+         {:account_ids, true} <- {:account_ids, account_ids != []},
+         {:ok, %Connection{} = connection} <-
+           Institutions.get_active_connection_for_user(user, connection_id),
+         true <- connection.provider == "simplefin",
+         {:ok, connection} <- persist_import_review(connection, account_ids),
+         :ok <- schedule_initial_sync(connection) do
+      json(conn, %{
+        data: %{
+          connection_id: connection.id,
+          status: "scheduled",
+          import_review: serialize_import_review(connection)
+        }
+      })
+    else
+      {:error, :disabled} ->
+        disabled(conn)
+
+      {:account_ids, false} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "Select at least one account to import."})
+
+      false ->
+        conn |> put_status(:not_found) |> json(%{error: "connection not found"})
+
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "connection not found"})
+
+      {:error, %Changeset{} = changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{errors: Changeset.traverse_errors(changeset, &translate_error/1)})
+
+      {:error, reason} ->
+        render_simplefin_error(conn, reason)
+    end
+  end
+
+  def confirm_import(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "connection_id and account_ids are required"})
   end
 
   def revoke(conn, %{"connection_id" => connection_id}) when is_binary(connection_id) do
@@ -181,7 +231,13 @@ defmodule MoneyTreeWeb.SimpleFinController do
         "selected_protocol_version" => to_string(simplefin_config(:protocol_version, "2")),
         "connections" => Redaction.redact(validation["connections"] || []),
         "last_balances_only_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
-        "errors" => Redaction.redact(validation["errors"] || [])
+        "errors" => Redaction.redact(validation["errors"] || []),
+        "import_review" => %{
+          "status" => "pending",
+          "discovered_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+          "account_count" => length(List.wrap(validation["accounts"])),
+          "discovered_accounts" => serialize_accounts(validation["accounts"])
+        }
       }
     }
 
@@ -253,8 +309,50 @@ defmodule MoneyTreeWeb.SimpleFinController do
       account_count: length(connection.accounts || []),
       status: if(connection.last_sync_error, do: "needs_attention", else: "connected"),
       last_synced_at: format_datetime(connection.last_synced_at),
-      last_sync_error: connection.last_sync_error
+      last_sync_error: connection.last_sync_error,
+      import_review: serialize_import_review(connection)
     }
+  end
+
+  defp serialize_import_review(%Connection{} = connection) do
+    connection.provider_metadata
+    |> get_in(["simplefin", "import_review"])
+    |> case do
+      review when is_map(review) ->
+        %{
+          status: review["status"],
+          account_count: review["account_count"],
+          selected_count: review["selected_count"],
+          discovered_at: review["discovered_at"],
+          confirmed_at: review["confirmed_at"],
+          accounts: review["discovered_accounts"] || []
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp persist_import_review(%Connection{} = connection, account_ids) do
+    current_review =
+      connection.provider_metadata
+      |> get_in(["simplefin", "import_review"])
+      |> normalize_map()
+
+    provider_metadata =
+      put_simplefin_metadata(connection.provider_metadata, %{
+        "import_review" =>
+          Map.merge(current_review, %{
+            "status" => "confirmed",
+            "account_ids" => account_ids,
+            "selected_count" => length(account_ids),
+            "confirmed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+          })
+      })
+
+    connection
+    |> Connection.changeset(%{provider_metadata: provider_metadata})
+    |> Repo.update()
   end
 
   defp claim_status(validation) do
@@ -359,6 +457,15 @@ defmodule MoneyTreeWeb.SimpleFinController do
     |> String.replace(~r/-+/, "-")
     |> String.trim("-")
   end
+
+  defp put_simplefin_metadata(provider_metadata, updates) do
+    provider_metadata = normalize_map(provider_metadata)
+    current = provider_metadata |> Map.get("simplefin", %{}) |> normalize_map()
+    Map.put(provider_metadata, "simplefin", Map.merge(current, updates))
+  end
+
+  defp normalize_map(value) when is_map(value), do: value
+  defp normalize_map(_value), do: %{}
 
   defp translate_error({msg, opts}) do
     Enum.reduce(opts, msg, fn {key, value}, acc ->

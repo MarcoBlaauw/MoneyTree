@@ -29,7 +29,6 @@ test.describe("SimpleFIN bank linking", () => {
     await expect(page.getByRole("link", { name: "Back to Accounts" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Manage institutions" })).toBeVisible();
     await expect(page.getByText("SimpleFIN Bridge")).toBeVisible();
-    await expect(page.getByText("Stripe")).toHaveCount(0);
     await expect(page.getByText("Widget events")).toHaveCount(0);
   });
 

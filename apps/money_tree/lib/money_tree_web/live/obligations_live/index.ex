@@ -43,6 +43,19 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
      )}
   end
 
+  def handle_event(
+        "create-from-recurring-detections",
+        _params,
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    %{created: created} = Obligations.create_from_recurring_detections(current_user)
+
+    {:noreply,
+     socket
+     |> load_page(current_user)
+     |> put_flash(:info, "Created #{created} obligations from recurring detections.")}
+  end
+
   def handle_event("cancel-obligation", _params, socket) do
     {:noreply, reset_obligation_form(socket)}
   end
@@ -177,6 +190,7 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
     <section class="space-y-6">
       <.header title="Obligations" subtitle="Track recurring payment commitments and the alerts around them.">
         <:actions>
+          <button type="button" class="btn" phx-click="create-from-recurring-detections">Create from detections</button>
           <button type="button" class="btn btn-outline" phx-click="new-obligation">Add obligation</button>
         </:actions>
       </.header>
@@ -224,6 +238,12 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
                   <%= if obligation.active, do: "Active", else: "Paused" %>
                 </span>
               </div>
+              <p class="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <%= obligation_type_label(obligation.obligation_type) %>
+                <%= if obligation.source && obligation.source != "manual" do %>
+                  • <%= String.replace(obligation.source, "_", " ") %>
+                <% end %>
+              </p>
 
               <dl class="grid gap-3 text-sm sm:grid-cols-2">
                 <div class="rounded-lg bg-white px-3 py-2">
@@ -299,6 +319,14 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
                   <%= Phoenix.HTML.Form.options_for_select(due_rule_options(), f[:due_rule].value || "calendar_day") %>
                 </select>
                 <p :for={error <- errors_on(@obligation_changeset, :due_rule)} class="text-sm text-red-600"><%= error %></p>
+              </div>
+
+              <div>
+                <label class="text-sm font-medium text-zinc-700" for="obligation_obligation_type">Type</label>
+                <select id="obligation_obligation_type" name="obligation[obligation_type]" class="input">
+                  <%= Phoenix.HTML.Form.options_for_select(obligation_type_options(), f[:obligation_type].value || "bill") %>
+                </select>
+                <p :for={error <- errors_on(@obligation_changeset, :obligation_type)} class="text-sm text-red-600"><%= error %></p>
               </div>
 
               <.input field={f[:due_day]} label="Due day" type={:number} min="1" max="31" />
@@ -469,6 +497,17 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
     ]
   end
 
+  defp obligation_type_options do
+    [
+      {"Bill", "bill"},
+      {"Subscription", "subscription"},
+      {"Recurring payment", "recurring_payment"},
+      {"Loan payment", "loan_payment"},
+      {"Credit card payment", "credit_card_payment"},
+      {"Other", "other"}
+    ]
+  end
+
   defp errors_on(changeset, field) do
     changeset
     |> Ecto.Changeset.traverse_errors(fn {message, opts} ->
@@ -507,6 +546,15 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
   defp due_label(%{due_rule: "last_day_of_month"}), do: "on the last day of the month"
   defp due_label(%{due_day: day}) when is_integer(day), do: "on day #{day}"
   defp due_label(_obligation), do: "by configured rule"
+
+  defp obligation_type_label(nil), do: "Bill"
+
+  defp obligation_type_label(type) do
+    type
+    |> to_string()
+    |> String.replace("_", " ")
+    |> String.capitalize()
+  end
 
   defp event_status_label("due_today"), do: "Due today"
   defp event_status_label("overdue"), do: "Overdue"

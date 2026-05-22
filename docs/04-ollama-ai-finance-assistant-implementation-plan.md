@@ -12,6 +12,26 @@ This plan is optimized for the current repo:
 - existing Oban workers and queues
 - existing transaction categorization + manual import foundations from plans `00` and `02`
 
+## End Goal
+
+Ollama should provide local, auditable assistance for tedious review tasks without becoming the source
+of truth for financial calculations. The finished system should improve categorization, recurring
+payment discovery, budget drafting, import review, and explanation workflows while keeping deterministic
+code and user review in control.
+
+The desired finished state is:
+
+- Local AI can be enabled, configured, health-checked, and monitored from MoneyTree.
+- AI runs and suggestions are persisted with status, confidence, prompt/schema version, and review history.
+- Transaction categorization can run per transaction, include account context, auto-apply only above the
+  configured confidence threshold, and leave lower-confidence suggestions reviewable.
+- Recurring/subscription candidates flow into Obligations/Recurring review instead of creating a separate
+  unowned concept.
+- Budget automation uses deterministic spend calculations and uses AI only for labels/explanations.
+- Manual import AI assist proposes mappings/categories but never commits imported data without review.
+- Malformed model output, timeouts, and provider failures are visible and recoverable from the UI.
+- Sensitive data is minimized in prompts and never logged by default.
+
 ## Repo Fit Assessment
 
 Current repo capabilities that should be reused:
@@ -263,8 +283,11 @@ This plan is complete when all are true:
 2. AI runs/suggestions are persisted and auditable.
 3. Categorization suggestions are generated and reviewable through accept/edit/reject.
 4. Deterministic categorization/rules remain authoritative over AI.
-5. Sensitive data is minimized and not logged by default.
-6. Test coverage exists for provider failures, malformed output, authz, and review/apply flows.
+5. Recurring/subscription suggestions integrate with Obligations/Recurring review.
+6. Budget draft automation is deterministic and AI is limited to explanation/labeling.
+7. Manual import AI assist is review-first and cannot commit data silently.
+8. Sensitive data is minimized and not logged by default.
+9. Test coverage exists for provider failures, malformed output, authz, and review/apply flows.
 
 ## Notes For Execution
 

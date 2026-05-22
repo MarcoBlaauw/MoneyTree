@@ -30,6 +30,7 @@ defmodule MoneyTreeWeb.PlaidControllerTest do
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Institutions.Institution
   alias MoneyTree.Repo
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTreeWeb.Auth
 
   @session_cookie Auth.session_cookie_name()
@@ -42,15 +43,22 @@ defmodule MoneyTreeWeb.PlaidControllerTest do
 
     original_client = Application.get_env(:money_tree, :plaid_client)
     original_sync = Application.get_env(:money_tree, :synchronization)
+    original_registry = Application.get_env(:money_tree, ProviderRegistry)
 
     Application.put_env(:money_tree, :plaid_client, MoneyTreeWeb.PlaidClientStub)
     Application.put_env(:money_tree, :synchronization, MoneyTreeWeb.PlaidSyncStub)
+
+    Application.put_env(:money_tree, ProviderRegistry,
+      enabled_providers: ["simplefin", "manual", "plaid"],
+      primary_provider: "simplefin"
+    )
 
     on_exit(fn ->
       Process.delete({MoneyTreeWeb.PlaidClientStub, :create_link_token})
       Process.delete({MoneyTreeWeb.PlaidClientStub, :exchange_public_token})
       restore_env(:plaid_client, original_client)
       restore_env(:synchronization, original_sync)
+      restore_registry(original_registry)
     end)
 
     {:ok, conn: conn}
@@ -63,6 +71,20 @@ defmodule MoneyTreeWeb.PlaidControllerTest do
       response = post(conn, ~p"/api/plaid/link_token", %{})
 
       assert response.status == 401
+    end
+
+    test "returns stable disabled response when Plaid is not enabled", %{conn: conn} do
+      Application.put_env(:money_tree, ProviderRegistry,
+        enabled_providers: ["simplefin", "manual"],
+        primary_provider: "simplefin"
+      )
+
+      response =
+        conn
+        |> post(~p"/api/plaid/link_token", %{})
+        |> json_response(503)
+
+      assert response == %{"error" => "Plaid is disabled for new connections"}
     end
   end
 
@@ -130,4 +152,7 @@ defmodule MoneyTreeWeb.PlaidControllerTest do
 
   defp restore_env(key, nil), do: Application.delete_env(:money_tree, key)
   defp restore_env(key, value), do: Application.put_env(:money_tree, key, value)
+
+  defp restore_registry(nil), do: Application.delete_env(:money_tree, ProviderRegistry)
+  defp restore_registry(value), do: Application.put_env(:money_tree, ProviderRegistry, value)
 end

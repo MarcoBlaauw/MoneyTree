@@ -78,7 +78,7 @@ defmodule MoneyTreeWeb.SimpleFinControllerTest do
     assert response["data"]["primary_provider"] == "simplefin"
   end
 
-  test "claim stores access URL in encrypted credentials and returns safe account metadata", %{
+  test "claim stores access URL and waits for account import review", %{
     conn: conn
   } do
     Process.put({MoneyTreeWeb.SimpleFinClientStub, :claim_setup_token}, fn token ->
@@ -118,6 +118,8 @@ defmodule MoneyTreeWeb.SimpleFinControllerTest do
     assert response["data"]["institution_name"] == "SimpleFIN Bridge"
     assert [%{"code" => "con.auth", "msg" => "Auth required"}] = response["data"]["errors"]
     assert [%{"name" => "Checking"}] = response["data"]["accounts"]
+    assert response["data"]["import_review"]["status"] == "pending"
+    assert response["data"]["import_review"]["account_count"] == 1
 
     connection = Repo.get!(Connection, response["data"]["connection_id"])
     assert Repo.preload(connection, :institution).institution.name == "SimpleFIN Bridge"
@@ -130,7 +132,55 @@ defmodule MoneyTreeWeb.SimpleFinControllerTest do
              %{"code" => "con.auth", "conn_id" => "conn-1", "msg" => "Auth required"}
            ]
 
-    assert_receive {:simplefin_sync_scheduled, _connection_id}
+    assert get_in(connection.provider_metadata, ["simplefin", "import_review", "status"]) ==
+             "pending"
+
+    refute_receive {:simplefin_sync_scheduled, _connection_id}
+  end
+
+  test "confirm import stores selected accounts and schedules initial sync", %{
+    conn: conn,
+    user: user
+  } do
+    institution = institution_fixture(%{name: "SimpleFIN Bridge"})
+
+    connection =
+      connection_fixture(user, %{
+        institution: institution,
+        provider: "simplefin",
+        provider_metadata: %{
+          "simplefin" => %{
+            "import_review" => %{
+              "status" => "pending",
+              "account_count" => 2,
+              "discovered_accounts" => [
+                %{"id" => "acct-1", "name" => "Checking"},
+                %{"id" => "acct-2", "name" => "Savings"}
+              ]
+            }
+          }
+        }
+      })
+
+    response =
+      conn
+      |> post(~p"/api/simplefin/connections/#{connection.id}/imports/confirm", %{
+        "account_ids" => ["acct-1"]
+      })
+      |> json_response(200)
+
+    connection_id = connection.id
+
+    assert response["data"]["status"] == "scheduled"
+    assert response["data"]["import_review"]["status"] == "confirmed"
+    assert response["data"]["import_review"]["selected_count"] == 1
+    assert_receive {:simplefin_sync_scheduled, ^connection_id}
+
+    refreshed = Repo.get!(Connection, connection.id)
+
+    assert get_in(refreshed.provider_metadata, ["simplefin", "import_review", "account_ids"]) == [
+             "acct-1"
+           ]
   end
 
   test "connections lists active SimpleFIN connections", %{conn: conn, user: user} do

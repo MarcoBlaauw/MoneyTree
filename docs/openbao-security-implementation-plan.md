@@ -17,6 +17,26 @@ following goals:
 
 This document is intentionally implementation-oriented and repo-specific.
 
+## End Goal
+
+MoneyTree production should be able to boot and operate with OpenBao as the authoritative source for
+high-value secrets, while local development can continue to use environment variables. The app should
+gain a narrow secrets abstraction, not a browser-facing secret-management product.
+
+The desired finished state is:
+
+- Runtime secret loading goes through a `MoneyTree.Secrets` abstraction with `env` and `openbao`
+  providers.
+- Production can run in OpenBao-backed mode for database, Cloak, Phoenix, Plaid/Teller legacy secrets
+  where still enabled, SMTP, and future provider credentials.
+- MoneyTree has read-only access to exact secret paths and never receives broad vault permissions.
+- Missing critical production secrets fail startup clearly and safely.
+- Owners can view secret-provider health/status only; raw secret values are never exposed in UI,
+  APIs, logs, or telemetry.
+- Rotation, outage behavior, bootstrap credentials, and operational validation are documented.
+- The implementation is complete only when staging or production has successfully booted with OpenBao
+  mode and redundant plaintext production env secrets have been reduced where practical.
+
 ---
 
 ## Current security baseline in the repo
@@ -135,7 +155,6 @@ This policy should allow read-only access to exact paths such as:
 - `kv/data/moneytree/prod/plaid`
 - `kv/data/moneytree/prod/teller`
 - `kv/data/moneytree/prod/smtp`
-- `kv/data/moneytree/prod/stripe`
 - `kv/data/moneytree/prod/providers/*` later if needed
 
 Keep the policy read-only.
@@ -165,7 +184,6 @@ These are the best first candidates because they are already in runtime config a
 - `TELLER_WEBHOOK_SECRET`
 - `TELLER_CERT_PEM` or file-backed equivalent
 - `TELLER_KEY_PEM` or file-backed equivalent
-- Stripe Connect client credentials if used in production
 
 ### Group B — app crypto and auth
 

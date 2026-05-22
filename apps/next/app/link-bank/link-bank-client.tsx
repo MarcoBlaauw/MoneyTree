@@ -69,6 +69,16 @@ interface SimpleFinAccount {
   currency?: string;
   balance?: string;
   available_balance?: string;
+  conn_id?: string;
+}
+
+interface SimpleFinImportReview {
+  status?: string;
+  account_count?: number;
+  selected_count?: number;
+  discovered_at?: string;
+  confirmed_at?: string;
+  accounts?: SimpleFinAccount[];
 }
 
 interface SimpleFinConnection {
@@ -79,6 +89,18 @@ interface SimpleFinConnection {
   status?: string;
   last_synced_at?: string | null;
   last_sync_error?: unknown;
+  import_review?: SimpleFinImportReview | null;
+}
+
+interface LegacyBankConnection {
+  id: string;
+  provider: "teller" | "plaid" | string;
+  institution_name?: string;
+  account_count?: number;
+  status?: string;
+  credentials_present?: boolean;
+  "credentials_present?"?: boolean;
+  credentials_purged_at?: string | null;
 }
 
 type TellerConnectSuccessEvent = Record<string, unknown>;
@@ -396,7 +418,10 @@ export default function LinkBankClient({
   const [simplefinError, setSimplefinError] = useState("");
   const [simplefinProviderErrors, setSimplefinProviderErrors] = useState<string[]>([]);
   const [simplefinAccounts, setSimplefinAccounts] = useState<SimpleFinAccount[]>([]);
+  const [simplefinReviewConnectionId, setSimplefinReviewConnectionId] = useState("");
+  const [selectedSimplefinAccountIds, setSelectedSimplefinAccountIds] = useState<string[]>([]);
   const [simplefinConnections, setSimplefinConnections] = useState<SimpleFinConnection[]>([]);
+  const [legacyConnections, setLegacyConnections] = useState<LegacyBankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(false);
   const [connectionActionId, setConnectionActionId] = useState<string | null>(null);
   const tellerConnectRef = useRef<TellerConnectInstance | null>(null);
@@ -553,11 +578,31 @@ export default function LinkBankClient({
     }
   }, [csrfToken]);
 
+  const loadLegacyConnections = useCallback(async () => {
+    try {
+      const response = await fetch("/api/legacy-bank-connections", createJsonFetchOptions(csrfToken));
+      const payload = await parseResponsePayload(response);
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = maybeRecord(payload.data) ?? {};
+      const connections = Array.isArray(data.connections)
+        ? (data.connections as LegacyBankConnection[])
+        : [];
+      setLegacyConnections(connections);
+    } catch {
+      setLegacyConnections([]);
+    }
+  }, [csrfToken]);
+
   useEffect(() => {
     if (enabledProviders.includes("simplefin")) {
       void loadSimpleFinConnections();
     }
-  }, [enabledProviders, loadSimpleFinConnections]);
+    void loadLegacyConnections();
+  }, [enabledProviders, loadLegacyConnections, loadSimpleFinConnections]);
 
   const refreshSimpleFinConnection = useCallback(
     async (connectionId: string) => {
@@ -617,6 +662,42 @@ export default function LinkBankClient({
       }
     },
     [csrfToken, loadSimpleFinConnections, logEvent],
+  );
+
+  const purgeLegacyCredentials = useCallback(
+    async (connection: LegacyBankConnection) => {
+      const providerLabel = connection.provider === "plaid" ? "Plaid" : "Teller";
+
+      if (!window.confirm(`Purge stored ${providerLabel} credentials for this legacy connection?`)) {
+        return;
+      }
+
+      setConnectionActionId(connection.id);
+
+      try {
+        const response = await fetch(
+          `/api/legacy-bank-connections/${connection.id}/purge-credentials`,
+          createJsonFetchOptions(csrfToken, "POST"),
+        );
+        const payload = await parseResponsePayload(response);
+
+        if (!response.ok) {
+          setSimplefinError(asString(payload.error) ?? "Unable to purge legacy credentials.");
+          return;
+        }
+
+        logEvent("Legacy provider credentials purged", {
+          level: "success",
+          payload: maybeRecord(payload.data) ?? {},
+        });
+        await loadLegacyConnections();
+      } catch (error) {
+        setSimplefinError(error instanceof Error ? error.message : "Unable to purge legacy credentials.");
+      } finally {
+        setConnectionActionId(null);
+      }
+    },
+    [csrfToken, loadLegacyConnections, logEvent],
   );
 
   const launchTellerConnect = useCallback(
@@ -835,6 +916,8 @@ export default function LinkBankClient({
     setSimplefinError("");
     setSimplefinProviderErrors([]);
     setSimplefinAccounts([]);
+    setSimplefinReviewConnectionId("");
+    setSelectedSimplefinAccountIds([]);
 
     try {
       const response = await fetch("/api/simplefin/claim", createFetchOptions(csrfToken, { setup_token: setupToken }));
@@ -855,6 +938,10 @@ export default function LinkBankClient({
             .filter((message): message is string => Boolean(message))
         : [];
       setSimplefinAccounts(accounts);
+      setSimplefinReviewConnectionId(asString(data.connection_id) ?? "");
+      setSelectedSimplefinAccountIds(
+        accounts.map((account) => account.id).filter((id): id is string => Boolean(id)),
+      );
       setSimplefinProviderErrors(providerErrors);
       setSetupToken("");
       logEvent("SimpleFIN connection claimed", {
@@ -875,6 +962,61 @@ export default function LinkBankClient({
       setSimplefinLoading(false);
     }
   }, [csrfToken, loadSimpleFinConnections, logEvent, setupToken]);
+
+  const toggleSimplefinAccountSelection = useCallback((accountId: string) => {
+    setSelectedSimplefinAccountIds((current) =>
+      current.includes(accountId)
+        ? current.filter((id) => id !== accountId)
+        : [...current, accountId],
+    );
+  }, []);
+
+  const confirmSimpleFinImport = useCallback(async () => {
+    if (!simplefinReviewConnectionId || selectedSimplefinAccountIds.length === 0) {
+      return;
+    }
+
+    setSimplefinLoading(true);
+    setSimplefinError("");
+
+    try {
+      const response = await fetch(
+        `/api/simplefin/connections/${simplefinReviewConnectionId}/imports/confirm`,
+        createFetchOptions(csrfToken, { account_ids: selectedSimplefinAccountIds }),
+      );
+      const payload = await parseResponsePayload(response);
+
+      if (!response.ok) {
+        setSimplefinError(asString(payload.error) ?? "SimpleFIN import review failed.");
+        logEvent("SimpleFIN import review failed", { level: "error", payload });
+        return;
+      }
+
+      logEvent("SimpleFIN import scheduled", {
+        level: "success",
+        payload: {
+          connection_id: simplefinReviewConnectionId,
+          accounts: selectedSimplefinAccountIds.length,
+        },
+      });
+      setSimplefinAccounts([]);
+      setSimplefinReviewConnectionId("");
+      setSelectedSimplefinAccountIds([]);
+      await loadSimpleFinConnections();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setSimplefinError(message);
+      logEvent("SimpleFIN import review crashed", { level: "error", payload: { message } });
+    } finally {
+      setSimplefinLoading(false);
+    }
+  }, [
+    csrfToken,
+    loadSimpleFinConnections,
+    logEvent,
+    selectedSimplefinAccountIds,
+    simplefinReviewConnectionId,
+  ]);
 
   return (
     <>
@@ -925,6 +1067,11 @@ export default function LinkBankClient({
                     <p className="mt-1 text-sm text-zinc-500">
                       Last synced {formatConnectionDate(connection.last_synced_at)}
                     </p>
+                    {connection.import_review?.status === "pending" ? (
+                      <p className="mt-1 text-sm font-medium text-amber-700">
+                        Import review pending: confirm accounts below before the first sync.
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <button
@@ -952,6 +1099,66 @@ export default function LinkBankClient({
               {connectionsLoading ? "Loading connections..." : "No SimpleFIN connections are active yet."}
             </div>
           )}
+        </section>
+      ) : null}
+
+      {legacyConnections.length > 0 ? (
+        <section className="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <header className="space-y-1">
+            <h2 className="text-lg font-semibold text-zinc-900">Legacy provider records</h2>
+            <p className="text-sm text-zinc-500">
+              Teller and Plaid links are disabled for new connections. Purging credentials keeps
+              historical accounts and transactions but removes stored provider secrets.
+            </p>
+          </header>
+          <div className="grid gap-3">
+            {legacyConnections.map((connection) => {
+              const credentialsPresent = Boolean(
+                connection.credentials_present ?? connection["credentials_present?"],
+              );
+
+              return (
+                <div
+                  key={connection.id}
+                  className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-zinc-900">
+                        {connection.institution_name ?? "Legacy connection"}
+                      </p>
+                      <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-700">
+                        {connection.provider}
+                      </span>
+                      <span
+                        className={
+                          credentialsPresent
+                            ? "rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700"
+                            : "rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700"
+                        }
+                      >
+                        {credentialsPresent ? "Credentials stored" : "Credentials purged"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">
+                      {connection.account_count ?? 0} historical accounts
+                      {connection.credentials_purged_at
+                        ? ` • Purged ${formatConnectionDate(connection.credentials_purged_at)}`
+                        : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    disabled={!credentialsPresent || connectionActionId === connection.id}
+                    onClick={() => void purgeLegacyCredentials(connection)}
+                  >
+                    {connectionActionId === connection.id ? "Working..." : "Purge credentials"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </section>
       ) : null}
 
@@ -1011,19 +1218,80 @@ export default function LinkBankClient({
             </div>
           ) : null}
           {simplefinAccounts.length > 0 ? (
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-zinc-800">Discovered accounts</h3>
+            <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-900">Review accounts to import</h3>
+                  <p className="text-sm text-zinc-600">
+                    Select the SimpleFIN accounts MoneyTree should import before the first sync runs.
+                  </p>
+                </div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  {selectedSimplefinAccountIds.length} of {simplefinAccounts.length} selected
+                </p>
+              </div>
               <div className="grid gap-2">
                 {simplefinAccounts.map((account) => (
-                  <div key={account.id ?? account.name} className="rounded-md border border-zinc-200 px-3 py-2 text-sm">
-                    <div className="font-medium text-zinc-900">{account.name ?? "Account"}</div>
-                    <div className="text-zinc-500">
-                      {[account.currency, account.balance ? `Balance ${account.balance}` : undefined]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </div>
-                  </div>
+                  <label
+                    key={account.id ?? account.name}
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                      checked={Boolean(
+                        account.id && selectedSimplefinAccountIds.includes(account.id),
+                      )}
+                      disabled={!account.id || simplefinLoading}
+                      onChange={() => {
+                        if (account.id) {
+                          toggleSimplefinAccountSelection(account.id);
+                        }
+                      }}
+                    />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-zinc-900">
+                        {account.name ?? "Account"}
+                      </span>
+                      <span className="block text-zinc-500">
+                        {[
+                          account.currency,
+                          account.balance ? `Balance ${account.balance}` : undefined,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    </span>
+                  </label>
                 ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={
+                    simplefinLoading ||
+                    !simplefinReviewConnectionId ||
+                    selectedSimplefinAccountIds.length === 0
+                  }
+                  onClick={() => void confirmSimpleFinImport()}
+                >
+                  {simplefinLoading ? "Scheduling..." : "Import selected accounts"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  disabled={simplefinLoading}
+                  onClick={() =>
+                    setSelectedSimplefinAccountIds(
+                      simplefinAccounts
+                        .map((account) => account.id)
+                        .filter((id): id is string => Boolean(id)),
+                    )
+                  }
+                >
+                  Select all
+                </button>
               </div>
             </div>
           ) : null}

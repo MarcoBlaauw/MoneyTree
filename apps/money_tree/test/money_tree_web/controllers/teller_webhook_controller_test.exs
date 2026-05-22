@@ -1,7 +1,8 @@
 defmodule MoneyTreeWeb.TellerWebhookControllerTest do
-  use MoneyTreeWeb.ConnCase, async: true
+  use MoneyTreeWeb.ConnCase
 
   alias MoneyTree.AccountsFixtures
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Institutions
   alias MoneyTree.InstitutionsFixtures
   alias MoneyTree.Repo
@@ -39,6 +40,7 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
   setup do
     original_config = Application.get_env(:money_tree, MoneyTree.Teller)
     original_client = Application.get_env(:money_tree, :teller_client)
+    original_registry = Application.get_env(:money_tree, ProviderRegistry)
     base_config = original_config || []
     secret = "test-webhook-secret"
 
@@ -49,6 +51,11 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
     Application.put_env(:money_tree, MoneyTree.Teller, new_config)
     Application.put_env(:money_tree, :teller_client, TellerWebhookClientStub)
 
+    Application.put_env(:money_tree, ProviderRegistry,
+      enabled_providers: ["simplefin", "manual", "teller"],
+      primary_provider: "simplefin"
+    )
+
     on_exit(fn ->
       case original_config do
         nil -> Application.delete_env(:money_tree, MoneyTree.Teller)
@@ -58,6 +65,11 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
       case original_client do
         nil -> Application.delete_env(:money_tree, :teller_client)
         client -> Application.put_env(:money_tree, :teller_client, client)
+      end
+
+      case original_registry do
+        nil -> Application.delete_env(:money_tree, ProviderRegistry)
+        config -> Application.put_env(:money_tree, ProviderRegistry, config)
       end
     end)
 
@@ -91,6 +103,23 @@ defmodule MoneyTreeWeb.TellerWebhookControllerTest do
 
       assert webhook_meta["last_event"] == "accounts.updated"
       assert webhook_meta["nonces"][payload["nonce"]]
+    end
+
+    test "acknowledges disabled Teller webhooks without requiring signature", %{conn: conn} do
+      Application.put_env(:money_tree, ProviderRegistry,
+        enabled_providers: ["simplefin", "manual"],
+        primary_provider: "simplefin"
+      )
+
+      response =
+        conn
+        |> put_req_header("content-type", "application/json")
+        |> post(~p"/api/teller/webhook", Jason.encode!(%{}))
+
+      assert json_response(response, 200) == %{
+               "status" => "ignored",
+               "reason" => "provider_disabled"
+             }
     end
 
     test "logs audit events when webhook processed", %{conn: conn, secret: secret} do

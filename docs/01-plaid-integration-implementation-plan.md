@@ -1,5 +1,14 @@
 # Plaid Integration Implementation Plan
 
+## Status
+
+On hold as of 2026-05-22.
+
+MoneyTree is not planning active Plaid implementation work in the near term. SimpleFIN Bridge plus
+manual import is the active v1 account-data strategy. Keep this document as historical context and as
+a possible future optional-adapter plan, but do not schedule implementation slices from it until the
+product decision changes.
+
 ## Purpose
 
 This document is the first implementation plan for Plaid in `MoneyTree`.
@@ -21,6 +30,26 @@ implementation is not a real integration:
 The goal of this plan is to replace the scaffold with a fully functional, testable Plaid
 integration that is more reliable than the current Teller path and fits the existing repo
 boundaries.
+
+## End Goal
+
+Plaid should either become a fully functional optional bank-sync adapter or remain disabled as legacy
+scaffold. This plan is only complete if Plaid can be enabled intentionally, with real Plaid sandbox
+credentials, and can link, exchange, sync, and receive webhooks without delegating execution to Teller
+code.
+
+The desired finished state is:
+
+- Plaid is disabled by default while SimpleFIN remains MoneyTree's primary provider.
+- Enabling Plaid is an explicit operator decision through documented runtime configuration.
+- Plaid Link token creation, public-token exchange, account sync, transaction sync, and webhook handling
+  use Plaid-specific code paths.
+- Plaid secrets never enter Next.js or browser-visible configuration.
+- Plaid test coverage proves the real integration boundaries, not only local placeholder shapes.
+
+If MoneyTree decides not to support Plaid after the SimpleFIN migration, the end goal changes to a
+documented removal/archive task: remove Plaid link surfaces, runtime configuration, placeholder code,
+and tests while preserving historical Plaid-imported account and transaction records.
 
 ## Goals
 
@@ -109,7 +138,7 @@ Rules:
 
 ## Phase 1: Add Runtime Configuration
 
-Add Plaid configuration in the same style as the Teller and Stripe runtime setup.
+Add Plaid configuration in the same style as the Teller runtime setup.
 
 Update:
 

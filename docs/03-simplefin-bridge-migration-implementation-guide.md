@@ -8,6 +8,49 @@ SimpleFIN Bridge is a better fit for the current product direction because it us
 
 This document also covers how to disable Teller and Plaid for new connections without deleting existing account or transaction history.
 
+## End Goal
+
+MoneyTree should use SimpleFIN Bridge plus manual import as the primary v1 account-data strategy.
+The migration is complete when a new user can connect accounts through SimpleFIN, sync balances and
+transactions repeatedly, and understand/import data without any Teller, Plaid, or widget dependency in
+the default path.
+
+The desired finished state is:
+
+- SimpleFIN is the default and only visible connected-account provider unless a legacy provider is
+  explicitly enabled by configuration.
+- Manual import remains first-class for institutions SimpleFIN cannot cover.
+- Teller and Plaid cannot create new links by default, but historical records remain readable.
+- SimpleFIN Access URLs are stored only in encrypted fields, and setup tokens are never stored.
+- Sync is idempotent, quota-aware, and respects SimpleFIN's 90-day request-window limit.
+- The link-bank UI, provider registry, docs, tests, and runbooks all describe SimpleFIN-first behavior.
+- A later cleanup decision is explicit: either keep Teller/Plaid as disabled legacy adapters or remove
+  their code after credential-purge and historical-data safety requirements are met.
+
+## Implementation Status
+
+Status as of 2026-05-22: complete for the SimpleFIN-first v1 migration goal.
+
+Implemented in repo:
+
+- Provider registry defaults to `simplefin,manual`, with Teller and Plaid treated as explicitly enabled legacy providers.
+- Runtime configuration and environment documentation cover SimpleFIN settings and legacy provider flags.
+- `provider: "simplefin"` is valid for institution connections while existing Teller/Plaid records remain readable.
+- SimpleFIN setup-token claim, Access URL validation, balances-only validation, account discovery, import review, initial sync scheduling, manual refresh scheduling, and revocation endpoints are implemented.
+- SimpleFIN Access URLs are stored in encrypted connection credentials; setup tokens are not stored.
+- SimpleFIN sync imports accounts and transactions idempotently, enforces the 90-day initial window, preserves provider metadata, respects selected-account review, and tracks local request quota in provider metadata.
+- SimpleFIN UI is the primary link-bank flow; Teller/Plaid widgets are hidden unless enabled.
+- Legacy Teller/Plaid new-link endpoints return stable disabled responses when disabled.
+- Legacy Teller/Plaid webhook endpoints acknowledge disabled providers with no-op success to avoid vendor retry storms.
+- Legacy provider credential purge tooling exists so old secrets can be removed without deleting historical accounts or transactions.
+- Backend and frontend tests cover SimpleFIN claim/review/sync, disabled legacy endpoints, disabled legacy webhooks, and link-bank UI behavior.
+
+Remaining follow-up, outside the v1 completion bar:
+
+- Decide whether to keep Teller/Plaid as disabled legacy adapters or remove/archive their code after existing users have purged credentials.
+- Add a dedicated provider request log table only if deeper provider-health analytics become necessary.
+- Expand SimpleFIN repair/debug tooling if real provider error patterns require account-specific repair requests.
+
 ## Source Notes
 
 Primary sources:

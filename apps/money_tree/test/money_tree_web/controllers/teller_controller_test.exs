@@ -39,6 +39,7 @@ defmodule MoneyTreeWeb.TellerControllerTest do
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Institutions.Institution
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Repo
   alias MoneyTreeWeb.Auth
 
@@ -53,10 +54,16 @@ defmodule MoneyTreeWeb.TellerControllerTest do
     original_client = Application.get_env(:money_tree, :teller_client)
     original_sync = Application.get_env(:money_tree, :synchronization)
     original_rate_limiter = Application.get_env(:money_tree, :rate_limiter)
+    original_registry = Application.get_env(:money_tree, ProviderRegistry)
 
     Application.put_env(:money_tree, :teller_client, MoneyTreeWeb.TellerClientStub)
     Application.put_env(:money_tree, :synchronization, MoneyTreeWeb.SyncStub)
     Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop)
+
+    Application.put_env(:money_tree, ProviderRegistry,
+      enabled_providers: ["simplefin", "manual", "teller"],
+      primary_provider: "simplefin"
+    )
 
     on_exit(fn ->
       Process.delete({MoneyTreeWeb.TellerClientStub, :connect_token})
@@ -65,6 +72,7 @@ defmodule MoneyTreeWeb.TellerControllerTest do
       restore_env(:teller_client, original_client)
       restore_env(:synchronization, original_sync)
       restore_env(:rate_limiter, original_rate_limiter)
+      restore_registry(original_registry)
     end)
 
     {:ok, conn: conn, user: user}
@@ -94,6 +102,20 @@ defmodule MoneyTreeWeb.TellerControllerTest do
       response = json_response(conn, 200)
 
       assert response == %{"data" => %{"token" => "connect-token"}}
+    end
+
+    test "returns stable disabled response when Teller is not enabled", %{conn: conn} do
+      Application.put_env(:money_tree, ProviderRegistry,
+        enabled_providers: ["simplefin", "manual"],
+        primary_provider: "simplefin"
+      )
+
+      response =
+        conn
+        |> post(~p"/api/teller/connect_token", %{})
+        |> json_response(503)
+
+      assert response == %{"error" => "Teller is disabled for new connections"}
     end
 
     test "applies rate limiting hook", %{conn: conn} do
@@ -404,4 +426,7 @@ defmodule MoneyTreeWeb.TellerControllerTest do
 
   defp restore_env(key, nil), do: Application.delete_env(:money_tree, key)
   defp restore_env(key, value), do: Application.put_env(:money_tree, key, value)
+
+  defp restore_registry(nil), do: Application.delete_env(:money_tree, ProviderRegistry)
+  defp restore_registry(value), do: Application.put_env(:money_tree, ProviderRegistry, value)
 end

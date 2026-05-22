@@ -3,6 +3,7 @@ defmodule MoneyTreeWeb.PlaidWebhookController do
 
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Plaid.Webhooks
   alias MoneyTree.Synchronization
 
@@ -11,7 +12,8 @@ defmodule MoneyTreeWeb.PlaidWebhookController do
   @nonce_retention 86_400
 
   def webhook(conn, _params) do
-    with {:ok, raw_body} <- fetch_raw_body(conn),
+    with :ok <- ensure_enabled(),
+         {:ok, raw_body} <- fetch_raw_body(conn),
          {:ok, timestamp} <- fetch_timestamp(conn),
          :ok <- verify_signature(conn, timestamp, raw_body),
          {:ok, payload} <- decode_payload(raw_body),
@@ -21,8 +23,16 @@ defmodule MoneyTreeWeb.PlaidWebhookController do
          result <- process_event(connection_id, nonce, timestamp, event, payload) do
       respond(conn, result)
     else
-      {:error, _reason} -> conn |> put_status(:bad_request) |> json(%{error: "invalid webhook"})
+      {:error, :provider_disabled} ->
+        conn |> put_status(:ok) |> json(%{status: "ignored", reason: "provider_disabled"})
+
+      {:error, _reason} ->
+        conn |> put_status(:bad_request) |> json(%{error: "invalid webhook"})
     end
+  end
+
+  defp ensure_enabled do
+    if ProviderRegistry.enabled?("plaid"), do: :ok, else: {:error, :provider_disabled}
   end
 
   defp process_event(connection_id, nonce, timestamp, event, payload) do
@@ -33,7 +43,9 @@ defmodule MoneyTreeWeb.PlaidWebhookController do
              connection,
              nonce,
              DateTime.from_unix!(timestamp),
-             %{event: event, payload: payload}, retention: @nonce_retention),
+             %{event: event, payload: payload},
+             retention: @nonce_retention
+           ),
          :ok <-
            Synchronization.schedule_incremental_sync(connection,
              telemetry_metadata: %{

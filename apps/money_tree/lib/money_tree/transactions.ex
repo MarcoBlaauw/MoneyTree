@@ -32,10 +32,12 @@ defmodule MoneyTree.Transactions do
     per_page = sanitize_per_page(Keyword.get(opts, :per_page, @default_per_page))
 
     base_query =
-      from transaction in Transaction,
+      from(transaction in Transaction,
         join: account in subquery(Accounts.accessible_accounts_query(user)),
         on: transaction.account_id == account.id,
         preload: [account: ^preload_account_fields()]
+      )
+      |> maybe_filter_uncategorized(Keyword.get(opts, :uncategorized_only, false))
 
     total_entries = Repo.aggregate(base_query, :count, :id)
 
@@ -459,6 +461,16 @@ defmodule MoneyTree.Transactions do
       is_nil(transaction.posted_at) or transaction.posted_at >= ^since
     )
   end
+
+  defp maybe_filter_uncategorized(query, true) do
+    where(
+      query,
+      [transaction],
+      is_nil(transaction.category) or transaction.category == "Uncategorized"
+    )
+  end
+
+  defp maybe_filter_uncategorized(query, _uncategorized_only), do: query
 
   defp maybe_filter_match_statuses(query, nil), do: query
   defp maybe_filter_match_statuses(query, []), do: query

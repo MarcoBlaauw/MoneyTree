@@ -360,17 +360,6 @@ if ai_runtime_config != [] or ollama_runtime_config != [] do
   config :money_tree, MoneyTree.AI, merged_ai_config
 end
 
-stripe_runtime_config =
-  [
-    connect_client_id: teller_env.("STRIPE_CONNECT_CLIENT_ID"),
-    connect_redirect_uri: teller_env.("STRIPE_CONNECT_REDIRECT_URI"),
-    authorize_host: teller_env.("STRIPE_CONNECT_HOST"),
-    connect_scope: teller_env.("STRIPE_CONNECT_SCOPE")
-  ]
-  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-
-config :money_tree, MoneyTree.Stripe, stripe_runtime_config
-
 mailer_env = fn key ->
   case System.get_env(key) do
     nil -> nil

@@ -154,9 +154,11 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
 
   defp persist_accounts(connection, accounts, institution_map) do
     timestamp = DateTime.utc_now()
+    selected_account_ids = selected_simplefin_account_ids(connection)
 
     accounts
     |> List.wrap()
+    |> Enum.filter(&selected_simplefin_account?(&1, selected_account_ids))
     |> Enum.reduce_while({:ok, %{}}, fn payload, {:ok, acc} ->
       case upsert_account(connection, payload, timestamp, institution_map) do
         {:ok, account} ->
@@ -228,7 +230,6 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
         set:
           attrs
           |> Map.take([
-            :name,
             :currency,
             :type,
             :subtype,
@@ -288,6 +289,7 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
 
   defp existing_account_attrs(account, attrs) do
     attrs
+    |> Map.put(:name, account.name)
     |> Map.put(
       :internal_account_kind,
       account.internal_account_kind || attrs.internal_account_kind
@@ -490,6 +492,32 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
     |> normalize_map()
     |> get_in(["simplefin", "request_usage"])
     |> normalize_map()
+  end
+
+  defp selected_simplefin_account_ids(connection) do
+    connection.provider_metadata
+    |> normalize_map()
+    |> get_in(["simplefin", "import_review", "account_ids"])
+    |> case do
+      ids when is_list(ids) ->
+        ids
+        |> Enum.filter(&is_binary/1)
+        |> MapSet.new()
+
+      _ ->
+        nil
+    end
+  end
+
+  defp selected_simplefin_account?(_payload, nil), do: true
+
+  defp selected_simplefin_account?(payload, selected_account_ids) do
+    payload
+    |> simplefin_account_id()
+    |> case do
+      account_id when is_binary(account_id) -> MapSet.member?(selected_account_ids, account_id)
+      _ -> false
+    end
   end
 
   defp access_url(%Connection{encrypted_credentials: credentials}) when is_binary(credentials) do

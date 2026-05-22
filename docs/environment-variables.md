@@ -118,18 +118,6 @@ Teller during the exchange flow and stored on each institution connection.
 | `TELLER_CERT_FILE` | Yes (production, unless using PEM vars) | — | Filesystem path to the client certificate (PEM) used for Teller mTLS. |
 | `TELLER_KEY_FILE` | Yes (production, unless using PEM vars) | — | Filesystem path to the client private key (PEM). |
 
-## Stripe Connect integration
-
-Stripe Connect is optional and only required if you want to launch Stripe OAuth from the
-`/app/react/link-bank` flow.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `STRIPE_CONNECT_CLIENT_ID` | Yes (when Stripe Connect flow enabled) | — | Stripe Connect platform client ID used to start OAuth. |
-| `STRIPE_CONNECT_REDIRECT_URI` | Yes (when Stripe Connect flow enabled) | — | OAuth redirect URI configured in Stripe and used by MoneyTree when building the authorization URL. |
-| `STRIPE_CONNECT_HOST` | No | `https://connect.stripe.com` | Optional Stripe Connect host override for non-standard environments. |
-| `STRIPE_CONNECT_SCOPE` | No | `read_write` | OAuth scope sent when creating Stripe Connect authorization sessions. |
-
 ## Plaid integration
 
 Plaid is a legacy provider for new links and is disabled by default. The variables below are

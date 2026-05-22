@@ -22,6 +22,7 @@ defmodule MoneyTree.MortgagesFixtures do
       loan_type: Map.get(attrs, :loan_type, "conventional"),
       servicer_name: Map.get(attrs, :servicer_name, "MoneyTree Servicing"),
       lender_name: Map.get(attrs, :lender_name, "MoneyTree Lender"),
+      home_value_estimate: Map.get(attrs, :home_value_estimate),
       current_balance: Map.get(attrs, :current_balance, Decimal.new("410000.00")),
       current_interest_rate: Map.get(attrs, :current_interest_rate, Decimal.new("0.0625")),
       remaining_term_months: Map.get(attrs, :remaining_term_months, 332),
@@ -31,6 +32,7 @@ defmodule MoneyTree.MortgagesFixtures do
       escrow_included_in_payment: Map.get(attrs, :escrow_included_in_payment, true),
       status: Map.get(attrs, :status, "active"),
       source: Map.get(attrs, :source, "manual_entry"),
+      last_reviewed_at: Map.get(attrs, :last_reviewed_at),
       escrow_profile:
         Map.get(attrs, :escrow_profile, %{
           property_tax_monthly: Decimal.new("375.00"),
