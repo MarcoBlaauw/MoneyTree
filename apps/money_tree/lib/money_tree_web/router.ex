@@ -32,8 +32,7 @@ defmodule MoneyTreeWeb.Router do
   scope "/api", MoneyTreeWeb do
     pipe_through :api
 
-    get "/healthz", HealthController, :health
-    get "/metrics", HealthController, :metrics
+    get "/healthz", HealthController, :public_health
     post "/register", AuthController, :register
     post "/login", AuthController, :login
     post "/invitations/:token/accept", InvitationController, :accept
@@ -180,6 +179,8 @@ defmodule MoneyTreeWeb.Router do
       pipe_through :api_owner
 
       get "/dashboard", AuthController, :owner_dashboard
+      get "/healthz", HealthController, :health
+      get "/metrics", HealthController, :metrics
       get "/security/secret-backend", Owner.SecretBackendController, :show
       post "/security/secret-backend/revalidate", Owner.SecretBackendController, :revalidate
       resources "/users", Owner.UserController, only: [:index, :show, :update, :delete]

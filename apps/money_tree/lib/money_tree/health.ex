@@ -12,6 +12,17 @@ defmodule MoneyTree.Health do
   @type check_status :: :ok | :degraded
 
   @doc """
+  Returns a minimal, publicly-safe liveness status with no internal detail --
+  suitable for anonymous load balancer / uptime-monitor polling. Detailed
+  checks (exception text, latency, queue names/state) are only available via
+  `summary/0` and `metrics/0`, which callers must gate behind authentication.
+  """
+  @spec public_status() :: map()
+  def public_status do
+    %{status: summary().status}
+  end
+
+  @doc """
   Returns a health summary covering database connectivity and Oban queue status.
   """
   @spec summary() :: map()

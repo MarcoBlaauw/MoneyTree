@@ -171,8 +171,8 @@ Telemetry pollers are supervised alongside an OpenTelemetry exporter. Configure 
 
 ### Operational Endpoints
 
-- `GET /api/healthz` returns database and Oban queue health (HTTP 503 on degraded status).
-- `GET /api/metrics` exposes lightweight queue metrics and database latency readings for scraping.
+- `GET /api/healthz` is public and deliberately minimal: `{"status": "ok" | "degraded"}` only (HTTP 503 on degraded), with no internal detail. Suitable for anonymous load balancer/uptime-monitor polling.
+- `GET /api/owner/healthz` and `GET /api/owner/metrics` (owner-authenticated) expose the detailed view: database latency/error text and per-queue Oban state/job counts.
 
 ## Product Vision & Roadmap
 
