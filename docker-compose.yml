@@ -2,7 +2,9 @@ services:
   db:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      # Bound to loopback only: this is a dev-only Postgres instance with a
+      # fixed default password, not something to expose to the LAN.
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -17,11 +19,17 @@ services:
     cap_add:
       - IPC_LOCK
     ports:
-      - "8200:8200"
+      # Bound to loopback only: this is a dev-mode OpenBao instance (no TLS,
+      # a well-known default root token below) -- never expose it beyond the
+      # local machine.
+      - "127.0.0.1:8200:8200"
     environment:
       BAO_ADDR: http://127.0.0.1:8200
       BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
-      BAO_DEV_ROOT_TOKEN_ID: moneytree-dev-root-token
+      # Override with your own value via .env (OPENBAO_DEV_ROOT_TOKEN) rather
+      # than relying on this repo-known default, especially on a shared or
+      # otherwise multi-user development machine.
+      BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_DEV_ROOT_TOKEN:-moneytree-dev-root-token}
     command: server -dev
     healthcheck:
       test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
