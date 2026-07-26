@@ -5,6 +5,8 @@ defmodule MoneyTree.AI.Providers.Ollama do
 
   @behaviour MoneyTree.AI.Provider
 
+  alias MoneyTree.Net.SsrfGuard
+
   @default_timeout_ms 120_000
 
   @impl MoneyTree.AI.Provider
@@ -123,7 +125,7 @@ defmodule MoneyTree.AI.Providers.Ollama do
   defp ensure_allowed_destination(settings) do
     base_url = Map.get(settings, :base_url) || Map.get(settings, "base_url")
 
-    case MoneyTree.Net.SsrfGuard.validate(base_url) do
+    case SsrfGuard.validate(base_url) do
       :ok -> :ok
       {:error, _reason} -> {:error, :destination_not_allowed}
     end

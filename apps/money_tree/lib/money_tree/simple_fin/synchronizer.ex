@@ -16,6 +16,7 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
   alias MoneyTree.Institutions.Institution
   alias MoneyTree.Recurring
   alias MoneyTree.Repo
+  alias MoneyTree.SimpleFin.Client
   alias MoneyTree.SimpleFin.Redaction
   alias MoneyTree.Transactions.Fingerprints
   alias MoneyTree.Transactions.Transaction
@@ -534,7 +535,7 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
   end
 
   defp get_accounts(client, access_url, opts),
-    do: MoneyTree.SimpleFin.Client.get_accounts(client, access_url, opts)
+    do: Client.get_accounts(client, access_url, opts)
 
   defp account_external_id(connection, simplefin_id),
     do: "simplefin:#{connection.id}:#{simplefin_id}"

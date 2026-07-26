@@ -3,6 +3,7 @@ defmodule MoneyTree.SimpleFin.Client do
   SimpleFIN Bridge protocol client.
   """
 
+  alias MoneyTree.Net.SsrfGuard
   alias MoneyTree.SimpleFin.Redaction
 
   @type request_option ::
@@ -274,7 +275,7 @@ defmodule MoneyTree.SimpleFin.Client do
   # not just the literal hostname string, so DNS rebinding and encoded-IP
   # tricks against a private/internal target don't bypass this check.
   defp destination_allowed?(url) do
-    case MoneyTree.Net.SsrfGuard.validate(url, allow_private: allow_private_hosts?()) do
+    case SsrfGuard.validate(url, allow_private: allow_private_hosts?()) do
       :ok -> true
       {:error, _reason} -> false
     end

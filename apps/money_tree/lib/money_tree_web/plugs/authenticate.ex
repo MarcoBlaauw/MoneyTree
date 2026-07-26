@@ -9,13 +9,14 @@ defmodule MoneyTreeWeb.Plugs.Authenticate do
 
   alias MoneyTree.Accounts
   alias MoneyTree.Audit
+  alias MoneyTree.Users.User
   alias MoneyTreeWeb.Auth
 
   @impl true
   def init(opts) do
     roles =
       opts
-      |> Keyword.get(:roles, MoneyTree.Users.User.roles())
+      |> Keyword.get(:roles, User.roles())
       |> List.wrap()
       |> MapSet.new()
 

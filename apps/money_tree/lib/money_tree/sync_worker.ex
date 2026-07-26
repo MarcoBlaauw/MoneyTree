@@ -16,13 +16,15 @@ defmodule MoneyTree.SyncWorker do
     quote bind_quoted: [provider: provider, synchronizer: synchronizer, max_snooze: max_snooze] do
       use Oban.Worker, queue: :default, max_attempts: 5
 
+      alias MoneyTree.BankSync.ProviderRegistry
+
       @provider to_string(provider)
       @synchronizer synchronizer
       @max_snooze max_snooze
 
       @impl Oban.Worker
       def perform(%Job{args: %{"mode" => "dispatch"} = args}) do
-        if MoneyTree.BankSync.ProviderRegistry.enabled?(@provider) do
+        if ProviderRegistry.enabled?(@provider) do
           schedule_opts = [schedule_in: Map.get(args, "schedule_in", 0), provider: @provider]
           Synchronization.dispatch_incremental_syncs(schedule_opts)
         end
@@ -43,7 +45,7 @@ defmodule MoneyTree.SyncWorker do
             :discard
 
           %Connection{} = connection ->
-            if MoneyTree.BankSync.ProviderRegistry.enabled?(@provider) do
+            if ProviderRegistry.enabled?(@provider) do
               opts =
                 [mode: mode, telemetry_metadata: telemetry_metadata]
                 |> maybe_put_client(client)

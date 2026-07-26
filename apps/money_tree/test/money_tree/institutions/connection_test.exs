@@ -1,6 +1,7 @@
 defmodule MoneyTree.Institutions.ConnectionTest do
   use MoneyTree.DataCase, async: true
 
+  alias Ecto.Adapters.SQL
   alias MoneyTree.AccountsFixtures
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
@@ -56,7 +57,7 @@ defmodule MoneyTree.Institutions.ConnectionTest do
         })
 
       raw_value =
-        Ecto.Adapters.SQL.query!(
+        SQL.query!(
           Repo,
           "select encrypted_credentials from institution_connections where id = $1::uuid",
           [Ecto.UUID.dump!(connection.id)]

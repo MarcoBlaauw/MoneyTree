@@ -40,6 +40,7 @@ defmodule MoneyTree.Loans do
   alias MoneyTree.Mortgages.Mortgage
   alias MoneyTree.Notifications
   alias MoneyTree.Repo
+  alias MoneyTree.System.TimedCmd
   alias MoneyTree.Transactions
   alias MoneyTree.Users.User
 
@@ -2924,7 +2925,7 @@ defmodule MoneyTree.Loans do
   end
 
   defp run_extraction_cmd(executable, args) do
-    MoneyTree.System.TimedCmd.run(executable, args,
+    TimedCmd.run(executable, args,
       stderr_to_stdout: true,
       timeout_ms: @document_extraction_timeout_ms
     )
