@@ -42,13 +42,8 @@ fi
 
 export MIX_ENV="${MIX_ENV:-dev}"
 export NODE_ENV="${NODE_ENV:-development}"
-export NEXT_BASE_PATH="${NEXT_BASE_PATH:-/app/react}"
 
 load_env_file "$ENV_FILE"
-
-NEXT_DEV_PORT="${NEXT_DEV_PORT:-3100}"
-NEXT_DEV_HOST="${NEXT_DEV_HOST:-127.0.0.1}"
-export NEXT_PROXY_URL="${NEXT_PROXY_URL:-http://${NEXT_DEV_HOST}:${NEXT_DEV_PORT}}"
 
 cd "$ROOT_DIR"
 
@@ -72,17 +67,5 @@ if ! mix ecto.migrate >/dev/null 2>&1; then
   mix ecto.setup
 fi
 
-trap 'kill 0' EXIT
-
 echo "==> Starting Phoenix (mix phx.server)"
-(cd "$ROOT_DIR" && mix phx.server) &
-PHX_PID=$!
-
-echo "==> Starting Next.js (pnpm exec next dev --port ${NEXT_DEV_PORT} --hostname ${NEXT_DEV_HOST})"
-(
-  cd "$ROOT_DIR/apps/next" &&
-    PORT="$NEXT_DEV_PORT" pnpm exec next dev --port "$NEXT_DEV_PORT" --hostname "$NEXT_DEV_HOST"
-) &
-NEXT_PID=$!
-
-wait "$PHX_PID" "$NEXT_PID"
+cd "$ROOT_DIR" && mix phx.server

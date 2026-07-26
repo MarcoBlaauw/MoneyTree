@@ -2,6 +2,12 @@
 
 ## Purpose
 
+> **Update:** Next.js has since been removed entirely. Every workflow described below as
+> "Next.js" now lives in native Phoenix LiveView (`LinkBankLive`, `EvaluationsLive`,
+> `OwnerUsersLive`, and a Persona KYC card folded into `SettingsLive`). The fragmentation
+> this plan describes no longer exists; the sections below are kept as historical context
+> for the navigation model that was adopted.
+
 This plan defines the next UI/UX phase after the dashboard restyling work.
 
 The dashboard is now in acceptable shape as a single screen, but the product is outgrowing a dashboard-first layout. The codebase already has multiple distinct workflows in both Phoenix LiveView and Next.js, and users need a predictable way to move between them without relying on ad hoc links such as `Next.js demos`.

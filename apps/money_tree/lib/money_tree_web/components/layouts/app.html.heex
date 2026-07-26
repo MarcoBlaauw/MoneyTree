@@ -66,6 +66,15 @@
             <span><%= item.label %></span>
           </a>
         </div>
+
+        <div :if={assigns[:current_user] && assigns[:current_user].role == :owner} class="space-y-2">
+          <p class="px-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400">Owner</p>
+          <a :for={item <- owner_nav_items()}
+             href={item.path}
+             class="flex items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-100 hover:text-zinc-900">
+            <span><%= item.label %></span>
+          </a>
+        </div>
       </nav>
 
       <div :if={assigns[:current_user]} class="shrink-0 border-t border-zinc-200 bg-white px-4 py-4">
@@ -130,6 +139,15 @@
               <div class="space-y-2">
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">Workspace</p>
                 <a :for={item <- workspace_nav_items()}
+                   href={item.path}
+                   class="flex rounded-xl px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
+                  <%= item.label %>
+                </a>
+              </div>
+
+              <div :if={assigns[:current_user] && assigns[:current_user].role == :owner} class="space-y-2">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400">Owner</p>
+                <a :for={item <- owner_nav_items()}
                    href={item.path}
                    class="flex rounded-xl px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100">
                   <%= item.label %>

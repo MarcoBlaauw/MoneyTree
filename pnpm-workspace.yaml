@@ -1,8 +1,6 @@
 packages:
   - apps/ui
   - apps/money_tree/assets
-  - apps/next
-  - apps/contracts
 
 overrides:
   ajv@<6.14.0: 6.14.0
@@ -32,6 +30,3 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
   - unrs-resolver
-
-patchedDependencies:
-  brace-expansion@5.0.8: patches/brace-expansion@5.0.8.patch

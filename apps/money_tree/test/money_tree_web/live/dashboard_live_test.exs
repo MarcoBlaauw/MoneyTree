@@ -228,7 +228,7 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     assert html =~ "Needs review"
     assert html =~ "Incomplete"
     assert html =~ "Home loan is missing a home value estimate"
-    assert html =~ ~s(href="/app/react/evaluations")
+    assert html =~ ~s(href="/app/evaluations")
   end
 
   test "lists tangible assets and reveals valuations when unmasked", %{conn: conn, user: user} do
@@ -321,7 +321,7 @@ defmodule MoneyTreeWeb.DashboardLiveTest do
     assert html =~ ~s(href="/app/notifications")
     assert html =~ "Evaluation"
     assert html =~ "Home loan is missing a home value estimate"
-    assert html =~ ~s(href="/app/react/evaluations")
+    assert html =~ ~s(href="/app/evaluations")
   end
 
   test "users can manage assets from the dashboard", %{conn: conn, user: user} do

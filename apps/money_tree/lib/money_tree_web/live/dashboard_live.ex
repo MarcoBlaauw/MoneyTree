@@ -424,7 +424,7 @@ defmodule MoneyTreeWeb.DashboardLive do
         summary: Map.get(item, :summary),
         severity: Map.get(item, :severity) || "info",
         action: "Review",
-        route: "/app/react/evaluations"
+        route: "/app/evaluations"
       }
     end)
   end
@@ -789,7 +789,7 @@ defmodule MoneyTreeWeb.DashboardLive do
           <h3 class="text-lg font-semibold text-zinc-900">Evaluation status</h3>
           <p class="text-xs text-zinc-500">Missing facts, stale data, review queues, and expiring items</p>
         </div>
-        <.link navigate="/app/react/evaluations" class="btn btn-outline">
+        <.link navigate="/app/evaluations" class="btn btn-outline">
           Open
         </.link>
       </div>

@@ -21,7 +21,7 @@ After installation, make sure `mix` is available on your `PATH` (`mix --version`
 
 ### JavaScript toolchain
 
-The repository also contains shared UI packages and a Next.js frontend managed with **pnpm 11**. Install the Node.js and pnpm toolchain before running any JavaScript tasks:
+The repository also contains shared UI/Tailwind packages managed with **pnpm 11**. Install the Node.js and pnpm toolchain before running any JavaScript tasks:
 
 ```bash
 # Install Node.js v24.18.0 (latest LTS). Examples:
@@ -65,7 +65,7 @@ pnpm --version
    ```
 
    When `MONEYTREE_SECRET_BACKEND=openbao`, this script also provisions the local compose-backed
-   OpenBao service before running migrations and starting Phoenix/Next.
+   OpenBao service before running migrations and starting Phoenix.
 
 5. To provision only the local OpenBao dev service without starting the app:
    ```bash
@@ -98,7 +98,7 @@ Development mailbox preview remains available at `/dev/mailbox` when dev routes 
 ### Bank Sync Integrations
 
 MoneyTree now uses SimpleFIN Bridge as the default connected-account provider. Users create a
-one-time SimpleFIN setup token outside MoneyTree, paste it into `/app/react/link-bank`, and
+one-time SimpleFIN setup token outside MoneyTree, paste it into `/app/link-bank`, and
 MoneyTree stores only the claimed Access URL in encrypted connection credentials.
 
 Manual imports remain supported. Plaid is legacy-disabled for new links unless
@@ -125,78 +125,9 @@ Quality checks should be run from the umbrella root and mirror the CI workflow:
 - `mix test` – execute the test suite (uses the SQL sandbox).
 - `mix dialyzer --halt-exit-status` – static analysis; the first run will build and cache the PLT.
 - `pnpm --filter ui build` – compile the shared Tailwind preset and verify frontend styles build successfully.
-- `pnpm --filter next lint` – lint the Next.js frontend with the same rules enforced in CI.
-- `pnpm --filter next test` – execute the Next.js unit tests (Playwright unit harness).
-- `pnpm --filter next build` – build the Next.js application; CI caches `apps/next/.next/cache` so subsequent builds are faster.
-- `pnpm audit --dir apps/next` – scan the Next.js workspace dependencies for known vulnerabilities.
 - `pnpm --filter money-tree-assets build` – build Phoenix asset bundles for the MoneyTree app.
-- `pnpm --filter @moneytree/contracts... run verify` – confirm API contract definitions are up to date.
-
-The CI pipeline restores the `apps/next/.next/cache` directory before running the Next.js build. If you change the Next.js configuration locally and encounter stale behaviour, remove the cache directory to align with the pipeline (`rm -rf apps/next/.next/cache`).
 
 Format sources as you work with `mix format`.
-
-## Next.js frontend proxy & CSP configuration
-
-The Phoenix endpoint proxies `/app/react/*` to the Next.js app so sessions,
-CSRF tokens, and CSP nonces remain under Phoenix's control. Requests inherit the
-per-request nonce via the `x-csp-nonce` header and expose it to the Next runtime
-through middleware so inline `<Script nonce>` tags and stylesheets satisfy the
-Content-Security-Policy enforced by Phoenix.
-
-### Local development
-
-Run Phoenix and the Next development server side by side. The proxy defaults to
-`http://localhost:3000`, so the standard workflows below work without extra
-configuration:
-
-```bash
-# Terminal 1 – Phoenix (runs on http://127.0.0.1:4000)
-mix phx.server
-
-# Terminal 2 – Next.js (runs on http://127.0.0.1:3100 and serves /app/react)
-pnpm --filter next dev -- --port 3100 --hostname 127.0.0.1
-```
-
-If you bind the Next server to a different host or port, point the proxy at it
-with `NEXT_PROXY_URL=http://host:port`. Additional knobs include
-`NEXT_PROXY_RECEIVE_TIMEOUT_MS` and `NEXT_PROXY_POOL_TIMEOUT_MS` for long running
-requests. The Next app honours `NEXT_BASE_PATH` (defaults to `/app/react`), so
-adjust the base path only if you intend to mount the UI elsewhere.
-
-### Production build & deployment
-
-Build the Next app alongside Phoenix assets and start the server behind the
-proxy. A typical deployment sequence looks like:
-
-```bash
-pnpm --filter next build
-pnpm --filter next start -- --port 3100 --hostname 0.0.0.0 &
-
-export NEXT_PROXY_URL="http://127.0.0.1:3100"
-export NEXT_BASE_PATH="/app/react"
-
-_build/prod/rel/money_tree/bin/money_tree start
-```
-
-Adjust the `NEXT_PROXY_URL` host/port to match your topology (or inject the
-value via your process manager). The Phoenix release will refuse to serve Next
-responses until the upstream is reachable.
-
-### Integration testing
-
-Playwright verifies that the proxied UI preserves cookies (`credentials:
-"include"`) and respects CSP nonces. Install the Playwright browsers once and
-run the suite from the repository root:
-
-```bash
-pnpm --filter next exec playwright install --with-deps
-pnpm --filter next test:e2e
-```
-
-The Playwright configuration starts both servers automatically using the test
-database (`MIX_ENV=test`), so ensure `mix test` has been run at least once to
-prepare the schema.
 
 ### LiveView test workflow
 

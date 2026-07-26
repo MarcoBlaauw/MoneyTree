@@ -134,4 +134,37 @@ defmodule MoneyTreeWeb.SettingsLiveTest do
 
     assert render(view) =~ "Non-local Ollama URL detected"
   end
+
+  test "security section supports starting and closing identity verification", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/app/settings/security")
+
+    html = render_click(view, "start-kyc-verification")
+    assert html =~ "Persona verification"
+    assert html =~ "embedded-inquiry"
+
+    html = render_click(view, "close-kyc")
+    refute html =~ "Persona widget"
+  end
+
+  test "owner-security section is not offered to non-owners", %{conn: conn} do
+    {:ok, _view, html} = live(conn, ~p"/app/settings")
+    refute html =~ "Secret backend"
+
+    {:ok, _view, html} = live(conn, ~p"/app/settings/owner-security")
+    refute html =~ "Secret backend status"
+    assert html =~ "Profile"
+  end
+
+  test "owners see the secret backend section and can revalidate", %{conn: conn} do
+    {:ok, %{conn: conn}} = register_and_log_in_user(%{conn: conn}, user_attrs: %{role: :owner})
+
+    {:ok, _view, html} = live(conn, ~p"/app/settings")
+    assert html =~ "Secret backend"
+
+    {:ok, view, html} = live(conn, ~p"/app/settings/owner-security")
+    assert html =~ "Secret backend status"
+
+    html = render_click(view, "revalidate-secret-backend")
+    assert html =~ "Secret backend status"
+  end
 end

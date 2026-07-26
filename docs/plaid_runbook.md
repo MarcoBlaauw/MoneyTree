@@ -31,7 +31,7 @@ Use `./scripts/dev.sh` for local startup so migrations and app services are brou
 1. Set `PLAID_ENV=sandbox`.
 2. Set `PLAID_CLIENT_ID`, `PLAID_SECRET`, and `PLAID_WEBHOOK_SECRET` in `.env`.
 3. Start with `./scripts/dev.sh`.
-4. Open `/app/react/link-bank` and complete a Plaid Link flow.
+4. Open `/app/link-bank` and complete a Plaid Link flow.
 5. Confirm a `provider: "plaid"` row exists in `institution_connections` with:
    - `encrypted_credentials` containing an access token payload
    - `provider_metadata` containing Plaid exchange metadata

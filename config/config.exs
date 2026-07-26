@@ -32,10 +32,6 @@ config :money_tree, MoneyTreeWeb.Endpoint,
   pubsub_server: MoneyTree.PubSub,
   live_view: [signing_salt: "AQ0mt1V3", csp_nonce_assign_key: :csp_nonce]
 
-config :money_tree, MoneyTreeWeb.Plugs.NextProxy,
-  upstream: [scheme: "http", host: "localhost", port: 3000, path: "/"],
-  client_opts: [receive_timeout: :timer.seconds(15)]
-
 config :money_tree, MoneyTree.Plaid,
   environment: "sandbox",
   api_host: "https://sandbox.plaid.com",

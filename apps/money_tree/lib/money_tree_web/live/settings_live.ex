@@ -8,6 +8,7 @@ defmodule MoneyTreeWeb.SettingsLive do
   alias MoneyTree.Accounts
   alias MoneyTree.AI
   alias MoneyTree.Notifications
+  alias MoneyTree.Secrets.Health
 
   @sections [
     %{id: "profile", label: "Profile", description: "Identity, role, and account summary."},
@@ -33,6 +34,12 @@ defmodule MoneyTreeWeb.SettingsLive do
     }
   ]
 
+  @owner_section %{
+    id: "owner-security",
+    label: "Secret backend",
+    description: "Owner-only secret backend status."
+  }
+
   @impl true
   def mount(_params, _session, %{assigns: %{current_user: current_user}} = socket) do
     {:ok,
@@ -43,20 +50,41 @@ defmodule MoneyTreeWeb.SettingsLive do
        profile_form: nil,
        notification_form: nil,
        ai_form: nil,
-       sections: @sections,
-       current_section: "profile"
+       sections: sections_for(current_user),
+       current_section: "profile",
+       kyc_open?: false,
+       kyc_client_token: nil,
+       kyc_environment: "sandbox",
+       kyc_error: nil,
+       secret_backend_summary: nil
      )
      |> load_settings(current_user)}
   end
 
   @impl true
-  def handle_params(%{"section" => section}, _uri, socket) do
-    {:noreply, assign(socket, :current_section, normalize_section(section))}
+  def handle_params(
+        %{"section" => section},
+        _uri,
+        %{assigns: %{sections: sections, current_user: current_user}} = socket
+      ) do
+    normalized = normalize_section(section, sections)
+
+    socket =
+      if normalized == "owner-security" and current_user.role == :owner do
+        assign(socket, :secret_backend_summary, Health.summary())
+      else
+        socket
+      end
+
+    {:noreply, assign(socket, :current_section, normalized)}
   end
 
   def handle_params(_params, _uri, socket) do
     {:noreply, assign(socket, :current_section, "profile")}
   end
+
+  defp sections_for(%{role: :owner}), do: @sections ++ [@owner_section]
+  defp sections_for(_current_user), do: @sections
 
   @impl true
   def handle_event("lock-interface", _params, socket) do
@@ -223,6 +251,40 @@ defmodule MoneyTreeWeb.SettingsLive do
     end
   end
 
+  def handle_event("start-kyc-verification", _params, socket) do
+    session = build_kyc_session()
+
+    {:noreply,
+     assign(socket,
+       kyc_open?: true,
+       kyc_client_token: session.client_token,
+       kyc_environment: session.environment,
+       kyc_error: nil
+     )}
+  end
+
+  def handle_event("close-kyc", _params, socket) do
+    {:noreply, assign(socket, kyc_open?: false)}
+  end
+
+  def handle_event(
+        "revalidate-secret-backend",
+        _params,
+        %{assigns: %{current_user: %{role: :owner}}} = socket
+      ) do
+    {:noreply, assign(socket, :secret_backend_summary, Health.summary(live?: true))}
+  end
+
+  def handle_event("revalidate-secret-backend", _params, socket), do: {:noreply, socket}
+
+  defp build_kyc_session do
+    %{
+      client_token:
+        "persona-session-" <> Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false),
+      environment: "sandbox"
+    }
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -262,13 +324,24 @@ defmodule MoneyTreeWeb.SettingsLive do
               <% "profile" -> %>
                 <.profile_section settings={@settings} profile_form={@profile_form} />
               <% "security" -> %>
-                <.security_section settings={@settings} />
+                <.security_section
+                  settings={@settings}
+                  kyc_open?={@kyc_open?}
+                  kyc_client_token={@kyc_client_token}
+                  kyc_environment={@kyc_environment}
+                  kyc_error={@kyc_error}
+                />
               <% "sessions" -> %>
                 <.sessions_section settings={@settings} />
               <% "notifications" -> %>
                 <.notifications_section notification_form={@notification_form} />
               <% "privacy" -> %>
                 <.privacy_section settings={@settings} ai_form={@ai_form} />
+              <% "owner-security" -> %>
+                <.owner_security_section
+                  :if={@current_user.role == :owner}
+                  summary={@secret_backend_summary}
+                />
             <% end %>
           </div>
         </div>
@@ -346,6 +419,10 @@ defmodule MoneyTreeWeb.SettingsLive do
   end
 
   attr :settings, :map, required: true
+  attr :kyc_open?, :boolean, required: true
+  attr :kyc_client_token, :string, default: nil
+  attr :kyc_environment, :string, required: true
+  attr :kyc_error, :string, default: nil
 
   defp security_section(assigns) do
     ~H"""
@@ -452,6 +529,33 @@ defmodule MoneyTreeWeb.SettingsLive do
           <li class="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-3">Password fallback stays available until passkeys, magic links, and hardware keys are proven reliable in real use.</li>
           <li class="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-3">Recovery codes and step-up MFA can land next without changing the section structure again.</li>
         </ul>
+      </div>
+
+      <div class="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <h3 class="text-lg font-semibold text-zinc-900">Identity verification</h3>
+        <p class="mt-2 text-sm text-zinc-500">
+          Start a Persona-hosted identity verification session. MoneyTree mints the session server-side so no API keys reach the browser.
+        </p>
+        <button type="button" class="btn mt-4" phx-click="start-kyc-verification">Start verification</button>
+        <p :if={@kyc_error} class="mt-3 text-sm text-rose-600" role="alert"><%= @kyc_error %></p>
+      </div>
+
+      <div :if={@kyc_open?} class="fixed inset-0 z-40">
+        <div class={dialog_backdrop_class()} phx-click="close-kyc"></div>
+        <div class={"#{dialog_panel_class(:md)} space-y-4"}>
+          <h3 class="text-xl font-semibold text-zinc-900">Persona verification</h3>
+          <p class="text-sm text-zinc-500">Client tokens are never stored in local storage.</p>
+          <div class="aspect-[3/4] w-full overflow-hidden rounded-md border border-zinc-200 bg-zinc-50">
+            <iframe
+              :if={@kyc_client_token}
+              title="Persona KYC"
+              class="h-full w-full"
+              src={"https://withpersona.com/embedded-inquiry?environment=#{@kyc_environment}&client-token=#{URI.encode_www_form(@kyc_client_token)}"}
+              allow="camera; microphone"
+            />
+          </div>
+          <button type="button" class="btn" phx-click="close-kyc">Close verification</button>
+        </div>
       </div>
     </section>
     """
@@ -679,6 +783,47 @@ defmodule MoneyTreeWeb.SettingsLive do
     """
   end
 
+  attr :summary, :map, default: nil
+
+  defp owner_security_section(assigns) do
+    ~H"""
+    <section class="space-y-6">
+      <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">Owner only</p>
+            <h2 class="mt-2 text-2xl font-semibold text-zinc-900">Secret backend status</h2>
+            <p class="mt-2 text-sm text-zinc-500">Status only. Raw secret values are never shown here.</p>
+          </div>
+          <button type="button" class="btn btn-outline" phx-click="revalidate-secret-backend">Revalidate</button>
+        </div>
+
+        <div :if={@summary} class="mt-6 grid gap-4 md:grid-cols-3">
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Backend</p>
+            <p class="mt-2 text-lg font-semibold text-zinc-900"><%= @summary.backend %></p>
+          </div>
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Selected by</p>
+            <p class="mt-2 text-lg font-semibold text-zinc-900"><%= @summary.selected_by %></p>
+          </div>
+          <div class="rounded-xl border border-zinc-100 bg-zinc-50 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Status</p>
+            <p class="mt-2 text-lg font-semibold text-zinc-900"><%= @summary.status %></p>
+          </div>
+        </div>
+
+        <div :if={@summary} class="mt-6 space-y-2">
+          <div :for={{group, group_summary} <- @summary.groups} class="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-3 text-sm">
+            <span class="font-medium text-zinc-700"><%= group %></span>
+            <span class="text-zinc-600"><%= group_summary["status"] || group_summary[:status] %></span>
+          </div>
+        </div>
+      </div>
+    </section>
+    """
+  end
+
   defp load_settings(socket, current_user) do
     settings = Accounts.user_settings(current_user)
     preference = Notifications.get_alert_preference(current_user)
@@ -694,11 +839,11 @@ defmodule MoneyTreeWeb.SettingsLive do
     )
   end
 
-  defp normalize_section(section) when is_binary(section) do
-    if Enum.any?(@sections, &(&1.id == section)), do: section, else: "profile"
+  defp normalize_section(section, sections) when is_binary(section) do
+    if Enum.any?(sections, &(&1.id == section)), do: section, else: "profile"
   end
 
-  defp normalize_section(_section), do: "profile"
+  defp normalize_section(_section, _sections), do: "profile"
 
   defp settings_path("profile"), do: ~p"/app/settings"
   defp settings_path(section), do: ~p"/app/settings/#{section}"

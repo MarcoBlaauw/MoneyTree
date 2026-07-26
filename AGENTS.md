@@ -52,13 +52,7 @@ Before making changes, identify which app owns the behavior:
 
 * `apps/money_tree/test` → ExUnit tests and fixtures
 
-* `apps/next` → Next.js frontend
-
-* `apps/next/app` → routes, page components, frontend helpers
-
 * `apps/ui` → shared UI styling
-
-* `apps/contracts` → API specs and generated contract artifacts
 
 * `config` → shared umbrella/runtime config
 
@@ -77,7 +71,7 @@ Use the repository's development startup script when bringing the app up locally
   * builds shared UI (`@money-tree/ui`)
   * installs Elixir deps (`mix deps.get`)
   * applies database migrations (`mix ecto.migrate`, fallback `mix ecto.setup`)
-  * starts Phoenix and Next.js
+  * starts Phoenix
 
 Rules:
 
@@ -99,9 +93,7 @@ Before making changes, ALWAYS:
    * domain/business logic in contexts
    * Ecto schemas and queries
    * migrations
-   * Next.js app router and helpers
    * shared UI components
-   * contract definitions and generated outputs
 
 If unclear, make the safest assumption and proceed conservatively.
 
@@ -111,7 +103,6 @@ If unclear, make the safest assumption and proceed conservatively.
 
 * Make the smallest change necessary to complete the task
 * Reuse existing utilities and helpers whenever possible
-* Avoid duplicating logic across Phoenix and Next layers
 * Prefer editing existing files over creating new ones
 * Keep functions focused and readable
 * Add comments only where logic is non-obvious
@@ -174,7 +165,6 @@ If unclear, make the safest assumption and proceed conservatively.
 * Prefer progressive disclosure (details on demand)
 * Reuse existing UI components and patterns
 * Maintain consistency with the current design system
-* Determine whether logic belongs in LiveView or Next before implementing
 
 ---
 
@@ -248,7 +238,6 @@ Do not edit generated files directly.
 
 Instead:
 
-* edit `apps/contracts/specs/*` → regenerate outputs
 * edit `assets` → rebuild compiled outputs
 
 Never modify:
@@ -256,7 +245,6 @@ Never modify:
 * `_build`
 * `deps`
 * `node_modules`
-* `.next`
 * compiled/static outputs
 
 ---
@@ -277,9 +265,6 @@ Run the narrowest relevant validation when feasible:
 
 * backend tests: `mix test` or targeted tests
 * backend lint: `mix lint`
-* frontend tests: `pnpm --dir apps/next test`
-* frontend lint: `pnpm --dir apps/next lint`
-* contracts: `pnpm --dir apps/contracts verify`
 * root JS lint: `pnpm lint`
 
 Additional requirements:

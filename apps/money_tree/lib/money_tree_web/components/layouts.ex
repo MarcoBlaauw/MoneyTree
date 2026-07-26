@@ -19,10 +19,17 @@ defmodule MoneyTreeWeb.Layouts do
 
   def workspace_nav_items do
     [
-      %{label: "Manage institutions", path: "/app/react/link-bank"},
+      %{label: "Manage institutions", path: "/app/link-bank"},
       %{label: "Categorization rules", path: "/app/transactions/categorization"},
       %{label: "Import / Export", path: "/app/import-export"},
+      %{label: "Evaluations", path: "/app/evaluations"},
       %{label: "Security settings", path: "/app/settings/security"}
+    ]
+  end
+
+  def owner_nav_items do
+    [
+      %{label: "Users", path: "/app/owner/users"}
     ]
   end
 

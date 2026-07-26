@@ -125,7 +125,7 @@ stores only the resulting Access URL in encrypted connection credentials.
 Plaid is a legacy provider for new links and is disabled by default. The variables below are
 required only when `BANK_SYNC_ENABLED_PROVIDERS` contains `plaid` or `PLAID_ENABLED=true`.
 
-Plaid integration is used by the `/app/react/link-bank` flow to create Link tokens, exchange
+Plaid integration is used by the `/app/link-bank` flow to create Link tokens, exchange
 public tokens, and synchronize accounts and transactions through Phoenix.
 
 | Variable | Required | Default | Description |

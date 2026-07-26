@@ -1,8 +1,10 @@
 import "phoenix_html";
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
+import PlaidLink from "./hooks/plaid_link";
 
 const Hooks = window.MoneyTreeHooks || {};
+Hooks.PlaidLink = PlaidLink;
 
 const decodeBase64Url = (value) => {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");

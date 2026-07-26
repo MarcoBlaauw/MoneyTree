@@ -13,15 +13,6 @@ defmodule MoneyTreeWeb.Router do
     plug MoneyTreeWeb.Plugs.FetchCurrentUser
   end
 
-  pipeline :browser_proxy do
-    plug :accepts, ["html"]
-    plug :fetch_session
-    plug :fetch_live_flash
-    plug :put_root_layout, {MoneyTreeWeb.Layouts, :root}
-    plug :put_secure_browser_headers
-    plug MoneyTreeWeb.Plugs.FetchCurrentUser
-  end
-
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -208,12 +199,6 @@ defmodule MoneyTreeWeb.Router do
     delete "/logout", SessionController, :delete
   end
 
-  scope "/app/react" do
-    pipe_through [:browser_proxy, :require_authenticated_user]
-
-    forward "/", MoneyTreeWeb.Plugs.NextProxy
-  end
-
   scope "/", MoneyTreeWeb do
     pipe_through [:browser, :require_authenticated_user]
 
@@ -246,6 +231,16 @@ defmodule MoneyTreeWeb.Router do
       live "/app/import-export", ImportExportLive.Index
       live "/app/settings", SettingsLive, :index
       live "/app/settings/:section", SettingsLive, :section
+      live "/app/evaluations", EvaluationsLive.Index
+      live "/app/link-bank", LinkBankLive.Index
+    end
+
+    live_session :app_owner,
+      on_mount: [
+        MoneyTreeWeb.Plugs.RequireAuthenticatedUser,
+        MoneyTreeWeb.Plugs.RequireOwner
+      ] do
+      live "/app/owner/users", OwnerUsersLive.Index
     end
   end
 

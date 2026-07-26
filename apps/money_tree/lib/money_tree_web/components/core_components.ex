@@ -127,6 +127,20 @@ defmodule MoneyTreeWeb.CoreComponents do
     """
   end
 
+  ## Modal Chrome
+
+  def dialog_backdrop_class do
+    "fixed inset-0 z-40 bg-zinc-950/35 backdrop-blur-sm"
+  end
+
+  def dialog_panel_class(:lg) do
+    "fixed left-1/2 top-6 z-50 max-h-[calc(100vh-3rem)] w-[min(54rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl"
+  end
+
+  def dialog_panel_class(_size) do
+    "fixed left-1/2 top-8 z-50 max-h-[calc(100vh-4rem)] w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl"
+  end
+
   ## Icon Component
 
   attr :name, :string, required: true

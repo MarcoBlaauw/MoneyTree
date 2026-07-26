@@ -106,7 +106,7 @@ defmodule MoneyTreeWeb.AccountsLive.Index do
     <section class="space-y-6">
       <.header title="Accounts & institutions" subtitle="Review linked institutions, connected accounts, and sync health.">
         <:actions>
-          <a href="/app/react/link-bank" class="btn btn-outline">Manage institutions</a>
+          <a href="/app/link-bank" class="btn btn-outline">Manage institutions</a>
         </:actions>
       </.header>
 
