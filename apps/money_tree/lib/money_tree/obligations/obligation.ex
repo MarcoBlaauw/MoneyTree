@@ -44,6 +44,9 @@ defmodule MoneyTree.Obligations.Obligation do
 
   @type t :: %__MODULE__{}
 
+  # linked_funding_account_id is intentionally not in validate_required: the FK is
+  # ON DELETE SET NULL so the obligation survives deletion of its funding account.
+  # MoneyTree.Obligations.create_obligation/2 enforces it up front for new records.
   @doc false
   def changeset(obligation, attrs) do
     obligation
@@ -70,8 +73,7 @@ defmodule MoneyTree.Obligations.Obligation do
       :grace_period_days,
       :obligation_type,
       :source,
-      :user_id,
-      :linked_funding_account_id
+      :user_id
     ])
     |> update_change(:currency, &normalize_currency/1)
     |> validate_length(:creditor_payee, min: 1, max: 160)

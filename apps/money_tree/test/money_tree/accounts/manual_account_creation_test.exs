@@ -2,8 +2,10 @@ defmodule MoneyTree.Accounts.ManualAccountCreationTest do
   use MoneyTree.DataCase, async: true
 
   import MoneyTree.AccountsFixtures
+  import MoneyTree.ObligationsFixtures
 
   alias MoneyTree.Accounts
+  alias MoneyTree.Obligations.Obligation
   alias MoneyTree.Repo
 
   test "create_manual_account/2 creates a user-owned manual account" do
@@ -70,5 +72,15 @@ defmodule MoneyTree.Accounts.ManualAccountCreationTest do
     assert {:ok, deleted} = Accounts.delete_owned_account(user, account.id)
     assert deleted.id == account.id
     assert Repo.get(MoneyTree.Accounts.Account, account.id) == nil
+  end
+
+  test "delete_owned_account/2 succeeds when a model-detected obligation still funds from it" do
+    user = user_fixture()
+    account = account_fixture(user)
+    obligation = obligation_fixture(user, %{linked_funding_account: account})
+
+    assert {:ok, _deleted} = Accounts.delete_owned_account(user, account.id)
+
+    assert %Obligation{linked_funding_account_id: nil} = Repo.get(Obligation, obligation.id)
   end
 end
