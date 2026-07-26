@@ -31,6 +31,8 @@ defmodule MoneyTree.Categorization.Category do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   def changeset(category, attrs) do
     category
     |> cast(attrs, [:user_id, :name, :emoji, :kind, :source, :active])

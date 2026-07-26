@@ -33,6 +33,8 @@ defmodule MoneyTree.Accounts.WebAuthnChallenge do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(challenge, attrs) do
     challenge

@@ -36,6 +36,8 @@ defmodule MoneyTree.Loans.LenderQuoteFeeLine do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   def changeset(line, attrs) do
     line
     |> cast(attrs, [

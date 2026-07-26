@@ -52,7 +52,7 @@ defmodule MoneyTree.Loans.RateProvider do
     end
   end
 
-  @spec settings_from_source(RateSource.t(), keyword()) :: map()
+  @spec settings_from_source(RateSource.t(), keyword() | map()) :: map()
   def settings_from_source(%RateSource{} = source, app_config) do
     source_config =
       source.config

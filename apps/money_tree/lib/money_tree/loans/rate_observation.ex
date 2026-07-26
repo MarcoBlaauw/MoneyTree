@@ -39,6 +39,8 @@ defmodule MoneyTree.Loans.RateObservation do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(observation, attrs) do
     observation

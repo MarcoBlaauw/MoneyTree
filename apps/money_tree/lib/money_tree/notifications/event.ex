@@ -65,6 +65,8 @@ defmodule MoneyTree.Notifications.Event do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(event, attrs) do
     event

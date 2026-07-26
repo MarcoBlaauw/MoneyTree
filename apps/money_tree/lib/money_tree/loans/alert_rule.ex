@@ -41,6 +41,8 @@ defmodule MoneyTree.Loans.AlertRule do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(rule, attrs) do
     rule

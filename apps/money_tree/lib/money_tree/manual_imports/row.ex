@@ -51,6 +51,8 @@ defmodule MoneyTree.ManualImports.Row do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(row, attrs) do
     row

@@ -37,6 +37,8 @@ defmodule MoneyTree.AI.SuggestionRun do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(run, attrs) do
     run

@@ -43,6 +43,8 @@ defmodule MoneyTree.Institutions.Connection do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(connection, attrs) do
     connection

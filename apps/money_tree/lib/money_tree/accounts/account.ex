@@ -63,6 +63,8 @@ defmodule MoneyTree.Accounts.Account do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(account, attrs) do
     account

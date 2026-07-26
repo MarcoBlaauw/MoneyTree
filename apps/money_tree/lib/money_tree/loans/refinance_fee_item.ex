@@ -39,6 +39,8 @@ defmodule MoneyTree.Loans.RefinanceFeeItem do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(fee_item, attrs) do
     fee_item

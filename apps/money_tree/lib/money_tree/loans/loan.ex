@@ -40,6 +40,8 @@ defmodule MoneyTree.Loans.Loan do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(loan, attrs) do
     loan

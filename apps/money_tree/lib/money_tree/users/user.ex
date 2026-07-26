@@ -47,6 +47,8 @@ defmodule MoneyTree.Users.User do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def registration_changeset(user, attrs) do
     attrs = Map.drop(attrs, [:role, "role"])

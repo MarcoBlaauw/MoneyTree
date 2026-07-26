@@ -60,7 +60,10 @@ defmodule MoneyTreeWeb.AuthControllerTest do
 
     test "enforces rate limiting", %{conn: conn} do
       Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
-      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      on_exit(fn ->
+        Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop)
+      end)
 
       conn =
         post(conn, ~p"/api/register", %{

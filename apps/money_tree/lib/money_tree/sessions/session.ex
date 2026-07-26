@@ -28,6 +28,8 @@ defmodule MoneyTree.Sessions.Session do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(session, attrs) do
     session

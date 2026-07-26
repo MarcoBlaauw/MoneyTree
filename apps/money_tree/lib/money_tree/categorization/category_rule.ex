@@ -31,6 +31,8 @@ defmodule MoneyTree.Categorization.CategoryRule do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   def changeset(rule, attrs) do
     rule
     |> cast(attrs, [

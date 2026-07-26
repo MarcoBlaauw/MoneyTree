@@ -75,6 +75,8 @@ defmodule MoneyTree.Loans.LoanFeeType do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   def changeset(fee_type, attrs) do
     fee_type
     |> cast(attrs, [

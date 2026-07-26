@@ -56,6 +56,8 @@ defmodule MoneyTree.ManualImports.Batch do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(batch, attrs) do
     batch

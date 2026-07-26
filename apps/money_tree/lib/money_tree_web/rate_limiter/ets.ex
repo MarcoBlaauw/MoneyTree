@@ -39,7 +39,11 @@ defmodule MoneyTreeWeb.RateLimiter.Ets do
   end
 
   @impl MoneyTreeWeb.RateLimiter
-  @spec check(MoneyTreeWeb.RateLimiter.bucket(), MoneyTreeWeb.RateLimiter.limit(), MoneyTreeWeb.RateLimiter.period()) ::
+  @spec check(
+          MoneyTreeWeb.RateLimiter.bucket(),
+          MoneyTreeWeb.RateLimiter.limit(),
+          MoneyTreeWeb.RateLimiter.period()
+        ) ::
           :ok | {:error, :rate_limited}
   def check(bucket, limit, period) when is_integer(limit) and is_integer(period) and period > 0 do
     now = System.monotonic_time(:second)

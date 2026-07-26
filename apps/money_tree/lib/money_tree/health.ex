@@ -113,7 +113,10 @@ defmodule MoneyTree.Health do
 
   defp check_queue(queue) do
     case oban_check(queue) do
-      {:ok, state} ->
+      nil ->
+        %{queue: queue, status: "unavailable"}
+
+      %{} = state ->
         %{
           queue: queue,
           status: queue_status(state),
@@ -121,9 +124,6 @@ defmodule MoneyTree.Health do
           running: Map.get(state, :running),
           paused: Map.get(state, :paused, false)
         }
-
-      {:error, :not_found} ->
-        %{queue: queue, status: "unavailable"}
 
       {:error, reason} ->
         %{queue: queue, status: "error", error: inspect(reason)}

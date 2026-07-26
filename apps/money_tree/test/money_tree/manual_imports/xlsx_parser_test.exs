@@ -21,5 +21,4 @@ defmodule MoneyTree.ManualImports.XLSXParserTest do
     assert {:error, message} = XLSXParser.rows(binary)
     assert message =~ "too many internal entries"
   end
-
 end

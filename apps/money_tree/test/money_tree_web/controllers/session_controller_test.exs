@@ -65,7 +65,10 @@ defmodule MoneyTreeWeb.SessionControllerTest do
 
     test "enforces rate limiting", %{conn: conn} do
       Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
-      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      on_exit(fn ->
+        Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop)
+      end)
 
       conn =
         conn
@@ -124,7 +127,10 @@ defmodule MoneyTreeWeb.SessionControllerTest do
 
     test "enforces rate limiting on options requests", %{conn: conn} do
       Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
-      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      on_exit(fn ->
+        Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop)
+      end)
 
       conn =
         conn
@@ -136,7 +142,10 @@ defmodule MoneyTreeWeb.SessionControllerTest do
 
     test "enforces rate limiting on assertion consumption", %{conn: conn} do
       Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
-      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      on_exit(fn ->
+        Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop)
+      end)
 
       conn =
         conn
@@ -208,7 +217,10 @@ defmodule MoneyTreeWeb.SessionControllerTest do
 
     test "enforces rate limiting", %{conn: conn} do
       Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
-      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      on_exit(fn ->
+        Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop)
+      end)
 
       conn =
         conn

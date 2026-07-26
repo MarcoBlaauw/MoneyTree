@@ -39,6 +39,8 @@ defmodule MoneyTree.Budgets.Budget do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(budget, attrs) do
     budget
