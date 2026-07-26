@@ -94,6 +94,42 @@ defmodule MoneyTreeWeb.PlaidWebhookControllerTest do
     assert get_in(refreshed.metadata, ["plaid_webhook", "last_event"]) == "SYNC_UPDATES_AVAILABLE"
   end
 
+  test "rejects a validly signed but stale (replayed) webhook", %{conn: conn} do
+    user = AccountsFixtures.user_fixture()
+
+    connection =
+      InstitutionsFixtures.connection_fixture(user, %{
+        provider: "plaid",
+        metadata: %{"status" => "active", "provider" => "plaid"},
+        encrypted_credentials: Jason.encode!(%{"access_token" => "plaid-token-1"})
+      })
+
+    payload = %{
+      "connection_id" => connection.id,
+      "event" => "SYNC_UPDATES_AVAILABLE",
+      "nonce" => "nonce-stale"
+    }
+
+    body = Jason.encode!(payload)
+    # Well outside the freshness window, but otherwise a perfectly valid
+    # signature over the (stale) timestamp and body -- simulating a captured
+    # webhook being replayed after its nonce would have been pruned.
+    timestamp = System.system_time(:second) - 3600
+    sig = sign(timestamp, body)
+
+    response =
+      conn
+      |> put_req_header("content-type", "application/json")
+      |> put_req_header("plaid-timestamp", Integer.to_string(timestamp))
+      |> put_req_header("plaid-signature", sig)
+      |> post(~p"/api/plaid/webhook", body)
+
+    assert json_response(response, 400) == %{"error" => "invalid webhook"}
+
+    refreshed = Repo.get!(MoneyTree.Institutions.Connection, connection.id)
+    refute get_in(refreshed.metadata, ["plaid_webhook", "last_event"])
+  end
+
   test "acknowledges disabled Plaid webhooks without requiring signature", %{conn: conn} do
     Application.put_env(:money_tree, ProviderRegistry,
       enabled_providers: ["simplefin", "manual"],
