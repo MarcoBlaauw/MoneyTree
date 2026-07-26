@@ -25,6 +25,8 @@ source .env
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Yes | `ecto://postgres:postgres@localhost/money_tree_dev` | Connection string for the primary PostgreSQL database. Update the host/user/password for your environment. |
 | `POOL_SIZE` | No | `10` | Connection pool size for the Phoenix application. Increase for high-concurrency workloads. |
+| `DATABASE_SSL` | No | `true` in production | Whether to encrypt the database connection. Set to `false` only when the database is reachable exclusively over a trusted private network/socket. |
+| `DATABASE_SSL_VERIFY` | No | `true` in production | Whether to verify the database server's TLS certificate against the OS trust store (in addition to encrypting the connection). Set to `false` only if the database certificate doesn't chain to a public CA (self-signed, private CA) and you can't supply your own trust bundle. |
 
 ## Encryption & credentials
 

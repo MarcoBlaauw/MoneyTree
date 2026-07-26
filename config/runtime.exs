@@ -417,11 +417,43 @@ if config_env() == :prod do
     |> Keyword.put(:pool_size, String.to_integer(System.get_env("POOL_SIZE") || "10"))
     |> Keyword.put(:socket_options, maybe_ipv6)
 
-  repo_config =
-    if System.get_env("DATABASE_SSL", "false") in ~w(true 1) do
-      Keyword.put_new(repo_config, :ssl, true)
+  # TLS is on by default in production (opt out with DATABASE_SSL=false for a
+  # deployment where the database is only reachable over a trusted private
+  # network/socket). When enabled, the server certificate is verified against
+  # the OS trust store by default too -- `ssl: true` alone only encrypts the
+  # connection, it does not verify who's on the other end, which is a
+  # well-known Postgrex/Ecto footgun. Operators whose database certificate
+  # doesn't chain to a public CA (self-signed, private CA) can opt out of
+  # verification specifically with DATABASE_SSL_VERIFY=false while keeping
+  # the connection encrypted.
+  database_ssl? = System.get_env("DATABASE_SSL", "true") in ~w(true 1)
+  database_ssl_verify? = System.get_env("DATABASE_SSL_VERIFY", "true") in ~w(true 1)
+  database_sni_host = (database_url && URI.parse(database_url).host) || env.("DATABASE_HOST")
+
+  maybe_put_sni = fn ssl_opts, host ->
+    if is_binary(host) and host != "" do
+      Keyword.put(ssl_opts, :server_name_indication, to_charlist(host))
     else
-      repo_config
+      ssl_opts
+    end
+  end
+
+  repo_config =
+    cond do
+      not database_ssl? ->
+        repo_config
+
+      database_ssl_verify? ->
+        ssl_opts =
+          [verify: :verify_peer, cacerts: :public_key.cacerts_get(), depth: 3]
+          |> maybe_put_sni.(database_sni_host)
+
+        repo_config
+        |> Keyword.put(:ssl, true)
+        |> Keyword.put(:ssl_opts, ssl_opts)
+
+      true ->
+        Keyword.put(repo_config, :ssl, true)
     end
 
   config :money_tree, MoneyTree.Repo, repo_config
