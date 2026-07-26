@@ -2889,12 +2889,18 @@ defmodule MoneyTree.Loans do
     end
   end
 
+  # Bounds how long a single document's native extraction subprocess may run.
+  # Without this, a pathological PDF/image can hang pdftotext/ocrmypdf/tesseract
+  # indefinitely and tie up an Oban worker.
+  @document_extraction_timeout_ms :timer.minutes(3)
+
   defp run_pdftotext(path) do
     with {:ok, executable} <- find_executable("pdftotext"),
-         {output, 0} <- System.cmd(executable, ["-layout", path, "-"], stderr_to_stdout: true) do
+         {output, 0} <- run_extraction_cmd(executable, ["-layout", path, "-"]) do
       {:ok, output}
     else
       {:error, _reason} = error -> error
+      {_output, :timeout} -> {:error, :pdf_text_extraction_timed_out}
       {_output, _status} -> {:error, :pdf_text_extraction_failed}
     end
   end
@@ -2903,12 +2909,9 @@ defmodule MoneyTree.Loans do
     with {:ok, executable} <- find_executable("ocrmypdf") do
       ocr_path = ocr_output_path(path)
 
-      case System.cmd(
-             executable,
-             ["--force-ocr", "--quiet", path, ocr_path],
-             stderr_to_stdout: true
-           ) do
+      case run_extraction_cmd(executable, ["--force-ocr", "--quiet", path, ocr_path]) do
         {_output, 0} -> {:ok, ocr_path}
+        {_output, :timeout} -> {:error, :pdf_ocr_timed_out}
         {_output, _status} -> {:error, :pdf_ocr_failed}
       end
     else
@@ -2918,13 +2921,20 @@ defmodule MoneyTree.Loans do
 
   defp run_tesseract(path) do
     with {:ok, executable} <- find_executable("tesseract"),
-         {output, 0} <-
-           System.cmd(executable, [path, "stdout", "--psm", "6"], stderr_to_stdout: true) do
+         {output, 0} <- run_extraction_cmd(executable, [path, "stdout", "--psm", "6"]) do
       {:ok, output}
     else
       {:error, _reason} = error -> error
+      {_output, :timeout} -> {:error, :image_ocr_timed_out}
       {_output, _status} -> {:error, :image_ocr_failed}
     end
+  end
+
+  defp run_extraction_cmd(executable, args) do
+    MoneyTree.System.TimedCmd.run(executable, args,
+      stderr_to_stdout: true,
+      timeout_ms: @document_extraction_timeout_ms
+    )
   end
 
   defp find_executable(name) do
