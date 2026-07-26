@@ -3,11 +3,11 @@ defmodule MoneyTree.AccountsFixtures do
   Test helpers for creating users and sessions.
   """
 
+  alias Decimal
   alias MoneyTree.Accounts
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Repo
-  alias Decimal
 
   def unique_user_email do
     "user-#{System.unique_integer([:positive])}@example.com"

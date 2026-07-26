@@ -427,9 +427,9 @@ defmodule MoneyTree.Notifications do
 
       retryable_failures == [] and suppressed_failures != [] ->
         reasons =
-          suppressed_failures
-          |> Enum.map(fn {_status, channel, reason} -> "#{channel}: #{inspect(reason)}" end)
-          |> Enum.join(", ")
+          Enum.map_join(suppressed_failures, ", ", fn {_status, channel, reason} ->
+            "#{channel}: #{inspect(reason)}"
+          end)
 
         suppress_event(event, reasons)
         {:error, :suppressed}
@@ -439,9 +439,9 @@ defmodule MoneyTree.Notifications do
           DateTime.add(attempted_at, preferences.resend_interval_hours * 3_600, :second)
 
         last_error =
-          retryable_failures
-          |> Enum.map(fn {_status, channel, reason} -> "#{channel}: #{inspect(reason)}" end)
-          |> Enum.join(", ")
+          Enum.map_join(retryable_failures, ", ", fn {_status, channel, reason} ->
+            "#{channel}: #{inspect(reason)}"
+          end)
 
         event
         |> Changeset.change(
@@ -750,16 +750,14 @@ defmodule MoneyTree.Notifications do
   defp normalize_override_key(key) when is_binary(key) do
     normalized = String.trim(key)
 
-    cond do
-      normalized == "" ->
-        nil
-
-      true ->
-        try do
-          String.to_existing_atom(normalized)
-        rescue
-          ArgumentError -> nil
-        end
+    if normalized == "" do
+      nil
+    else
+      try do
+        String.to_existing_atom(normalized)
+      rescue
+        ArgumentError -> nil
+      end
     end
   end
 

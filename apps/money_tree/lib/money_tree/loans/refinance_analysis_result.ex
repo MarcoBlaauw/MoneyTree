@@ -7,8 +7,8 @@ defmodule MoneyTree.Loans.RefinanceAnalysisResult do
 
   import Ecto.Changeset
 
-  alias MoneyTree.Loans.RefinanceScenario
   alias MoneyTree.Loans.Loan
+  alias MoneyTree.Loans.RefinanceScenario
   alias MoneyTree.Mortgages.Mortgage
   alias MoneyTree.Users.User
 
@@ -109,9 +109,10 @@ defmodule MoneyTree.Loans.RefinanceAnalysisResult do
 
   defp validate_warnings(changeset) do
     validate_change(changeset, :warnings, fn :warnings, value ->
-      cond do
-        is_list(value) and Enum.all?(value, &is_binary/1) -> []
-        true -> [warnings: "must be a list of strings"]
+      if is_list(value) and Enum.all?(value, &is_binary/1) do
+        []
+      else
+        [warnings: "must be a list of strings"]
       end
     end)
   end

@@ -20,9 +20,8 @@ defmodule MoneyTree.ManualImports.XLSXParser do
   def rows(content) when is_binary(content) do
     with {:ok, files} <- unzip(content),
          {:ok, shared_strings} <- parse_shared_strings(files),
-         {:ok, worksheet_xml} <- first_worksheet_xml(files),
-         {:ok, rows} <- parse_rows(worksheet_xml, shared_strings) do
-      {:ok, rows}
+         {:ok, worksheet_xml} <- first_worksheet_xml(files) do
+      parse_rows(worksheet_xml, shared_strings)
     end
   end
 
@@ -262,11 +261,10 @@ defmodule MoneyTree.ManualImports.XLSXParser do
 
   defp text_nodes_to_string(nodes) when is_list(nodes) do
     nodes
-    |> Enum.map(fn
+    |> Enum.map_join(fn
       {:xmlText, _parents, _pos, _language, value, _type} -> List.to_string(value)
       other -> to_string_safe(other)
     end)
-    |> Enum.join("")
     |> String.trim()
     |> xml_unescape()
   end
@@ -336,8 +334,7 @@ defmodule MoneyTree.ManualImports.XLSXParser do
     |> Enum.map(fn [si_body] ->
       ~r/<(?:\w+:)?t\b[^>]*>(.*?)<\/(?:\w+:)?t>/s
       |> Regex.scan(si_body, capture: :all_but_first)
-      |> Enum.map(fn [text] -> xml_unescape(String.trim(text)) end)
-      |> Enum.join("")
+      |> Enum.map_join(fn [text] -> xml_unescape(String.trim(text)) end)
     end)
   end
 
@@ -414,8 +411,7 @@ defmodule MoneyTree.ManualImports.XLSXParser do
         type == "inlineStr" ->
           ~r/<(?:\w+:)?t\b[^>]*>(.*?)<\/(?:\w+:)?t>/s
           |> Regex.scan(body || "", capture: :all_but_first)
-          |> Enum.map(fn [text] -> xml_unescape(String.trim(text)) end)
-          |> Enum.join("")
+          |> Enum.map_join(fn [text] -> xml_unescape(String.trim(text)) end)
 
         true ->
           ~r/<(?:\w+:)?v>(.*?)<\/(?:\w+:)?v>/s

@@ -7,9 +7,9 @@ defmodule MoneyTree.Assets.Asset do
 
   import Ecto.Changeset
 
+  alias Decimal
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Currency
-  alias Decimal
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
@@ -165,9 +165,10 @@ defmodule MoneyTree.Assets.Asset do
     refs = get_field(changeset, :document_refs, [])
 
     Enum.reduce(Enum.with_index(refs, 1), changeset, fn {ref, index}, acc ->
-      cond do
-        byte_size(ref) > 255 -> add_error(acc, :document_refs, "entry #{index} is too long")
-        true -> acc
+      if byte_size(ref) > 255 do
+        add_error(acc, :document_refs, "entry #{index} is too long")
+      else
+        acc
       end
     end)
   end

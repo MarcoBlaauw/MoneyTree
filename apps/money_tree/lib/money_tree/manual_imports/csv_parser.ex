@@ -351,12 +351,10 @@ defmodule MoneyTree.ManualImports.CSVParser do
   defp configured_delimiter(mapping_config, content) do
     configured = map_get(mapping_config, "delimiter")
 
-    cond do
-      is_binary(configured) and configured in @supported_delimiters ->
-        configured
-
-      true ->
-        detect_delimiter(content)
+    if is_binary(configured) and configured in @supported_delimiters do
+      configured
+    else
+      detect_delimiter(content)
     end
   end
 

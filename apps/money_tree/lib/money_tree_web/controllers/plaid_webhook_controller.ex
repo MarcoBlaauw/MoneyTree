@@ -1,9 +1,9 @@
 defmodule MoneyTreeWeb.PlaidWebhookController do
   use MoneyTreeWeb, :controller
 
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
-  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Plaid.Webhooks
   alias MoneyTree.Synchronization
 

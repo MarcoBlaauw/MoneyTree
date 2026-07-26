@@ -9,10 +9,10 @@ defmodule MoneyTree.Budgets do
   import Ecto.Query, warn: false
 
   alias Decimal
+  alias MoneyTree.Accounts
   alias MoneyTree.Budgets.Budget
   alias MoneyTree.Budgets.BudgetRevision
   alias MoneyTree.Budgets.Planner
-  alias MoneyTree.Accounts
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Users.User
@@ -824,8 +824,7 @@ defmodule MoneyTree.Budgets do
     value
     |> String.replace("_", " ")
     |> String.split(~r/\s+/, trim: true)
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join(" ")
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   defp humanize_value(value), do: value

@@ -6,8 +6,8 @@ defmodule MoneyTree.Loans.LenderQuotesTest do
 
   alias Decimal, as: D
   alias MoneyTree.Loans
-  alias MoneyTree.Loans.RefinanceScenario
   alias MoneyTree.Loans.LenderQuote
+  alias MoneyTree.Loans.RefinanceScenario
 
   describe "lender quotes" do
     test "creates lists fetches and updates lender quotes for a mortgage owned by the user" do

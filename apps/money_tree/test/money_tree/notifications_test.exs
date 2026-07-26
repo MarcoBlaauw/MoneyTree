@@ -8,10 +8,10 @@ defmodule MoneyTree.NotificationsTest do
 
   alias Decimal
   alias MoneyTree.Accounts.Account
-  alias MoneyTree.Notifications.DeliveryAttempt
-  alias MoneyTree.Notifications.Event
-  alias MoneyTree.Notifications.DeliveryWorker
   alias MoneyTree.Notifications
+  alias MoneyTree.Notifications.DeliveryAttempt
+  alias MoneyTree.Notifications.DeliveryWorker
+  alias MoneyTree.Notifications.Event
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
   alias Oban.Job

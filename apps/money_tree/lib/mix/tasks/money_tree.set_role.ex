@@ -1,10 +1,11 @@
 defmodule Mix.Tasks.MoneyTree.SetRole do
+  @shortdoc "Update a user's role"
+
   @moduledoc """
   Updates the role for an existing MoneyTree user.
 
       mix money_tree.set_role --email user@example.com --role owner
   """
-  @shortdoc "Update a user's role"
 
   use Mix.Task
 
@@ -45,7 +46,7 @@ defmodule Mix.Tasks.MoneyTree.SetRole do
   end
 
   defp role_error_message(provided) do
-    valid = User.roles() |> Enum.map(&Atom.to_string/1) |> Enum.join(", ")
+    valid = Enum.map_join(User.roles(), ", ", &Atom.to_string/1)
     "Invalid role #{inspect(provided)}. Valid roles: #{valid}"
   end
 end

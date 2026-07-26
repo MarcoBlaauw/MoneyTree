@@ -6,6 +6,7 @@ defmodule MoneyTree.Accounts do
   import Bitwise
   import Ecto.Query, warn: false
 
+  alias Decimal
   alias Ecto.Changeset
   alias Ecto.Multi
   alias MoneyTree.Accounts.Account
@@ -22,7 +23,6 @@ defmodule MoneyTree.Accounts do
   alias MoneyTree.Transactions
   alias MoneyTree.Users.User
   alias Swoosh.Email
-  alias Decimal
 
   @default_session_ttl 60 * 60 * 24 * 30
   @default_invitation_ttl 60 * 60 * 24 * 7
@@ -1680,7 +1680,7 @@ defmodule MoneyTree.Accounts do
     String.to_existing_atom(field)
   rescue
     ArgumentError ->
-      raise ArgumentError, "unknown account order field: #{inspect(field)}"
+      reraise ArgumentError, "unknown account order field: #{inspect(field)}", __STACKTRACE__
   end
 
   defp editable_account_updates(attrs, account) do
@@ -2056,8 +2056,7 @@ defmodule MoneyTree.Accounts do
     |> String.replace("_", " ")
     |> String.downcase()
     |> String.split()
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join(" ")
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   defp downcase(nil), do: ""

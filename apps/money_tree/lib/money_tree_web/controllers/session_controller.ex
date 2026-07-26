@@ -1,13 +1,14 @@
 defmodule MoneyTreeWeb.SessionController do
   use MoneyTreeWeb, :controller
 
+  import Phoenix.Component, only: [to_form: 1, to_form: 2]
+
   alias MoneyTree.Accounts
   alias MoneyTree.Audit
   alias MoneyTreeWeb.Auth
   alias MoneyTreeWeb.RateLimiter
-  require Logger
 
-  import Phoenix.Component, only: [to_form: 1, to_form: 2]
+  require Logger
 
   plug :redirect_if_authenticated when action in [:new, :create]
 

@@ -126,9 +126,7 @@ defmodule MoneyTree.ImportExport do
   defp normalize_days(_), do: @default_export_days
 
   defp encode_csv(rows) do
-    rows
-    |> Enum.map(fn row -> row |> Enum.map(&csv_escape/1) |> Enum.join(",") end)
-    |> Enum.join("\n")
+    Enum.map_join(rows, "\n", fn row -> Enum.map_join(row, ",", &csv_escape/1) end)
   end
 
   defp csv_escape(nil), do: ""

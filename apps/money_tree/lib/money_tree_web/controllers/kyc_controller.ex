@@ -1,9 +1,9 @@
 defmodule MoneyTreeWeb.KycController do
-  use MoneyTreeWeb, :controller
-
   @moduledoc """
   Generates vendor agnostic KYC sessions while redacting sensitive applicant data.
   """
+
+  use MoneyTreeWeb, :controller
 
   alias Ecto.UUID
 

@@ -10,35 +10,35 @@ defmodule MoneyTree.Loans do
   alias MoneyTree.Accounts
   alias MoneyTree.AI
   alias MoneyTree.Loans.AlertRule
+  alias MoneyTree.Loans.EscrowPaymentDisplay
   alias MoneyTree.Loans.FeePredictionEngine
   alias MoneyTree.Loans.FeeQuoteAnalyzer
-  alias MoneyTree.Loans.LenderQuoteFeeLine
   alias MoneyTree.Loans.LenderQuote
+  alias MoneyTree.Loans.LenderQuoteFeeLine
   alias MoneyTree.Loans.Loan
+  alias MoneyTree.Loans.LoanDocument
+  alias MoneyTree.Loans.LoanDocumentExtraction
   alias MoneyTree.Loans.LoanFeeDefaults
   alias MoneyTree.Loans.LoanFeeJurisdictionProfile
   alias MoneyTree.Loans.LoanFeeJurisdictionRule
   alias MoneyTree.Loans.LoanFeeType
-  alias MoneyTree.Loans.LoanDocument
-  alias MoneyTree.Loans.LoanDocumentExtraction
-  alias MoneyTree.Loans.RateProvider
   alias MoneyTree.Loans.RateObservation
+  alias MoneyTree.Loans.RateProvider
   alias MoneyTree.Loans.RateProviders.ApiNinjas
   alias MoneyTree.Loans.RateProviders.EconomicIndicators
   alias MoneyTree.Loans.RateProviders.Fred
   alias MoneyTree.Loans.RateProviders.ManualImport
   alias MoneyTree.Loans.RateSource
-  alias MoneyTree.Loans.EscrowPaymentDisplay
-  alias MoneyTree.Loans.Workers.AlertEvaluationWorker
-  alias MoneyTree.Loans.Workers.DocumentExtractionWorker
-  alias MoneyTree.Loans.Workers.RateImportWorker
-  alias MoneyTree.Notifications
   alias MoneyTree.Loans.RefinanceAnalysisResult
   alias MoneyTree.Loans.RefinanceCalculator
   alias MoneyTree.Loans.RefinanceFeeItem
   alias MoneyTree.Loans.RefinanceScenario
+  alias MoneyTree.Loans.Workers.AlertEvaluationWorker
+  alias MoneyTree.Loans.Workers.DocumentExtractionWorker
+  alias MoneyTree.Loans.Workers.RateImportWorker
   alias MoneyTree.Mortgages
   alias MoneyTree.Mortgages.Mortgage
+  alias MoneyTree.Notifications
   alias MoneyTree.Repo
   alias MoneyTree.Transactions
   alias MoneyTree.Users.User
@@ -343,9 +343,8 @@ defmodule MoneyTree.Loans do
   @spec ensure_default_loan_fee_configuration() :: :ok | {:error, Ecto.Changeset.t()}
   def ensure_default_loan_fee_configuration do
     with :ok <- ensure_default_loan_fee_types(),
-         :ok <- ensure_default_loan_fee_profiles(),
-         :ok <- ensure_default_loan_fee_rules() do
-      :ok
+         :ok <- ensure_default_loan_fee_profiles() do
+      ensure_default_loan_fee_rules()
     end
   end
 
@@ -650,9 +649,8 @@ defmodule MoneyTree.Loans do
 
   def update_refinance_scenario(user, scenario_id, attrs, opts)
       when is_binary(scenario_id) and is_map(attrs) do
-    with {:ok, scenario} <- fetch_refinance_scenario(user, scenario_id, preload: []),
-         {:ok, updated} <- update_refinance_scenario(user, scenario, attrs, opts) do
-      {:ok, updated}
+    with {:ok, scenario} <- fetch_refinance_scenario(user, scenario_id, preload: []) do
+      update_refinance_scenario(user, scenario, attrs, opts)
     end
   end
 
@@ -1627,9 +1625,8 @@ defmodule MoneyTree.Loans do
 
   def update_loan_alert_rule(user, rule_id, attrs, opts)
       when is_binary(rule_id) and is_map(attrs) do
-    with {:ok, rule} <- fetch_loan_alert_rule(user, rule_id, preload: []),
-         {:ok, updated} <- update_loan_alert_rule(user, rule, attrs, opts) do
-      {:ok, updated}
+    with {:ok, rule} <- fetch_loan_alert_rule(user, rule_id, preload: []) do
+      update_loan_alert_rule(user, rule, attrs, opts)
     end
   end
 
@@ -2277,9 +2274,8 @@ defmodule MoneyTree.Loans do
 
   def update_lender_quote(user, quote_id, attrs, opts)
       when is_binary(quote_id) and is_map(attrs) do
-    with {:ok, quote} <- fetch_lender_quote(user, quote_id, preload: []),
-         {:ok, updated} <- update_lender_quote(user, quote, attrs, opts) do
-      {:ok, updated}
+    with {:ok, quote} <- fetch_lender_quote(user, quote_id, preload: []) do
+      update_lender_quote(user, quote, attrs, opts)
     end
   end
 
@@ -2498,8 +2494,7 @@ defmodule MoneyTree.Loans do
     quote =
       user
       |> list_lender_quotes(rule.mortgage_id)
-      |> Enum.filter(&(&1.status == "active"))
-      |> Enum.filter(&quote_expires_before?(&1, now, cutoff))
+      |> Enum.filter(&(&1.status == "active" and quote_expires_before?(&1, now, cutoff)))
       |> Enum.sort_by(& &1.quote_expires_at, DateTime)
       |> List.first()
 
@@ -2780,10 +2775,8 @@ defmodule MoneyTree.Loans do
   defp require_confirmed_extraction(_extraction), do: {:error, :not_confirmed}
 
   defp extract_text_from_stored_document(%LoanDocument{} = document) do
-    with :ok <- ensure_readable_document_type(document),
-         {:ok, text} <-
-           extract_text_from_file(document, stored_document_path(document.storage_key)) do
-      {:ok, text}
+    with :ok <- ensure_readable_document_type(document) do
+      extract_text_from_file(document, stored_document_path(document.storage_key))
     end
   end
 
@@ -2867,17 +2860,15 @@ defmodule MoneyTree.Loans do
   end
 
   defp extract_ocr_pdf_text(path) do
-    try do
-      with {:ok, ocr_path} <- run_ocrmypdf(path),
-           {:ok, text} <- run_pdftotext(ocr_path),
-           {:ok, readable} <- readable_text(text) do
-        {:ok, readable}
-      else
-        {:error, _reason} = error -> error
-      end
-    after
-      cleanup_ocr_path(path)
+    with {:ok, ocr_path} <- run_ocrmypdf(path),
+         {:ok, text} <- run_pdftotext(ocr_path),
+         {:ok, readable} <- readable_text(text) do
+      {:ok, readable}
+    else
+      {:error, _reason} = error -> error
     end
+  after
+    cleanup_ocr_path(path)
   end
 
   defp extract_image_text(path) do
@@ -3992,8 +3983,7 @@ defmodule MoneyTree.Loans do
   defp titleize_county_or_parish(value) do
     value
     |> String.split(~r/\s+/, trim: true)
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join(" ")
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   defp known_louisiana_parish_name("St. John The Baptist"), do: "St. John the Baptist"

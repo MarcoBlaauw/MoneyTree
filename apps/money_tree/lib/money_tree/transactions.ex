@@ -5,15 +5,15 @@ defmodule MoneyTree.Transactions do
 
   import Ecto.Query, warn: false
 
+  alias Decimal
   alias Ecto.Multi
   alias MoneyTree.Accounts
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Repo
+  alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Transactions.TransferMatch
   alias MoneyTree.Transactions.TransferMatcher
-  alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Users.User
-  alias Decimal
 
   @type page_opts :: keyword()
 

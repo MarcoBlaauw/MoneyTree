@@ -72,7 +72,7 @@ defmodule MoneyTree.AITest do
     assert Enum.any?(reloaded_runs, &(&1.id == run.id and &1.status == "completed"))
 
     suggestions = AI.list_suggestions(user, run_id: run.id)
-    assert length(suggestions) >= 1
+    assert suggestions != []
 
     suggestion = Enum.find(suggestions, &(&1.target_id == transaction.id))
     assert suggestion
@@ -340,7 +340,7 @@ defmodule MoneyTree.AITest do
     assert Enum.any?(reloaded_runs, &(&1.id == run.id and &1.status == "completed"))
 
     suggestions = AI.list_suggestions(user, run_id: run.id)
-    assert length(suggestions) >= 1
+    assert suggestions != []
 
     suggestion = Enum.find(suggestions, &(&1.target_id == row.id))
     assert suggestion
@@ -406,7 +406,7 @@ defmodule MoneyTree.AITest do
     assert {:ok, run} = AI.create_import_categorization_run(user, batch.id)
 
     suggestions = AI.list_suggestions(user, run_id: run.id)
-    assert length(suggestions) >= 1
+    assert suggestions != []
 
     suggestion = Enum.find(suggestions, &(&1.target_id == row.id))
     assert suggestion

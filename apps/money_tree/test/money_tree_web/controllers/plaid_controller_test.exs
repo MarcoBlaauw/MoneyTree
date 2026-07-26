@@ -27,10 +27,10 @@ defmodule MoneyTreeWeb.PlaidControllerTest do
 
   import MoneyTree.AccountsFixtures
 
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Institutions.Institution
   alias MoneyTree.Repo
-  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTreeWeb.Auth
 
   @session_cookie Auth.session_cookie_name()

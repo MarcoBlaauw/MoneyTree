@@ -3,10 +3,10 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
   Synchronizes SimpleFIN accounts and transactions for a connection.
   """
 
-  alias Decimal, as: D
-  alias Ecto.Changeset
   import Ecto.Query, warn: false
 
+  alias Decimal, as: D
+  alias Ecto.Changeset
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Audit
   alias MoneyTree.Categorization
@@ -682,9 +682,10 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
       path
       |> List.wrap()
       |> Enum.reduce_while(map, fn key, acc ->
-        cond do
-          is_map(acc) and Map.has_key?(acc, key) -> {:cont, Map.get(acc, key)}
-          true -> {:halt, nil}
+        if is_map(acc) and Map.has_key?(acc, key) do
+          {:cont, Map.get(acc, key)}
+        else
+          {:halt, nil}
         end
       end)
     end)

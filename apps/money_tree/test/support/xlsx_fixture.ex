@@ -6,11 +6,11 @@ defmodule MoneyTree.XLSXFixture do
     sheet_rows_xml =
       rows
       |> Enum.with_index(1)
-      |> Enum.map(fn {row_values, row_index} ->
+      |> Enum.map_join(fn {row_values, row_index} ->
         cells_xml =
           row_values
           |> Enum.with_index(1)
-          |> Enum.map(fn {value, column_index} ->
+          |> Enum.map_join(fn {value, column_index} ->
             reference = excel_reference(column_index, row_index)
 
             case value do
@@ -22,11 +22,9 @@ defmodule MoneyTree.XLSXFixture do
                 ~s(<c r="#{reference}" t="inlineStr"><is><t>#{escaped}</t></is></c>)
             end
           end)
-          |> Enum.join("")
 
         ~s(<row r="#{row_index}">#{cells_xml}</row>)
       end)
-      |> Enum.join("")
 
     worksheet_xml = """
     <?xml version="1.0" encoding="UTF-8" standalone="yes"?>

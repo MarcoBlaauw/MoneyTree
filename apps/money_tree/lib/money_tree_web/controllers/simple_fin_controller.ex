@@ -431,13 +431,17 @@ defmodule MoneyTreeWeb.SimpleFinController do
   end
 
   defp schedule_initial_sync(%Connection{} = connection) do
-    Application.get_env(:money_tree, :synchronization, MoneyTree.Synchronization)
-    |> apply(:schedule_initial_sync, [connection])
+    synchronization =
+      Application.get_env(:money_tree, :synchronization, MoneyTree.Synchronization)
+
+    synchronization.schedule_initial_sync(connection)
   end
 
   defp schedule_incremental_sync(%Connection{} = connection) do
-    Application.get_env(:money_tree, :synchronization, MoneyTree.Synchronization)
-    |> apply(:schedule_incremental_sync, [connection])
+    synchronization =
+      Application.get_env(:money_tree, :synchronization, MoneyTree.Synchronization)
+
+    synchronization.schedule_incremental_sync(connection)
   end
 
   defp simplefin_client do

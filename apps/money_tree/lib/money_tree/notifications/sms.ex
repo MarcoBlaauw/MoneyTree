@@ -6,9 +6,9 @@ defmodule MoneyTree.Notifications.SMS do
 
   @behaviour MoneyTree.Notifications.Adapter
 
+  alias MoneyTree.Notifications.Event
   alias MoneyTree.Notifications.NullDestinationResolver
   alias MoneyTree.Notifications.SMS.DisabledAdapter
-  alias MoneyTree.Notifications.Event
   alias MoneyTree.Users.User
 
   @impl true

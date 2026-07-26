@@ -5,6 +5,7 @@ defmodule MoneyTree.ManualImports do
 
   import Ecto.Query, warn: false
 
+  alias Decimal
   alias Ecto.Multi
   alias MoneyTree.Accounts
   alias MoneyTree.Accounts.Account
@@ -15,11 +16,10 @@ defmodule MoneyTree.ManualImports do
   alias MoneyTree.Transactions
   alias MoneyTree.Transactions.DuplicateDetector
   alias MoneyTree.Transactions.Fingerprints
+  alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Transactions.TransferMatch
   alias MoneyTree.Transactions.TransferMatcher
-  alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Users.User
-  alias Decimal
 
   @auto_transfer_lookback_days 7
   @auto_transfer_match_threshold Decimal.new("0.95")

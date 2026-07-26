@@ -4878,8 +4878,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp titleize_county_or_parish(value) do
     value
     |> String.split(~r/\s+/, trim: true)
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join(" ")
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   defp known_louisiana_parish_name("St. John The Baptist"), do: "St. John the Baptist"
@@ -6598,8 +6597,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     extractions
     |> Enum.map(&format_label(&1.status))
     |> Enum.frequencies()
-    |> Enum.map(fn {status, count} -> "#{count} #{status}" end)
-    |> Enum.join(", ")
+    |> Enum.map_join(", ", fn {status, count} -> "#{count} #{status}" end)
   end
 
   defp extraction_summary(_), do: "No extraction candidates"

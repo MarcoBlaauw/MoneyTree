@@ -8,12 +8,12 @@ defmodule MoneyTree.Users.User do
   import Ecto.Changeset
   import Ecto.Query
 
-  alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Accounts.Account
-  alias MoneyTree.Encrypted.Binary
+  alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Accounts.MagicLinkToken
   alias MoneyTree.Accounts.WebAuthnChallenge
   alias MoneyTree.Accounts.WebAuthnCredential
+  alias MoneyTree.Encrypted.Binary
   alias MoneyTree.Sessions.Session
 
   @roles [:owner, :member, :advisor]

@@ -121,7 +121,7 @@ defmodule MoneyTree.Accounts.DashboardMetricsTest do
           type: "depository",
           apr: Decimal.from_float(3.25),
           minimum_balance: Decimal.new(1000),
-          maximum_balance: Decimal.new(20000),
+          maximum_balance: Decimal.new(20_000),
           fee_schedule: "Monthly fee waived with $1,000 minimum",
           current_balance: Decimal.new("2500.00")
         })

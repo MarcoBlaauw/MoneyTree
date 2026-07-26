@@ -8,8 +8,8 @@ defmodule MoneyTree.ManualImportsTest do
   alias MoneyTree.ManualImports
   alias MoneyTree.ManualImports.Batch
   alias MoneyTree.Repo
-  alias MoneyTree.Transactions.TransferMatch
   alias MoneyTree.Transactions.Transaction
+  alias MoneyTree.Transactions.TransferMatch
 
   setup do
     user = user_fixture()

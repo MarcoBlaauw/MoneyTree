@@ -46,10 +46,10 @@ defmodule MoneyTree.Synchronization do
   defp enqueue_connection_sync(%Connection{} = connection, mode, opts) do
     provider = provider_name(connection)
 
-    if not ProviderRegistry.enabled?(provider) do
-      {:error, :provider_disabled}
-    else
+    if ProviderRegistry.enabled?(provider) do
       do_enqueue_connection_sync(connection, provider, mode, opts)
+    else
+      {:error, :provider_disabled}
     end
   end
 

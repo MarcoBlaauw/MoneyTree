@@ -8,8 +8,8 @@ defmodule MoneyTree.Accounts.Account do
   import Ecto.Changeset
   import Ecto.Query
 
-  alias MoneyTree.Accounts.AccountMembership
   alias Decimal
+  alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Currency
   alias MoneyTree.Encrypted.Binary
   alias MoneyTree.Institutions.Connection

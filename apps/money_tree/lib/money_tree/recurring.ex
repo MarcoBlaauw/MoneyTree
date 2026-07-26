@@ -352,10 +352,7 @@ defmodule MoneyTree.Recurring do
 
   defp interval_confidence(avg, spread) do
     base =
-      cond do
-        in_band?(avg, 7, 2) or in_band?(avg, 14, 3) or in_band?(avg, 30, 4) -> 0.9
-        true -> 0.6
-      end
+      if in_band?(avg, 7, 2) or in_band?(avg, 14, 3) or in_band?(avg, 30, 4), do: 0.9, else: 0.6
 
     confidence = max(0.1, min(1.0, base - spread / max(avg, 1)))
     D.from_float(confidence) |> D.round(4)

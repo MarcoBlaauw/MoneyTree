@@ -1718,22 +1718,20 @@ defmodule MoneyTree.AI do
   defp parse_json_like(text) when is_binary(text) do
     trimmed = String.trim(text)
 
-    cond do
-      trimmed == "" ->
-        :error
+    if trimmed == "" do
+      :error
+    else
+      case Jason.decode(trimmed) do
+        {:ok, decoded} ->
+          {:ok, decoded}
 
-      true ->
-        case Jason.decode(trimmed) do
-          {:ok, decoded} ->
-            {:ok, decoded}
-
-          {:error, _reason} ->
-            with {:ok, extracted} <- decode_fenced_or_embedded_json(trimmed) do
-              {:ok, extracted}
-            else
-              _ -> :error
-            end
-        end
+        {:error, _reason} ->
+          with {:ok, extracted} <- decode_fenced_or_embedded_json(trimmed) do
+            {:ok, extracted}
+          else
+            _ -> :error
+          end
+      end
     end
   end
 

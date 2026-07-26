@@ -1,9 +1,9 @@
 defmodule MoneyTreeWeb.PlaidController do
-  use MoneyTreeWeb, :controller
-
   @moduledoc """
   Issues Plaid Link tokens and exchanges public tokens into persisted connections.
   """
+
+  use MoneyTreeWeb, :controller
 
   alias Ecto.Association.NotLoaded
   alias Ecto.Changeset
