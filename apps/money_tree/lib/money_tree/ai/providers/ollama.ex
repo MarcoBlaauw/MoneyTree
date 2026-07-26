@@ -9,14 +9,16 @@ defmodule MoneyTree.AI.Providers.Ollama do
 
   @impl MoneyTree.AI.Provider
   def health_check(settings) when is_map(settings) do
-    with {:ok, _response} <- get(settings, "/api/tags") do
+    with :ok <- ensure_allowed_destination(settings),
+         {:ok, _response} <- get(settings, "/api/tags") do
       {:ok, %{status: "ok"}}
     end
   end
 
   @impl MoneyTree.AI.Provider
   def list_models(settings) when is_map(settings) do
-    with {:ok, body} <- get(settings, "/api/tags") do
+    with :ok <- ensure_allowed_destination(settings),
+         {:ok, body} <- get(settings, "/api/tags") do
       models =
         body
         |> Map.get("models", [])
@@ -36,7 +38,8 @@ defmodule MoneyTree.AI.Providers.Ollama do
       when is_map(settings) and is_binary(prompt) do
     model = Map.get(settings, :model) || Map.get(settings, "model")
 
-    with true <- is_binary(model) and model != "",
+    with :ok <- ensure_allowed_destination(settings),
+         true <- is_binary(model) and model != "",
          {:ok, body} <-
            post(settings, "/api/generate", %{
              model: model,
@@ -112,8 +115,18 @@ defmodule MoneyTree.AI.Providers.Ollama do
 
     Req.new(
       base_url: Map.get(settings, :base_url) || Map.get(settings, "base_url"),
-      receive_timeout: timeout_ms
+      receive_timeout: timeout_ms,
+      redirect: false
     )
+  end
+
+  defp ensure_allowed_destination(settings) do
+    base_url = Map.get(settings, :base_url) || Map.get(settings, "base_url")
+
+    case MoneyTree.Net.SsrfGuard.validate(base_url) do
+      :ok -> :ok
+      {:error, _reason} -> {:error, :destination_not_allowed}
+    end
   end
 
   defp normalize_body(%{} = body), do: body

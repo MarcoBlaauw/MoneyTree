@@ -51,6 +51,14 @@ defmodule MoneyTree.AITest do
     assert "test-model:latest" in result.models
   end
 
+  test "test_connection refuses to run when AI is globally disabled", %{user: user} do
+    original = Application.get_env(:money_tree, MoneyTree.AI)
+    Application.put_env(:money_tree, MoneyTree.AI, Keyword.put(original, :enabled, false))
+    on_exit(fn -> Application.put_env(:money_tree, MoneyTree.AI, original) end)
+
+    assert {:error, :disabled} = AI.test_connection(user)
+  end
+
   test "categorization run creates pending suggestions", %{user: user, transaction: transaction} do
     assert {:ok, _preference} =
              AI.update_settings(user, %{

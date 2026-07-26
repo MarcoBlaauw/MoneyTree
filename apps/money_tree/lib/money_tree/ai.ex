@@ -173,7 +173,8 @@ defmodule MoneyTree.AI do
     runtime = runtime_settings(user, overrides)
     provider = provider_module(runtime.provider)
 
-    with {:ok, _} <- provider.health_check(runtime),
+    with :ok <- ensure_ai_globally_enabled(),
+         {:ok, _} <- provider.health_check(runtime),
          {:ok, models} <- provider.list_models(runtime) do
       model_available? =
         runtime.model
@@ -1436,6 +1437,10 @@ defmodule MoneyTree.AI do
 
   defp ensure_ai_enabled(runtime) do
     if runtime.local_ai_enabled, do: :ok, else: {:error, :disabled_for_user}
+  end
+
+  defp ensure_ai_globally_enabled do
+    if Config.enabled?(), do: :ok, else: {:error, :disabled}
   end
 
   defp ensure_categorization_allowed(user_id) do
