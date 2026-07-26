@@ -25,6 +25,18 @@ defmodule MoneyTree.SimpleFin.ClientTest do
              Client.validate_access_url("http://user:pass@bridge.simplefin.org/simplefin")
   end
 
+  test "rejects private, loopback, and link-local IP literals" do
+    assert {:error, :insecure_claim_url} = Client.validate_claim_url("https://127.0.0.1/claim")
+    assert {:error, :insecure_claim_url} = Client.validate_claim_url("https://10.0.0.5/claim")
+    assert {:error, :insecure_claim_url} = Client.validate_claim_url("https://192.168.1.1/claim")
+
+    assert {:error, :insecure_claim_url} =
+             Client.validate_claim_url("https://169.254.169.254/claim")
+
+    assert {:error, :invalid_access_url} =
+             Client.validate_access_url("https://user:pass@127.0.0.1/simplefin")
+  end
+
   test "redacts access URL credentials" do
     assert Redaction.redact("https://user:pass@bridge.simplefin.org/simplefin") ==
              "https://[redacted]@bridge.simplefin.org/simplefin"

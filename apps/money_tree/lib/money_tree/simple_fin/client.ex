@@ -252,13 +252,14 @@ defmodule MoneyTree.SimpleFin.Client do
   defp join_paths(base, path), do: String.trim_trailing(base, "/") <> path
 
   defp validate_external_https_url(url, error) when is_binary(url) do
-    uri = URI.parse(String.trim(url))
+    trimmed = String.trim(url)
+    uri = URI.parse(trimmed)
 
     cond do
       uri.scheme != "https" -> {:error, error}
       is_nil(uri.host) or uri.host == "" -> {:error, error}
       is_binary(uri.fragment) -> {:error, error}
-      private_host?(uri.host) and not allow_private_hosts?() -> {:error, error}
+      not destination_allowed?(trimmed) -> {:error, error}
       true -> :ok
     end
   rescue
@@ -267,13 +268,14 @@ defmodule MoneyTree.SimpleFin.Client do
 
   defp validate_external_https_url(_url, error), do: {:error, error}
 
-  defp private_host?(host) do
-    host = String.downcase(host)
-
-    host in ["localhost", "127.0.0.1", "::1"] or
-      String.starts_with?(host, "10.") or
-      String.starts_with?(host, "192.168.") or
-      Regex.match?(~r/^172\.(1[6-9]|2\d|3[0-1])\./, host)
+  # Resolves the host and validates the actual IP address(es) it points at,
+  # not just the literal hostname string, so DNS rebinding and encoded-IP
+  # tricks against a private/internal target don't bypass this check.
+  defp destination_allowed?(url) do
+    case MoneyTree.Net.SsrfGuard.validate(url, allow_private: allow_private_hosts?()) do
+      :ok -> true
+      {:error, _reason} -> false
+    end
   end
 
   defp allow_private_hosts? do

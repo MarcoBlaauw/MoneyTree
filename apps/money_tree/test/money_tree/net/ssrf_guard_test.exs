@@ -42,4 +42,29 @@ defmodule MoneyTree.Net.SsrfGuardTest do
                SsrfGuard.validate("http://this-host-should-not-resolve.invalid")
     end
   end
+
+  describe "validate/2 with allow_private: false" do
+    test "rejects loopback and private ranges" do
+      assert {:error, :destination_not_allowed} =
+               SsrfGuard.validate("http://127.0.0.1", allow_private: false)
+
+      assert {:error, :destination_not_allowed} =
+               SsrfGuard.validate("http://10.0.0.5", allow_private: false)
+
+      assert {:error, :destination_not_allowed} =
+               SsrfGuard.validate("http://192.168.1.1", allow_private: false)
+
+      assert {:error, :destination_not_allowed} =
+               SsrfGuard.validate("http://172.16.0.1", allow_private: false)
+    end
+
+    test "still allows a public address" do
+      assert :ok = SsrfGuard.validate("http://93.184.216.34", allow_private: false)
+    end
+
+    test "still rejects link-local/metadata regardless of allow_private" do
+      assert {:error, :destination_not_allowed} =
+               SsrfGuard.validate("http://169.254.169.254", allow_private: false)
+    end
+  end
 end

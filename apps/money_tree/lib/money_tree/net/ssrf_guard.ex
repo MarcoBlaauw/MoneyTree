@@ -3,28 +3,36 @@ defmodule MoneyTree.Net.SsrfGuard do
   Validates outbound destination URLs supplied (directly or indirectly) by
   authenticated users before the application dials them.
 
-  This does not block private/loopback addresses -- some integrations (e.g.
-  a self-hosted Ollama instance) are legitimately expected to live on
-  localhost or the local network. It blocks destinations that have no
-  legitimate use as an application-integration endpoint and are the classic
-  SSRF targets: link-local addresses (which is where cloud metadata services
-  such as 169.254.169.254 live), multicast, and unspecified/broadcast
-  addresses. Validation is performed against the *resolved* IP address, not
-  the literal hostname string, so hex/octal/decimal IP-encoding tricks and
-  DNS names that merely point at a disallowed address are also caught.
+  Validation is performed against the *resolved* IP address, not the literal
+  hostname string, so hex/octal/decimal IP-encoding tricks and DNS names that
+  merely point at a disallowed address (DNS rebinding) are caught too.
 
-  Callers that need to also exclude private ranges (because the destination
-  should always be a public, operator-approved service) should layer
-  additional checks on top of this guard rather than relying on it alone.
+  By default (`allow_private: true`), private/loopback addresses are still
+  allowed -- some integrations (e.g. a self-hosted Ollama instance) are
+  legitimately expected to live on localhost or the local network. What's
+  always rejected regardless of that option is link-local addresses (which
+  is where cloud metadata services such as 169.254.169.254 live), multicast,
+  and unspecified/broadcast addresses -- there is no legitimate
+  application-integration use for those.
+
+  Pass `allow_private: false` for integrations that should only ever be a
+  public, third-party service (no legitimate deployment of that integration
+  runs on a private network) -- this additionally rejects loopback and
+  RFC1918/ULA ranges.
   """
 
   @type reason :: :invalid_url | :resolution_failed | :destination_not_allowed
+  @type opt :: {:allow_private, boolean()}
 
-  @spec validate(String.t() | nil) :: :ok | {:error, reason()}
-  def validate(url) when is_binary(url) do
+  @spec validate(String.t() | nil, [opt()]) :: :ok | {:error, reason()}
+  def validate(url, opts \\ [])
+
+  def validate(url, opts) when is_binary(url) do
+    allow_private? = Keyword.get(opts, :allow_private, true)
+
     with {:ok, uri} <- parse(url),
          {:ok, addresses} <- resolve(uri.host) do
-      if Enum.all?(addresses, &allowed?/1) do
+      if Enum.all?(addresses, &allowed?(&1, allow_private?)) do
         :ok
       else
         {:error, :destination_not_allowed}
@@ -32,7 +40,7 @@ defmodule MoneyTree.Net.SsrfGuard do
     end
   end
 
-  def validate(_url), do: {:error, :invalid_url}
+  def validate(_url, _opts), do: {:error, :invalid_url}
 
   defp parse(url) do
     case URI.new(url) do
@@ -66,23 +74,37 @@ defmodule MoneyTree.Net.SsrfGuard do
     end
   end
 
-  # IPv4: reject link-local (169.254.0.0/16, where cloud metadata services
-  # live), unspecified, broadcast, and multicast.
-  defp allowed?({169, 254, _, _}), do: false
-  defp allowed?({0, 0, 0, 0}), do: false
-  defp allowed?({255, 255, 255, 255}), do: false
-  defp allowed?({first, _, _, _}) when first >= 224 and first <= 239, do: false
+  # Always-disallowed ranges (no legitimate integration target lives here).
 
-  # IPv6: reject unspecified (::), link-local (fe80::/10), and multicast (ff00::/8).
-  defp allowed?({0, 0, 0, 0, 0, 0, 0, 0}), do: false
+  # IPv4: link-local (169.254.0.0/16, where cloud metadata services live),
+  # unspecified, broadcast, and multicast.
+  defp allowed?({169, 254, _, _}, _allow_private?), do: false
+  defp allowed?({0, 0, 0, 0}, _allow_private?), do: false
+  defp allowed?({255, 255, 255, 255}, _allow_private?), do: false
+  defp allowed?({first, _, _, _}, _allow_private?) when first >= 224 and first <= 239, do: false
 
-  defp allowed?({first, _, _, _, _, _, _, _})
+  # IPv6: unspecified (::), link-local (fe80::/10), and multicast (ff00::/8).
+  defp allowed?({0, 0, 0, 0, 0, 0, 0, 0}, _allow_private?), do: false
+
+  defp allowed?({first, _, _, _, _, _, _, _}, _allow_private?)
        when first >= 0xFE80 and first <= 0xFEBF,
        do: false
 
-  defp allowed?({first, _, _, _, _, _, _, _}) when first >= 0xFF00 and first <= 0xFFFF,
+  defp allowed?({first, _, _, _, _, _, _, _}, _allow_private?)
+       when first >= 0xFF00 and first <= 0xFFFF,
+       do: false
+
+  # Private/loopback ranges -- only disallowed when the caller opted out.
+  defp allowed?({127, _, _, _}, false), do: false
+  defp allowed?({10, _, _, _}, false), do: false
+  defp allowed?({192, 168, _, _}, false), do: false
+  defp allowed?({100, second, _, _}, false) when second >= 64 and second <= 127, do: false
+  defp allowed?({172, second, _, _}, false) when second >= 16 and second <= 31, do: false
+  defp allowed?({0, 0, 0, 0, 0, 0, 0, 1}, false), do: false
+
+  defp allowed?({first, _, _, _, _, _, _, _}, false) when first >= 0xFC00 and first <= 0xFDFF,
     do: false
 
-  defp allowed?(tuple) when tuple_size(tuple) in [4, 8], do: true
-  defp allowed?(_other), do: false
+  defp allowed?(tuple, _allow_private?) when tuple_size(tuple) in [4, 8], do: true
+  defp allowed?(_other, _allow_private?), do: false
 end
