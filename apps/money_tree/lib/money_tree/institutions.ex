@@ -40,44 +40,12 @@ defmodule MoneyTree.Institutions do
         |> Map.new()
         |> Map.put(:user_id, user_id)
         |> Map.put(:institution_id, institution_id)
-        |> Map.put_new(:provider, "teller")
+        |> Map.put_new(:provider, "simplefin")
         |> maybe_put_default_webhook_secret()
 
       %Connection{}
       |> Connection.changeset(params)
       |> Repo.insert()
-    end
-  end
-
-  @doc """
-  Updates Teller enrollment and user identifiers for a connection owned by the user.
-  """
-  @spec update_connection_tokens(user_ref(), map()) ::
-          {:ok, Connection.t()} | {:error, :not_found | Changeset.t()}
-  def update_connection_tokens(user, attrs) when is_map(attrs) do
-    with {:ok, connection} <-
-           fetch_owned_connection(user, fetch_identifier!(attrs, :connection_id)) do
-      updates =
-        [:teller_enrollment_id, :teller_user_id, :provider_metadata, :encrypted_credentials]
-        |> Enum.reduce(%{}, fn key, acc ->
-          value = Map.get(attrs, key) || Map.get(attrs, to_string(key))
-
-          if is_nil(value) do
-            acc
-          else
-            Map.put(acc, key, value)
-          end
-        end)
-
-      case updates do
-        %{} ->
-          {:ok, connection}
-
-        _ ->
-          connection
-          |> Connection.changeset(updates)
-          |> Repo.update()
-      end
     end
   end
 
@@ -104,36 +72,7 @@ defmodule MoneyTree.Institutions do
   end
 
   @doc """
-  Rotates the webhook secret for the given connection, returning the updated record and the
-  newly generated secret.
-  """
-  @spec rotate_webhook_secret(user_ref(), binary()) ::
-          {:ok, Connection.t(), String.t()} | {:error, :not_found | Changeset.t()}
-  def rotate_webhook_secret(user, connection_id) when is_binary(connection_id) do
-    secret = generate_webhook_secret()
-
-    Multi.new()
-    |> Multi.run(:connection, fn _repo, _changes ->
-      fetch_owned_connection(user, connection_id)
-    end)
-    |> Multi.update(:updated_connection, fn %{connection: connection} ->
-      Connection.changeset(connection, %{webhook_secret: secret})
-    end)
-    |> Repo.transaction()
-    |> case do
-      {:ok, %{updated_connection: connection}} ->
-        {:ok, connection, secret}
-
-      {:error, :connection, :not_found, _changes_so_far} ->
-        {:error, :not_found}
-
-      {:error, :updated_connection, %Changeset{} = changeset, _changes_so_far} ->
-        {:error, changeset}
-    end
-  end
-
-  @doc """
-  Updates the sync cursor for a connection, recording when Teller last synced the account.
+  Updates the sync cursor for a connection, recording when the provider last synced the account.
   """
   @spec mark_sync_state(user_ref(), map()) ::
           {:ok, Connection.t()} | {:error, :not_found | Changeset.t()}
@@ -146,7 +85,7 @@ defmodule MoneyTree.Institutions do
   end
 
   @doc """
-  Persists Teller synchronization metadata directly on the provided connection.
+  Persists provider synchronization metadata directly on the provided connection.
 
   Keys may be provided using either atoms or strings. Passing `nil` for a field explicitly
   clears it, allowing callers to reset error information after a successful sync.
@@ -198,7 +137,7 @@ defmodule MoneyTree.Institutions do
   end
 
   @doc """
-  Clears the revoked status for a connection, restoring access when Teller confirms it.
+  Clears the revoked status for a connection, restoring access when the provider confirms it.
   """
   @spec mark_connection_active(user_ref(), binary()) ::
           {:ok, Connection.t()} | {:error, :not_found | Changeset.t()}
@@ -313,27 +252,6 @@ defmodule MoneyTree.Institutions do
   def get_active_connection(connection_id, opts \\ []) when is_binary(connection_id) do
     with {:ok, connection} <- get_connection(connection_id, opts) do
       enforce_active(connection)
-    end
-  end
-
-  @doc """
-  Finds an active connection using the webhook secret reference (used by Teller webhooks).
-  """
-  @spec get_active_connection_by_webhook(String.t(), keyword()) ::
-          {:ok, Connection.t()} | {:error, :not_found | :revoked}
-  def get_active_connection_by_webhook(webhook_secret, opts \\ [])
-      when is_binary(webhook_secret) do
-    query =
-      from(c in Connection,
-        where: c.webhook_secret == ^webhook_secret
-      )
-
-    query
-    |> apply_preloads(opts)
-    |> Repo.one()
-    |> case do
-      nil -> {:error, :not_found}
-      connection -> enforce_active(connection)
     end
   end
 

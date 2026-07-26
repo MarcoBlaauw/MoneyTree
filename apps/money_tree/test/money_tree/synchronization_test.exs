@@ -4,8 +4,8 @@ defmodule MoneyTree.SynchronizationTest do
   alias MoneyTree.AccountsFixtures
   alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.InstitutionsFixtures
+  alias MoneyTree.Plaid.SyncWorker
   alias MoneyTree.Synchronization
-  alias MoneyTree.Teller.SyncWorker
   alias Oban.Job
 
   setup do
@@ -29,7 +29,7 @@ defmodule MoneyTree.SynchronizationTest do
     )
 
     user = AccountsFixtures.user_fixture()
-    connection = InstitutionsFixtures.connection_fixture(user)
+    connection = InstitutionsFixtures.connection_fixture(user, %{provider: "plaid"})
 
     assert {:error, :provider_disabled} = Synchronization.schedule_initial_sync(connection)
     assert {:error, :provider_disabled} = Synchronization.schedule_incremental_sync(connection)
@@ -42,10 +42,10 @@ defmodule MoneyTree.SynchronizationTest do
     )
 
     user = AccountsFixtures.user_fixture()
-    _connection = InstitutionsFixtures.connection_fixture(user)
+    _connection = InstitutionsFixtures.connection_fixture(user, %{provider: "plaid"})
 
     assert :ok = Synchronization.dispatch_incremental_syncs()
-    assert :ok = Synchronization.dispatch_incremental_syncs(provider: "teller")
+    assert :ok = Synchronization.dispatch_incremental_syncs(provider: "plaid")
   end
 
   test "stale worker jobs discard disabled provider connections" do
@@ -55,7 +55,7 @@ defmodule MoneyTree.SynchronizationTest do
     )
 
     user = AccountsFixtures.user_fixture()
-    connection = InstitutionsFixtures.connection_fixture(user)
+    connection = InstitutionsFixtures.connection_fixture(user, %{provider: "plaid"})
 
     assert :discard =
              SyncWorker.perform(%Job{

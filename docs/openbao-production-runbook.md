@@ -27,7 +27,6 @@ The policy grants read access only to:
 - `kv/data/moneytree/prod/cloak`
 - `kv/data/moneytree/prod/phoenix`
 - `kv/data/moneytree/prod/plaid`
-- `kv/data/moneytree/prod/teller`
 - `kv/data/moneytree/prod/smtp`
 
 Do not grant MoneyTree list, write, auth-management, or unrelated secret-tree access.
@@ -42,7 +41,6 @@ Use the exact environment variable names that MoneyTree already resolves:
 | `cloak` | `kv/moneytree/prod/cloak` | `CLOAK_VAULT_KEY` |
 | `phoenix` | `kv/moneytree/prod/phoenix` | `SECRET_KEY_BASE` |
 | `plaid` | `kv/moneytree/prod/plaid` | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_WEBHOOK_SECRET` |
-| `teller` | `kv/moneytree/prod/teller` | `TELLER_CONNECT_APPLICATION_ID`, `TELLER_WEBHOOK_SECRET`, `TELLER_CERT_PEM`, `TELLER_KEY_PEM`, file-path alternatives if used |
 | `smtp` | `kv/moneytree/prod/smtp` | `MAILER_SMTP_HOST`, `MAILER_SMTP_USERNAME`, `MAILER_SMTP_PASSWORD` |
 
 The `bao kv` CLI omits `/data/` in commands for KV v2 mounts. For example, write production Phoenix

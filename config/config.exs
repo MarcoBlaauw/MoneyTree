@@ -36,17 +36,6 @@ config :money_tree, MoneyTreeWeb.Plugs.NextProxy,
   upstream: [scheme: "http", host: "localhost", port: 3000, path: "/"],
   client_opts: [receive_timeout: :timer.seconds(15)]
 
-config :money_tree, MoneyTree.Teller,
-  api_host: "https://api.teller.io",
-  connect_host: "https://connect.teller.io",
-  timeout: :timer.seconds(10),
-  finch: MoneyTree.Finch,
-  telemetry_metadata: %{service: "money_tree", integration: "teller"},
-  client_cert_pem: nil,
-  client_key_pem: nil,
-  client_cert_file: nil,
-  client_key_file: nil
-
 config :money_tree, MoneyTree.Plaid,
   environment: "sandbox",
   api_host: "https://sandbox.plaid.com",
@@ -105,7 +94,6 @@ config :money_tree, Oban,
     {Oban.Plugins.Cron,
      crontab: [
        {"0 * * * *", MoneyTree.SimpleFin.SyncWorker, args: %{"mode" => "dispatch"}},
-       {"*/30 * * * *", MoneyTree.Teller.SyncWorker, args: %{"mode" => "dispatch"}},
        {"0 7 * * *", MoneyTree.Obligations.CheckWorker, args: %{}},
        {"30 7 * * *", MoneyTree.Loans.Workers.RateImportWorker, args: %{"provider" => "fred"}}
      ]}

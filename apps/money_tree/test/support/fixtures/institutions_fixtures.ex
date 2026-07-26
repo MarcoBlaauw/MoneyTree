@@ -31,11 +31,9 @@ defmodule MoneyTree.InstitutionsFixtures do
 
     default = %{
       encrypted_credentials: Jason.encode!(%{"access_token" => "fixture-access-token"}),
-      metadata: %{"status" => "active", "provider" => "teller"},
-      provider: "teller",
-      provider_metadata: %{},
-      teller_enrollment_id: unique_identifier("enroll"),
-      teller_user_id: unique_identifier("teller-user")
+      metadata: %{"status" => "active", "provider" => "simplefin"},
+      provider: "simplefin",
+      provider_metadata: %{}
     }
 
     params =

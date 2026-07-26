@@ -96,13 +96,14 @@ authentication emails share one delivery path.
 
 ## Bank sync providers
 
-SimpleFIN Bridge and manual imports are the default provider set for new links. Teller and Plaid
-remain readable for historical data, but are legacy-disabled for new connections unless explicitly
-enabled.
+SimpleFIN Bridge and manual imports are the default provider set for new links. Plaid remains
+readable for historical data, but is legacy-disabled for new connections unless explicitly
+enabled. Teller connections and transactions from before Teller discontinued its API remain
+readable for historical data as well, but Teller can no longer be enabled for new links.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `BANK_SYNC_ENABLED_PROVIDERS` | No | `simplefin,manual` | Comma-separated provider list available for new user connections. Add `teller` or `plaid` only when those legacy providers are configured. |
+| `BANK_SYNC_ENABLED_PROVIDERS` | No | `simplefin,manual` | Comma-separated provider list available for new user connections. Add `plaid` only when that legacy provider is configured. |
 | `BANK_SYNC_PRIMARY_PROVIDER` | No | `simplefin` | Provider shown first in the bank-linking UI. |
 
 ## SimpleFIN Bridge
@@ -118,29 +119,6 @@ stores only the resulting Access URL in encrypted connection credentials.
 | `SIMPLEFIN_MAX_REQUESTS_PER_CONNECTION_PER_DAY` | No | `24` | Safety cap for `/accounts` requests per stored Access URL. |
 | `SIMPLEFIN_INITIAL_SYNC_DAYS` | No | `90` | Initial lookback window. Keep at or below SimpleFIN Bridge's range limit. |
 | `SIMPLEFIN_INCLUDE_PENDING` | No | `false` | Whether to request pending transactions using `pending=1`. |
-
-## Teller integration
-
-Teller is a legacy provider for new links and is disabled by default. The variables below are
-required in production only when `BANK_SYNC_ENABLED_PROVIDERS` contains `teller` or
-`TELLER_ENABLED=true`.
-
-Teller integration requires app-level Connect/webhook configuration plus a client certificate/private
-key pair for mTLS. End-user account access tokens are not configured globally; they are returned by
-Teller during the exchange flow and stored on each institution connection.
-
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `TELLER_ENABLED` | No | `false` | Compatibility flag for enabling legacy Teller code paths. Prefer `BANK_SYNC_ENABLED_PROVIDERS`. |
-| `TELLER_CONNECT_APPLICATION_ID` | Yes (production when Teller enabled) | — | Connect application ID embedded in Teller Connect sessions. |
-| `TELLER_WEBHOOK_SECRET` | Yes (production when Teller enabled) | — | Webhook signing secret used to verify Teller webhook payloads. |
-| `TELLER_API_HOST` | No | Teller default | Override the Teller API base URL when instructed by Teller support. |
-| `TELLER_CONNECT_HOST` | No | Teller default | Override the Teller Connect base URL for non-standard environments. |
-| `TELLER_WEBHOOK_HOST` | No | Teller default | Override the webhook host when using alternative tunnels or sandbox endpoints. |
-| `TELLER_CERT_PEM` | Yes (production, unless using files) | — | Inline PEM-encoded client certificate for Teller mTLS. Provide either this and `TELLER_KEY_PEM`, or file-based equivalents. |
-| `TELLER_KEY_PEM` | Yes (production, unless using files) | — | Inline PEM-encoded private key that pairs with `TELLER_CERT_PEM`. |
-| `TELLER_CERT_FILE` | Yes (production, unless using PEM vars) | — | Filesystem path to the client certificate (PEM) used for Teller mTLS. |
-| `TELLER_KEY_FILE` | Yes (production, unless using PEM vars) | — | Filesystem path to the client private key (PEM). |
 
 ## Plaid integration
 

@@ -70,21 +70,6 @@ defmodule MoneyTree.Institutions.ConnectionTest do
     end
   end
 
-  describe "rotate_webhook_secret/2" do
-    test "rotates and persists a new secret" do
-      user = AccountsFixtures.user_fixture()
-      connection = InstitutionsFixtures.connection_fixture(user)
-      original_secret = connection.webhook_secret
-
-      assert {:ok, updated, new_secret} =
-               Institutions.rotate_webhook_secret(user, connection.id)
-
-      assert byte_size(new_secret) >= 32
-      assert updated.webhook_secret == new_secret
-      refute new_secret == original_secret
-    end
-  end
-
   describe "shared access" do
     setup do
       owner = AccountsFixtures.user_fixture()
@@ -120,9 +105,8 @@ defmodule MoneyTree.Institutions.ConnectionTest do
       connection: connection
     } do
       assert {:error, :not_found} =
-               Institutions.update_connection_tokens(member, %{
-                 connection_id: connection.id,
-                 teller_user_id: "shared-user"
+               Institutions.update_connection(member, connection.id, %{
+                 metadata: %{"status" => "active", "note" => "shared-user"}
                })
     end
   end

@@ -33,15 +33,12 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
 
   @vendor_script_sources [
     "https://cdn.plaid.com",
-    "https://cdn.teller.io",
     "https://withpersona.com"
   ]
 
   @vendor_frame_sources [
-    "https://teller.io",
     "https://cdn.plaid.com",
     "https://link.plaid.com",
-    "https://connect.teller.io",
     "https://withpersona.com",
     "https://app.withpersona.com"
   ]
@@ -49,8 +46,6 @@ defmodule MoneyTreeWeb.Plugs.ContentSecurityPolicy do
   @vendor_connect_sources [
     "https://api.plaid.com",
     "https://cdn.plaid.com",
-    "https://connect.teller.io",
-    "https://api.teller.io",
     "https://withpersona.com",
     "https://api.withpersona.com"
   ]

@@ -171,9 +171,6 @@ defmodule MoneyTree.SecretsTest do
         assert OpenBao.path_for_group(:plaid, config) ==
                  {:ok, "kv/data/moneytree/dev/plaid"}
 
-        assert OpenBao.path_for_group(:teller, config) ==
-                 {:ok, "kv/data/moneytree/dev/teller"}
-
         assert OpenBao.path_for_group(:smtp, config) ==
                  {:ok, "kv/data/moneytree/dev/smtp"}
 

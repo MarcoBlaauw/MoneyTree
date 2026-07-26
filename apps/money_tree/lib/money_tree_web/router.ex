@@ -47,18 +47,6 @@ defmodule MoneyTreeWeb.Router do
     post "/login", AuthController, :login
     post "/invitations/:token/accept", InvitationController, :accept
 
-    scope "/teller" do
-      post "/webhook", TellerWebhookController, :webhook
-
-      scope "/" do
-        pipe_through :api_auth
-
-        post "/connect_token", TellerController, :connect_token
-        post "/exchange", TellerController, :exchange
-        post "/revoke", TellerController, :revoke
-      end
-    end
-
     scope "/" do
       pipe_through :api_auth
 

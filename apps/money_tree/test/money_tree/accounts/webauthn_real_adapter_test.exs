@@ -59,9 +59,9 @@ defmodule MoneyTree.Accounts.WebAuthnRealAdapterTest do
     attested_credential_data =
       aaguid <> <<byte_size(credential_id)::16>> <> credential_id <> CBOR.encode(cose_key)
 
+    # flags: attested credential data present (bit 6) + user present (bit 0)
     registration_auth_data =
       :crypto.hash(:sha256, @rp_id) <>
-        # flags: attested credential data present (bit 6) + user present (bit 0)
         <<0x41>> <>
         <<0::32>> <>
         attested_credential_data
@@ -97,9 +97,9 @@ defmodule MoneyTree.Accounts.WebAuthnRealAdapterTest do
 
     assert auth_challenge.origin == @request_origin
 
+    # flags: user present only (bit 0), no attested credential data on assertions
     authentication_auth_data =
       :crypto.hash(:sha256, @rp_id) <>
-        # flags: user present only (bit 0), no attested credential data on assertions
         <<0x01>> <>
         <<1::32>>
 

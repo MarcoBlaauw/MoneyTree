@@ -22,20 +22,18 @@ defmodule MoneyTree.BankSync.ProviderRegistryTest do
 
     assert ProviderRegistry.enabled?("simplefin")
     assert ProviderRegistry.enabled?(:manual)
-    refute ProviderRegistry.enabled?("teller")
     refute ProviderRegistry.enabled?("plaid")
     assert ProviderRegistry.primary_provider() == "simplefin"
   end
 
   test "normalizes configured providers" do
     Application.put_env(:money_tree, ProviderRegistry,
-      enabled_providers: " SimpleFIN, Teller,unknown ",
-      primary_provider: "teller"
+      enabled_providers: " SimpleFIN, Plaid,unknown ",
+      primary_provider: "plaid"
     )
 
     assert ProviderRegistry.enabled?("simplefin")
-    assert ProviderRegistry.enabled?("teller")
-    refute ProviderRegistry.enabled?("plaid")
-    assert ProviderRegistry.primary_provider() == "teller"
+    assert ProviderRegistry.enabled?("plaid")
+    assert ProviderRegistry.primary_provider() == "plaid"
   end
 end

@@ -11,7 +11,7 @@ Accounts now persist additional financial metadata so downstream features can su
 There are two supported ways to set these fields:
 
 1. **Manual entry.** Internal operators can populate or override values in admin tooling or via direct database edits. Because the validations live in the `Account` changeset, any UI backed by `MoneyTree.Accounts.Account.changeset/2` will automatically enforce the allowed ranges (non-negative balances, APR ≤ 100, etc.). This path is ideal for institution-specific terms that are negotiated offline.
-2. **Aggregator sync.** If an aggregator (e.g. Teller) provides APR or balance requirements in its payloads, extend the ingestion pipeline to map that data into the new columns when accounts are refreshed. The sync layer should only overwrite fields when the upstream value is present to avoid clobbering curated manual entries.
+2. **Aggregator sync.** If an aggregator (e.g. Plaid) provides APR or balance requirements in its payloads, extend the ingestion pipeline to map that data into the new columns when accounts are refreshed. The sync layer should only overwrite fields when the upstream value is present to avoid clobbering curated manual entries.
 
 When neither source provides a value the fields remain `NULL`, and the UI omits the corresponding metadata row.
 

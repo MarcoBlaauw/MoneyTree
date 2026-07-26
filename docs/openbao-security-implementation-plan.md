@@ -19,6 +19,11 @@ This document is intentionally implementation-oriented and repo-specific.
 
 ## Implementation status
 
+> **Note (post-2026-05-27):** Teller discontinued its API and the Teller integration has since
+> been removed from MoneyTree (code, config, and the `:teller` secret group). References to
+> `teller`/`TELLER_*` below describe the state at the time this plan was written and are
+> historical; do not provision a `teller` OpenBao secret group or path for new environments.
+
 Status as of 2026-05-27:
 
 | Area | Status | Notes |

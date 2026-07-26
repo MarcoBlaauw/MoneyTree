@@ -18,10 +18,6 @@ path "kv/data/moneytree/prod/plaid" {
   capabilities = ["read"]
 }
 
-path "kv/data/moneytree/prod/teller" {
-  capabilities = ["read"]
-}
-
 path "kv/data/moneytree/prod/smtp" {
   capabilities = ["read"]
 }

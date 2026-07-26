@@ -1,7 +1,5 @@
 import Config
 
-base_teller_config = Application.get_env(:money_tree, MoneyTree.Teller, [])
-
 secret_provider = MoneyTree.Secrets.provider_from_env()
 
 env = fn key ->
@@ -43,9 +41,6 @@ bank_sync_primary_provider =
 config :money_tree, MoneyTree.BankSync.ProviderRegistry,
   enabled_providers: enabled_bank_sync_providers,
   primary_provider: bank_sync_primary_provider
-
-teller_enabled? =
-  "teller" in enabled_bank_sync_providers or parse_bool_env.(env.("TELLER_ENABLED"))
 
 plaid_enabled? =
   "plaid" in enabled_bank_sync_providers or parse_bool_env.(env.("PLAID_ENABLED"))
@@ -139,103 +134,24 @@ if client_timeout_overrides != [] do
   config :money_tree, MoneyTreeWeb.Plugs.NextProxy, client_opts: merged_client_opts
 end
 
-if config_env() == :prod and teller_enabled? do
-  missing_teller_env =
-    [
-      "TELLER_CONNECT_APPLICATION_ID",
-      "TELLER_WEBHOOK_SECRET"
-    ]
-    |> Enum.filter(fn key -> env.(key) in [nil, ""] end)
-
-  if missing_teller_env != [] do
-    raise """
-    environment variables #{Enum.join(missing_teller_env, ", ")} are required in production for Teller integration.
-    """
-  end
-end
-
-teller_env = env
-
-resolve_runtime_path = fn path ->
-  path
-  |> Path.expand(File.cwd!())
-end
-
-validate_runtime_file! = fn path, label ->
-  expanded = resolve_runtime_path.(path)
-
-  if File.regular?(expanded) do
-    expanded
-  else
-    raise """
-    #{label} is configured as #{inspect(path)}, but no readable file exists at #{expanded}.
-    Update your .env to point at the correct Teller certificate/key path.
-    """
-  end
-end
-
-cert_file =
-  case teller_env.("TELLER_CERT_FILE") || teller_env.("TELLER_CERT_PATH") do
-    nil -> nil
-    path -> validate_runtime_file!.(path, "TELLER_CERT_FILE")
-  end
-
-key_file =
-  case teller_env.("TELLER_KEY_FILE") || teller_env.("TELLER_KEY_PATH") do
-    nil -> nil
-    path -> validate_runtime_file!.(path, "TELLER_KEY_FILE")
-  end
-
-cert_pem = teller_env.("TELLER_CERT_PEM")
-key_pem = teller_env.("TELLER_KEY_PEM")
-
-if config_env() == :prod and teller_enabled? do
-  cert_pair_present? =
-    (is_binary(cert_pem) and is_binary(key_pem)) or
-      (is_binary(cert_file) and is_binary(key_file))
-
-  if not cert_pair_present? do
-    raise """
-    Teller production configuration requires a client certificate and private key.
-    Set either TELLER_CERT_PEM and TELLER_KEY_PEM, or TELLER_CERT_FILE and TELLER_KEY_FILE.
-    """
-  end
-end
-
-teller_runtime_config =
-  [
-    connect_application_id: teller_env.("TELLER_CONNECT_APPLICATION_ID"),
-    webhook_secret: teller_env.("TELLER_WEBHOOK_SECRET"),
-    api_host: teller_env.("TELLER_API_HOST"),
-    connect_host: teller_env.("TELLER_CONNECT_HOST"),
-    webhook_host: teller_env.("TELLER_WEBHOOK_HOST"),
-    client_cert_pem: cert_pem,
-    client_key_pem: key_pem,
-    client_cert_file: cert_file,
-    client_key_file: key_file
-  ]
-  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-
-config :money_tree, MoneyTree.Teller, Keyword.merge(base_teller_config, teller_runtime_config)
-
 base_plaid_config = Application.get_env(:money_tree, MoneyTree.Plaid, [])
 
 plaid_products =
-  case teller_env.("PLAID_PRODUCTS") do
+  case env.("PLAID_PRODUCTS") do
     nil -> nil
     csv -> parse_csv_env.(csv)
   end
 
 plaid_country_codes =
-  case teller_env.("PLAID_COUNTRY_CODES") do
+  case env.("PLAID_COUNTRY_CODES") do
     nil -> nil
     csv -> parse_csv_env.(csv)
   end
 
 plaid_api_host =
-  case teller_env.("PLAID_API_HOST") do
+  case env.("PLAID_API_HOST") do
     nil ->
-      case teller_env.("PLAID_ENV") do
+      case env.("PLAID_ENV") do
         "production" -> "https://production.plaid.com"
         "development" -> "https://development.plaid.com"
         _ -> "https://sandbox.plaid.com"
@@ -247,15 +163,15 @@ plaid_api_host =
 
 plaid_runtime_config =
   [
-    client_id: teller_env.("PLAID_CLIENT_ID"),
-    secret: teller_env.("PLAID_SECRET"),
-    environment: teller_env.("PLAID_ENV"),
+    client_id: env.("PLAID_CLIENT_ID"),
+    secret: env.("PLAID_SECRET"),
+    environment: env.("PLAID_ENV"),
     products: plaid_products,
     country_codes: plaid_country_codes,
-    redirect_uri: teller_env.("PLAID_REDIRECT_URI"),
-    webhook_secret: teller_env.("PLAID_WEBHOOK_SECRET"),
-    client_name: teller_env.("PLAID_CLIENT_NAME"),
-    language: teller_env.("PLAID_LANGUAGE"),
+    redirect_uri: env.("PLAID_REDIRECT_URI"),
+    webhook_secret: env.("PLAID_WEBHOOK_SECRET"),
+    client_name: env.("PLAID_CLIENT_NAME"),
+    language: env.("PLAID_LANGUAGE"),
     api_host: plaid_api_host
   ]
   |> Enum.reject(fn

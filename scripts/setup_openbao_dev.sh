@@ -99,10 +99,6 @@ path "kv/data/moneytree/dev/plaid" {
   capabilities = ["read"]
 }
 
-path "kv/data/moneytree/dev/teller" {
-  capabilities = ["read"]
-}
-
 path "kv/data/moneytree/dev/smtp" {
   capabilities = ["read"]
 }
@@ -153,16 +149,6 @@ seed_secret_groups() {
     PLAID_CLIENT_ID \
     PLAID_SECRET \
     PLAID_WEBHOOK_SECRET
-
-  put_group teller \
-    TELLER_CONNECT_APPLICATION_ID \
-    TELLER_WEBHOOK_SECRET \
-    TELLER_CERT_PEM \
-    TELLER_KEY_PEM \
-    TELLER_CERT_FILE \
-    TELLER_CERT_PATH \
-    TELLER_KEY_FILE \
-    TELLER_KEY_PATH
 
   put_group smtp \
     MAILER_SMTP_HOST \

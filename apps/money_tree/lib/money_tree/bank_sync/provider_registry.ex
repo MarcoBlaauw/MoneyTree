@@ -24,14 +24,6 @@ defmodule MoneyTree.BankSync.ProviderRegistry do
       supports_pending_transactions: :optional,
       default_sync_interval_hours: 24
     },
-    "teller" => %{
-      id: "teller",
-      label: "Teller",
-      mode: "widget",
-      supports_manual_refresh: true,
-      supports_webhooks: true,
-      supports_pending_transactions: true
-    },
     "plaid" => %{
       id: "plaid",
       label: "Plaid",

@@ -101,55 +101,8 @@ MoneyTree now uses SimpleFIN Bridge as the default connected-account provider. U
 one-time SimpleFIN setup token outside MoneyTree, paste it into `/app/react/link-bank`, and
 MoneyTree stores only the claimed Access URL in encrypted connection credentials.
 
-Manual imports remain supported. Teller and Plaid are legacy-disabled for new links unless
-`BANK_SYNC_ENABLED_PROVIDERS` explicitly includes them.
-
-### Teller Integration
-
-MoneyTree still ships with a legacy Teller integration for account aggregation. Teller separates sandbox and production credentials, so
-start by creating a sandbox account at [Teller](https://teller.io) and generating the following values from the Console:
-
-- **Connect application ID** – embedded in Connect URLs (`TELLER_CONNECT_APPLICATION_ID`).
-- **Webhook secret** – verifies Teller webhook signatures (`TELLER_WEBHOOK_SECRET`).
-- **Client certificate and private key** – required for Teller mTLS (`TELLER_CERT_PEM`/`TELLER_KEY_PEM` or `TELLER_CERT_FILE`/`TELLER_KEY_FILE`).
-
-Store the sandbox values in `.env` (see `.env.example` for details) and never commit them to version control. When you promote to
-production, rotate the variables and restart your deployment so the new secrets take effect.
-
-#### Webhook tunnel & configuration
-
-Teller delivers account and transaction updates through webhooks. In development, expose the Phoenix endpoint to Teller with a
-tunnel such as [`cloudflared tunnel`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/install-and-setup/tunnel-guide/local/) or [`ngrok`](https://ngrok.com/):
-
-```bash
-ngrok http http://localhost:4000
-```
-
-Update the Teller webhook URL to point at the tunnel (for example, `https://<random>.ngrok.io/api/teller/webhook`) and set
-`TELLER_WEBHOOK_HOST` if you need to override the default host in development. Always keep the tunnel process running while you
-test so Teller can deliver responses successfully.
-
-#### Teller Connect in development
-
-MoneyTree exposes Teller Connect through the Phoenix API for local testing. Request a Connect token from
-`POST /api/teller/connect_token` (for example, with `curl -X POST http://localhost:4000/api/teller/connect_token -H "Content-Type: application/json" -d '{"products":["accounts","transactions"]}'`)
-and pass the returned `connect_token` to the Teller Connect frontend widget. The application ID is injected automatically from
-your environment configuration. The `TELLER_CONNECT_HOST` environment variable defaults to the sandbox host; only override it if
-Teller support directs you to a different environment.
-
-#### Monitoring Oban syncs
-
-Teller synchronisation work is handled by Oban jobs. Watch the queue with the built-in telemetry endpoints (`GET /api/metrics`)
-or by connecting to the database and inspecting `oban_jobs` for the `MoneyTree.Teller.SyncWorker` worker. In development you can
-also start `iex -S mix phx.server` and run `Oban.drain_queue(queue: :default)` to execute pending Teller jobs manually. Failed
-jobs will retry automatically; persistent failures should be investigated using the Teller runbook (`docs/teller_runbook.md`).
-
-Optional overrides (`TELLER_API_HOST`, `TELLER_CONNECT_HOST`, and `TELLER_WEBHOOK_HOST`) let you point to Teller sandbox URLs if
-they differ from the defaults, but most teams can omit them. The `req` HTTP client already targets the shared
-`MoneyTree.Finch` pool, so outbound Teller requests reuse the configured Finch connection pool.
-
-In production deployments MoneyTree requires Teller variables only when Teller is enabled for new
-links through `BANK_SYNC_ENABLED_PROVIDERS` or `TELLER_ENABLED=true`.
+Manual imports remain supported. Plaid is legacy-disabled for new links unless
+`BANK_SYNC_ENABLED_PROVIDERS` explicitly includes it.
 
 ## Database Tasks
 

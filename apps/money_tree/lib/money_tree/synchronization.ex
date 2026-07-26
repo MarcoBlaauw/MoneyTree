@@ -84,10 +84,14 @@ defmodule MoneyTree.Synchronization do
 
   def sync_worker_module("simplefin"), do: MoneyTree.SimpleFin.SyncWorker
   def sync_worker_module("plaid"), do: MoneyTree.Plaid.SyncWorker
-  def sync_worker_module(_), do: MoneyTree.Teller.SyncWorker
+
+  def sync_worker_module(provider),
+    do: raise(ArgumentError, "no sync worker registered for provider #{inspect(provider)}")
 
   defp provider_name(%Connection{provider: provider}) when is_binary(provider), do: provider
-  defp provider_name(_), do: "teller"
+
+  defp provider_name(%Connection{} = connection),
+    do: raise(ArgumentError, "connection #{connection.id} has no provider set")
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)

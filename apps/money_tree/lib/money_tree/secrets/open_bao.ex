@@ -21,7 +21,6 @@ defmodule MoneyTree.Secrets.OpenBao do
     fred: "fred",
     phoenix: "phoenix",
     plaid: "plaid",
-    teller: "teller",
     smtp: "smtp"
   }
 

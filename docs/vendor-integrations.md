@@ -6,11 +6,9 @@ setup token in SimpleFIN and paste it into MoneyTree.
 
 - `https://cdn.plaid.com` and `https://link.plaid.com` for Plaid Link scripts and iframes
   only when the legacy Plaid provider is enabled
-- `https://cdn.teller.io` and `https://connect.teller.io` for Teller Connect assets only
-  when the legacy Teller provider is enabled
 - `https://withpersona.com`, `https://app.withpersona.com`, and `https://api.withpersona.com`
   for Persona KYC widgets and APIs
-- `https://api.plaid.com` and `https://api.teller.io` for widget network requests
+- `https://api.plaid.com` for widget network requests
 
 All other hosts remain blocked by the CSP. Keep the list in sync with vendor configuration
 and update this document when adding a new origin.
