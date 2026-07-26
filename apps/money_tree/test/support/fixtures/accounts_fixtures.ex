@@ -25,16 +25,17 @@ defmodule MoneyTree.AccountsFixtures do
     attrs = Map.new(attrs)
     email = Map.get(attrs, :email, unique_user_email())
     password = Map.get(attrs, :password, valid_password())
+    role = Map.get(attrs, :role, :member)
 
     params =
       attrs
       |> Map.put_new(:email, email)
       |> Map.put(:password, password)
       |> Map.put_new(:encrypted_full_name, Map.get(attrs, :full_name, "Fixture User"))
-      |> Map.put_new(:role, :member)
       |> Map.delete(:full_name)
+      |> Map.delete(:role)
 
-    {:ok, user} = Accounts.register_user(params)
+    {:ok, user} = Accounts.register_user_with_role(params, role)
 
     %{user | password: nil}
   end

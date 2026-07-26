@@ -66,6 +66,11 @@ config :money_tree, MoneyTree.BankSync.ProviderRegistry,
 
 config :money_tree, :disable_oban_tracing, true
 
+# The real limiter is exercised by dedicated rate-limiter tests; leaving it
+# active by default would make unrelated tests flaky/order-dependent since
+# they share the same ETS-backed counters across the test run.
+config :money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop
+
 config :logger, level: :warning
 
 config :phoenix, :plug_init_mode, :runtime

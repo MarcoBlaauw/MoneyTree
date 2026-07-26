@@ -84,6 +84,10 @@ defmodule MoneyTree.Accounts do
 
   @doc """
   Registers a new user, hashing the provided password with Argon2.
+
+  Always creates the user with the default `:member` role; any `:role`/`"role"`
+  key in `attrs` is ignored. This function is safe to expose to untrusted
+  callers (e.g. the public registration API).
   """
   @spec register_user(map()) :: {:ok, User.t()} | {:error, Changeset.t()}
   def register_user(attrs) when is_map(attrs) do
@@ -91,6 +95,21 @@ defmodule MoneyTree.Accounts do
     |> User.registration_changeset(attrs)
     |> put_password_hash()
     |> Repo.insert()
+  end
+
+  @doc """
+  Registers a new user and immediately assigns the given role.
+
+  For trusted, operator-only callers (admin CLI tasks, test fixtures) that
+  need to create a non-default-role user directly. Never expose this to
+  untrusted input.
+  """
+  @spec register_user_with_role(map(), atom() | String.t()) ::
+          {:ok, User.t()} | {:error, Changeset.t()}
+  def register_user_with_role(attrs, role) when is_map(attrs) do
+    with {:ok, %User{} = user} <- register_user(attrs) do
+      update_user_role(user, role)
+    end
   end
 
   @doc """

@@ -19,7 +19,7 @@ config :money_tree, MoneyTree.Accounts,
   webauthn_timeout_ms: 60_000,
   webauthn_challenge_ttl: 60 * 5
 
-config :money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop
+config :money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Ets
 config :money_tree, :secure_cookies, true
 
 config :money_tree, MoneyTreeWeb.Endpoint,

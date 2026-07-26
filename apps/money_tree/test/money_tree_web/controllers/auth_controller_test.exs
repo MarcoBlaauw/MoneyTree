@@ -41,6 +41,35 @@ defmodule MoneyTreeWeb.AuthControllerTest do
       assert Map.has_key?(errors, "email")
       assert Map.has_key?(errors, "password")
     end
+
+    test "ignores a caller-supplied role and always registers as member", %{conn: conn} do
+      params = %{
+        "email" => "aspiring-owner@example.com",
+        "password" => "StrongPassw0rd!",
+        "role" => "owner"
+      }
+
+      conn = post(conn, ~p"/api/register", params)
+
+      %{"data" => %{"role" => role}} = json_response(conn, 201)
+      assert role == "member"
+
+      user = Repo.get_by!(User, email: "aspiring-owner@example.com")
+      assert user.role == :member
+    end
+
+    test "enforces rate limiting", %{conn: conn} do
+      Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
+      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      conn =
+        post(conn, ~p"/api/register", %{
+          "email" => "rate-limited-register@example.com",
+          "password" => "StrongPassw0rd!"
+        })
+
+      assert json_response(conn, 429) == %{"error" => "rate limit exceeded"}
+    end
   end
 
   describe "POST /api/login" do

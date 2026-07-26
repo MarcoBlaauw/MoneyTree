@@ -9,8 +9,14 @@ defmodule MoneyTreeWeb.AuthController do
   @login_limit 5
   @login_period_seconds 60
 
+  @registration_limit 5
+  @registration_period_seconds 300
+
   def register(conn, params) do
-    with {:ok, user} <- Accounts.register_user(params),
+    bucket = {:register, maybe_client_ip(conn)}
+
+    with :ok <- RateLimiter.check(bucket, @registration_limit, @registration_period_seconds),
+         {:ok, user} <- Accounts.register_user(params),
          {:ok, _session, token} <- Accounts.create_session(user, session_metadata(conn)) do
       Audit.log(:user_registered, %{user_id: user.id})
 
@@ -19,6 +25,11 @@ defmodule MoneyTreeWeb.AuthController do
       |> put_status(:created)
       |> json(%{data: serialize_user(user)})
     else
+      {:error, :rate_limited} ->
+        conn
+        |> put_status(:too_many_requests)
+        |> json(%{error: "rate limit exceeded"})
+
       {:error, %Ecto.Changeset{} = changeset} ->
         conn
         |> put_status(:unprocessable_entity)

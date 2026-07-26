@@ -49,8 +49,11 @@ defmodule MoneyTree.Users.User do
 
   @doc false
   def registration_changeset(user, attrs) do
+    attrs = Map.drop(attrs, [:role, "role"])
+
     user
     |> changeset(attrs)
+    |> put_change(:role, :member)
     |> validate_required([:password])
   end
 

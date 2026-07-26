@@ -62,6 +62,19 @@ defmodule MoneyTreeWeb.SessionControllerTest do
       assert html_response(conn, 200) =~ "If that email exists, a sign-in link has been sent."
       refute_email_sent()
     end
+
+    test "enforces rate limiting", %{conn: conn} do
+      Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
+      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      conn =
+        conn
+        |> init_test_session(%{})
+        |> post(~p"/login/magic", %{"magic_link" => %{"email" => "someone@example.com"}})
+
+      assert html_response(conn, 200) =~ "Too many attempts"
+      refute_email_sent()
+    end
   end
 
   describe "POST /login/webauthn/options and /login/webauthn" do
@@ -107,6 +120,32 @@ defmodule MoneyTreeWeb.SessionControllerTest do
 
       assert %{"data" => %{"redirect_to" => "/app"}} = json_response(verify_conn, 200)
       assert get_session(verify_conn, :user_token)
+    end
+
+    test "enforces rate limiting on options requests", %{conn: conn} do
+      Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
+      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      conn =
+        conn
+        |> init_test_session(%{})
+        |> post(~p"/login/webauthn/options", %{"webauthn" => %{"email" => "someone@example.com"}})
+
+      assert json_response(conn, 429) == %{"error" => "rate limit exceeded"}
+    end
+
+    test "enforces rate limiting on assertion consumption", %{conn: conn} do
+      Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
+      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      conn =
+        conn
+        |> init_test_session(%{})
+        |> post(~p"/login/webauthn", %{
+          "webauthn" => %{"email" => "someone@example.com", "challenge_id" => "does-not-matter"}
+        })
+
+      assert json_response(conn, 429) == %{"error" => "rate limit exceeded"}
     end
   end
 
@@ -165,6 +204,18 @@ defmodule MoneyTreeWeb.SessionControllerTest do
         |> get(~p"/login/magic/#{token}")
 
       assert html_response(conn, 200) =~ "has expired"
+    end
+
+    test "enforces rate limiting", %{conn: conn} do
+      Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.DenyAll)
+      on_exit(fn -> Application.put_env(:money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop) end)
+
+      conn =
+        conn
+        |> init_test_session(%{})
+        |> get(~p"/login/magic/some-token")
+
+      assert html_response(conn, 200) =~ "Too many attempts"
     end
   end
 

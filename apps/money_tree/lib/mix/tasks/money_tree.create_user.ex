@@ -29,12 +29,11 @@ defmodule Mix.Tasks.MoneyTree.CreateUser do
     attrs =
       %{
         email: email,
-        password: password,
-        role: role
+        password: password
       }
       |> maybe_put_full_name(opts[:name])
 
-    case Accounts.register_user(attrs) do
+    case Accounts.register_user_with_role(attrs, role) do
       {:ok, user} ->
         Mix.shell().info("✔ Created user #{user.email} with role #{user.role}.")
 
