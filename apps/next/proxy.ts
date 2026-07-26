@@ -5,7 +5,7 @@ const CSP_HEADER = "x-csp-nonce";
 const NEXT_NONCE_HEADER = "x-nonce";
 const CSRF_HEADER = "x-csrf-token";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   const nonce = requestHeaders.get(CSP_HEADER);
   const csrfToken = requestHeaders.get(CSRF_HEADER);

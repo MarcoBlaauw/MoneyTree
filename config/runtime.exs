@@ -2,12 +2,10 @@ import Config
 
 base_teller_config = Application.get_env(:money_tree, MoneyTree.Teller, [])
 
+secret_provider = MoneyTree.Secrets.provider_from_env()
+
 env = fn key ->
-  case System.get_env(key) do
-    nil -> nil
-    "" -> nil
-    value -> value
-  end
+  MoneyTree.Secrets.get(key, secret_provider)
 end
 
 parse_csv_env = fn value ->
@@ -147,7 +145,7 @@ if config_env() == :prod and teller_enabled? do
       "TELLER_CONNECT_APPLICATION_ID",
       "TELLER_WEBHOOK_SECRET"
     ]
-    |> Enum.filter(fn env -> System.get_env(env) in [nil, ""] end)
+    |> Enum.filter(fn key -> env.(key) in [nil, ""] end)
 
   if missing_teller_env != [] do
     raise """
@@ -156,13 +154,7 @@ if config_env() == :prod and teller_enabled? do
   end
 end
 
-teller_env = fn key ->
-  case System.get_env(key) do
-    nil -> nil
-    "" -> nil
-    value -> value
-  end
-end
+teller_env = env
 
 resolve_runtime_path = fn path ->
   path
@@ -277,7 +269,7 @@ config :money_tree, MoneyTree.Plaid, Keyword.merge(base_plaid_config, plaid_runt
 if config_env() == :prod and plaid_enabled? do
   missing_plaid_env =
     ["PLAID_CLIENT_ID", "PLAID_SECRET"]
-    |> Enum.filter(fn key -> System.get_env(key) in [nil, ""] end)
+    |> Enum.filter(fn key -> env.(key) in [nil, ""] end)
 
   if missing_plaid_env != [] do
     raise """
@@ -286,13 +278,7 @@ if config_env() == :prod and plaid_enabled? do
   end
 end
 
-fred_env = fn key ->
-  case System.get_env(key) do
-    nil -> nil
-    "" -> nil
-    value -> value
-  end
-end
+fred_env = env
 
 base_fred_config = Application.get_env(:money_tree, MoneyTree.Loans.RateProviders.Fred, [])
 
@@ -307,13 +293,7 @@ config :money_tree,
        MoneyTree.Loans.RateProviders.Fred,
        Keyword.merge(base_fred_config, fred_runtime_config)
 
-ai_env = fn key ->
-  case System.get_env(key) do
-    nil -> nil
-    "" -> nil
-    value -> value
-  end
-end
+ai_env = env
 
 ai_runtime_config =
   [
@@ -360,13 +340,7 @@ if ai_runtime_config != [] or ollama_runtime_config != [] do
   config :money_tree, MoneyTree.AI, merged_ai_config
 end
 
-mailer_env = fn key ->
-  case System.get_env(key) do
-    nil -> nil
-    "" -> nil
-    value -> value
-  end
-end
+mailer_env = env
 
 mail_from_name = mailer_env.("MAILER_FROM_NAME") || "MoneyTree"
 mail_from_email = mailer_env.("MAILER_FROM_EMAIL") || "no-reply@moneytree.app"
@@ -524,7 +498,7 @@ if config_env() != :test do
 end
 
 vault_key =
-  System.get_env("CLOAK_VAULT_KEY") ||
+  env.("CLOAK_VAULT_KEY") ||
     if config_env() == :prod do
       raise """
       environment variable CLOAK_VAULT_KEY is missing.
@@ -558,7 +532,7 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
-  database_url = System.get_env("DATABASE_URL")
+  database_url = env.("DATABASE_URL")
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
   repo_config =
@@ -567,16 +541,16 @@ if config_env() == :prod do
     else
       [
         username:
-          System.get_env("DATABASE_USERNAME") ||
+          env.("DATABASE_USERNAME") ||
             raise("environment variable DATABASE_USERNAME is missing."),
         password:
-          System.get_env("DATABASE_PASSWORD") ||
+          env.("DATABASE_PASSWORD") ||
             raise("environment variable DATABASE_PASSWORD is missing."),
         hostname:
-          System.get_env("DATABASE_HOST") ||
+          env.("DATABASE_HOST") ||
             raise("environment variable DATABASE_HOST is missing."),
         database:
-          System.get_env("DATABASE_NAME") ||
+          env.("DATABASE_NAME") ||
             raise("environment variable DATABASE_NAME is missing."),
         port: String.to_integer(System.get_env("DATABASE_PORT") || "5432")
       ]
@@ -597,7 +571,7 @@ if config_env() == :prod do
   config :money_tree, MoneyTree.Repo, repo_config
 
   secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
+    env.("SECRET_KEY_BASE") ||
       raise """
       environment variable SECRET_KEY_BASE is missing.
       You can generate one by calling: mix phx.gen.secret

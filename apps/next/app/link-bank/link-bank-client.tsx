@@ -174,27 +174,6 @@ function asString(value: unknown): string | undefined {
   return undefined;
 }
 
-function extractConnectToken(payload: Record<string, unknown> | undefined): string | undefined {
-  if (!payload) {
-    return undefined;
-  }
-
-  const candidates = [
-    payload["connect_token"],
-    payload["connectToken"],
-    payload["token"],
-  ];
-
-  for (const candidate of candidates) {
-    const token = asString(candidate);
-    if (token) {
-      return token;
-    }
-  }
-
-  return undefined;
-}
-
 function maybeRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
 }
@@ -798,23 +777,6 @@ export default function LinkBankClient({
         const data = (payload?.data as Record<string, unknown> | undefined) ?? {};
 
         logEvent(`${vendor.name} ready`, { level: "success", payload: data });
-
-        if (vendor.id === "teller") {
-          const connectToken = extractConnectToken(data);
-
-          if (!connectToken) {
-            setErrors((prev) => ({
-              ...prev,
-              teller: "Teller Connect response did not include a token.",
-            }));
-            logEvent("Teller Connect missing token", { level: "error", payload: data });
-            return;
-          }
-
-          setModalState({ open: false });
-          launchTellerConnect(connectToken);
-          return;
-        }
 
         if (vendor.id === "plaid") {
           const linkToken = asString(data.link_token) ?? asString(data.linkToken);

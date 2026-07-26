@@ -1,24 +1,25 @@
-import { afterEach, beforeEach, describe, it } from "node:test";
-import assert from "node:assert/strict";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 
-import { setupDom } from "../helpers/setup-dom";
-import { renderControlPanelPage } from "../../app/control-panel/render-control-panel-page";
-import type { ControlPanelObligation, FundingAccountOption } from "../../app/lib/obligations";
-import type { ControlPanelSettings } from "../../app/lib/settings";
+import { setupDom } from '../helpers/setup-dom';
+import { renderControlPanelPage } from '../../app/control-panel/render-control-panel-page';
+import type { ControlPanelObligation, FundingAccountOption } from '../../app/lib/obligations';
+import type { SecretBackendStatus } from '../../app/lib/secret-backend';
+import type { ControlPanelSettings } from '../../app/lib/settings';
 
-const CSRF_TOKEN = "csrf-token";
+const CSRF_TOKEN = 'csrf-token';
 
 function createFetchResponse(status: number, body: Record<string, unknown>) {
   return Promise.resolve(
     new Response(JSON.stringify(body), {
       status,
-      headers: { "content-type": "application/json" },
+      headers: { 'content-type': 'application/json' },
     }),
   );
 }
 
-describe("Control panel page", () => {
+describe('Control panel page', () => {
   let restoreDom: (() => void) | undefined;
   const originalFetch = globalThis.fetch;
 
@@ -35,13 +36,13 @@ describe("Control panel page", () => {
     }
   });
 
-  it("renders profile summary and notification toggles", async () => {
+  it('renders profile summary and notification toggles', async () => {
     const settings: ControlPanelSettings = {
       profile: {
-        displayName: "Ada Lovelace",
-        fullName: "Ada Lovelace",
-        email: "ada@example.com",
-        role: "owner",
+        displayName: 'Ada Lovelace',
+        fullName: 'Ada Lovelace',
+        email: 'ada@example.com',
+        role: 'owner',
       },
       notifications: {
         emailEnabled: true,
@@ -58,11 +59,11 @@ describe("Control panel page", () => {
       },
       sessions: [
         {
-          id: "sess-1",
-          context: "Browser",
-          lastUsedAt: "2024-07-01T12:34:56Z",
-          userAgent: "Playwright",
-          ipAddress: "203.0.113.10",
+          id: 'sess-1',
+          context: 'Browser',
+          lastUsedAt: '2024-07-01T12:34:56Z',
+          userAgent: 'Playwright',
+          ipAddress: '203.0.113.10',
         },
       ],
     };
@@ -70,29 +71,29 @@ describe("Control panel page", () => {
     const view = render(await renderControlPanelPage(async () => settings));
 
     assert.ok(
-      view.getByRole("heading", { name: "Control panel" }),
-      "control panel heading should be visible",
+      view.getByRole('heading', { name: 'Control panel' }),
+      'control panel heading should be visible',
     );
 
-    assert.ok(view.getByText("Ada Lovelace"));
-    assert.ok(view.getByText("ada@example.com"));
+    assert.ok(view.getByText('Ada Lovelace'));
+    assert.ok(view.getByText('ada@example.com'));
 
-    const emailToggle = view.getByRole("switch", { name: /Email delivery/i });
-    assert.equal(emailToggle.getAttribute("aria-checked"), "true");
+    const emailToggle = view.getByRole('switch', { name: /Email delivery/i });
+    assert.equal(emailToggle.getAttribute('aria-checked'), 'true');
 
-    const dashboardToggle = view.getByRole("switch", { name: /Dashboard alerts/i });
-    assert.equal(dashboardToggle.getAttribute("aria-checked"), "false");
+    const dashboardToggle = view.getByRole('switch', { name: /Dashboard alerts/i });
+    assert.equal(dashboardToggle.getAttribute('aria-checked'), 'false');
 
-    assert.ok(view.getByRole("table", { name: /Active sessions/i }));
+    assert.ok(view.getByRole('table', { name: /Active sessions/i }));
   });
 
-  it("updates notification preferences from the control panel", async () => {
+  it('updates notification preferences from the control panel', async () => {
     const settings: ControlPanelSettings = {
       profile: {
-        displayName: "Ada Lovelace",
-        fullName: "Ada Lovelace",
-        email: "ada@example.com",
-        role: "owner",
+        displayName: 'Ada Lovelace',
+        fullName: 'Ada Lovelace',
+        email: 'ada@example.com',
+        role: 'owner',
       },
       notifications: {
         emailEnabled: true,
@@ -111,15 +112,15 @@ describe("Control panel page", () => {
     };
 
     const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
-      assert.equal(input, "/api/settings/notifications");
-      assert.equal(init?.method, "PUT");
-      assert.equal(init?.credentials, "include");
+      assert.equal(input, '/api/settings/notifications');
+      assert.equal(init?.method, 'PUT');
+      assert.equal(init?.credentials, 'include');
       assert.equal(
-        init?.headers && (init.headers as Record<string, string>)["x-csrf-token"],
+        init?.headers && (init.headers as Record<string, string>)['x-csrf-token'],
         CSRF_TOKEN,
       );
 
-      const body = JSON.parse(String(init?.body ?? "{}")) as {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
         notifications?: Record<string, unknown>;
       };
 
@@ -151,22 +152,22 @@ describe("Control panel page", () => {
       await renderControlPanelPage(async () => settings, { csrfToken: CSRF_TOKEN }),
     );
 
-    const emailToggle = view.getByRole("switch", { name: /Email delivery/i });
+    const emailToggle = view.getByRole('switch', { name: /Email delivery/i });
     fireEvent.click(emailToggle);
 
     await waitFor(() => {
-      assert.equal(emailToggle.getAttribute("aria-checked"), "false");
-      assert.ok(view.getByText("Notification preferences updated."));
+      assert.equal(emailToggle.getAttribute('aria-checked'), 'false');
+      assert.ok(view.getByText('Notification preferences updated.'));
     });
   });
 
-  it("creates obligations from the control panel", async () => {
+  it('creates obligations from the control panel', async () => {
     const settings: ControlPanelSettings = {
       profile: {
-        displayName: "Ada Lovelace",
-        fullName: "Ada Lovelace",
-        email: "ada@example.com",
-        role: "owner",
+        displayName: 'Ada Lovelace',
+        fullName: 'Ada Lovelace',
+        email: 'ada@example.com',
+        role: 'owner',
       },
       notifications: {
         emailEnabled: true,
@@ -186,11 +187,11 @@ describe("Control panel page", () => {
 
     const fundingAccounts: FundingAccountOption[] = [
       {
-        id: "acct-1",
-        name: "Bills Checking",
-        currency: "USD",
-        type: "depository",
-        subtype: "checking",
+        id: 'acct-1',
+        name: 'Bills Checking',
+        currency: 'USD',
+        type: 'depository',
+        subtype: 'checking',
       },
     ];
 
@@ -204,21 +205,21 @@ describe("Control panel page", () => {
       capturedInit = init;
       return createFetchResponse(201, {
         data: {
-          id: "obl-1",
-          creditor_payee: "Water Utility",
+          id: 'obl-1',
+          creditor_payee: 'Water Utility',
           due_day: 18,
-          due_rule: "calendar_day",
-          minimum_due_amount: "88.45",
-          currency: "USD",
+          due_rule: 'calendar_day',
+          minimum_due_amount: '88.45',
+          currency: 'USD',
           grace_period_days: 4,
           active: true,
-          linked_funding_account_id: "acct-1",
+          linked_funding_account_id: 'acct-1',
           linked_funding_account: {
-            id: "acct-1",
-            name: "Bills Checking",
-            currency: "USD",
-            type: "depository",
-            subtype: "checking",
+            id: 'acct-1',
+            name: 'Bills Checking',
+            currency: 'USD',
+            type: 'depository',
+            subtype: 'checking',
           },
         },
       });
@@ -234,74 +235,67 @@ describe("Control panel page", () => {
       }),
     );
 
-    const creditorInput = view.getByTestId(
-      "obligation-creditor-payee",
-    ) as HTMLInputElement;
-    const dueDayInput = view.getByTestId("obligation-due-day") as HTMLInputElement;
-    const amountInput = view.getByTestId(
-      "obligation-minimum-due-amount",
-    ) as HTMLInputElement;
-    const graceInput = view.getByTestId(
-      "obligation-grace-period-days",
-    ) as HTMLInputElement;
+    const creditorInput = view.getByTestId('obligation-creditor-payee') as HTMLInputElement;
+    const dueDayInput = view.getByTestId('obligation-due-day') as HTMLInputElement;
+    const amountInput = view.getByTestId('obligation-minimum-due-amount') as HTMLInputElement;
+    const graceInput = view.getByTestId('obligation-grace-period-days') as HTMLInputElement;
     const fundingAccountSelect = view.getByTestId(
-      "obligation-funding-account",
+      'obligation-funding-account',
     ) as HTMLSelectElement;
 
     await waitFor(() => {
-      assert.equal(fundingAccountSelect.value, "acct-1");
+      assert.equal(fundingAccountSelect.value, 'acct-1');
     });
 
     fireEvent.change(creditorInput, {
-      target: { value: "Water Utility" },
+      target: { value: 'Water Utility' },
     });
     fireEvent.change(dueDayInput, {
-      target: { value: "18" },
+      target: { value: '18' },
     });
     fireEvent.change(amountInput, {
-      target: { value: "88.45" },
+      target: { value: '88.45' },
     });
     fireEvent.change(graceInput, {
-      target: { value: "4" },
+      target: { value: '4' },
     });
 
     await waitFor(() => {
-      assert.equal(creditorInput.value, "Water Utility");
-      assert.equal(dueDayInput.value, "18");
-      assert.equal(amountInput.value, "88.45");
-      assert.equal(graceInput.value, "4");
+      assert.equal(creditorInput.value, 'Water Utility');
+      assert.equal(dueDayInput.value, '18');
+      assert.equal(amountInput.value, '88.45');
+      assert.equal(graceInput.value, '4');
     });
 
-    fireEvent.click(view.getByTestId("obligation-submit"));
+    fireEvent.click(view.getByTestId('obligation-submit'));
 
     await waitFor(() => {
-      assert.ok(view.getByText("Water Utility"));
-      assert.ok(view.getByText("Obligation created."));
+      assert.ok(view.getByText('Water Utility'));
+      assert.ok(view.getByText('Obligation created.'));
       assert.ok(view.getByText(/Funding account: Bills Checking/i));
     });
 
-    assert.equal(capturedInput, "/api/obligations");
-    assert.equal(capturedInit?.method, "POST");
-    assert.equal(capturedInit?.credentials, "include");
+    assert.equal(capturedInput, '/api/obligations');
+    assert.equal(capturedInit?.method, 'POST');
+    assert.equal(capturedInit?.credentials, 'include');
     assert.equal(
-      capturedInit?.headers &&
-        (capturedInit.headers as Record<string, string>)["x-csrf-token"],
+      capturedInit?.headers && (capturedInit.headers as Record<string, string>)['x-csrf-token'],
       CSRF_TOKEN,
     );
 
-    const body = JSON.parse(String(capturedInit?.body ?? "{}")) as Record<string, unknown>;
-    assert.equal(body.creditor_payee, "Water Utility");
-    assert.equal(body.linked_funding_account_id, "acct-1");
-    assert.equal(body.minimum_due_amount, "88.45");
+    const body = JSON.parse(String(capturedInit?.body ?? '{}')) as Record<string, unknown>;
+    assert.equal(body.creditor_payee, 'Water Utility');
+    assert.equal(body.linked_funding_account_id, 'acct-1');
+    assert.equal(body.minimum_due_amount, '88.45');
   });
 
-  it("stages and commits manual import rows from the control panel", async () => {
+  it('stages and commits manual import rows from the control panel', async () => {
     const settings: ControlPanelSettings = {
       profile: {
-        displayName: "Ada Lovelace",
-        fullName: "Ada Lovelace",
-        email: "ada@example.com",
-        role: "owner",
+        displayName: 'Ada Lovelace',
+        fullName: 'Ada Lovelace',
+        email: 'ada@example.com',
+        role: 'owner',
       },
       notifications: {
         emailEnabled: true,
@@ -321,11 +315,11 @@ describe("Control panel page", () => {
 
     const fundingAccounts: FundingAccountOption[] = [
       {
-        id: "acct-1",
-        name: "Bills Checking",
-        currency: "USD",
-        type: "depository",
-        subtype: "checking",
+        id: 'acct-1',
+        name: 'Bills Checking',
+        currency: 'USD',
+        type: 'depository',
+        subtype: 'checking',
       },
     ];
 
@@ -333,23 +327,23 @@ describe("Control panel page", () => {
 
     const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      const method = init?.method ?? "GET";
+      const method = init?.method ?? 'GET';
 
-      if (url === "/api/manual-imports" && method === "POST") {
+      if (url === '/api/manual-imports' && method === 'POST') {
         return createFetchResponse(201, {
-          data: { id: "batch-1", status: "uploaded" },
+          data: { id: 'batch-1', status: 'uploaded' },
         });
       }
 
-      if (url === "/api/manual-imports/batch-1/parse" && method === "POST") {
-        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
-        assert.equal(typeof body.csv_content, "string");
+      if (url === '/api/manual-imports/batch-1/parse' && method === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        assert.equal(typeof body.csv_content, 'string');
 
         return createFetchResponse(200, {
           data: {
             batch: {
-              id: "batch-1",
-              status: "parsed",
+              id: 'batch-1',
+              status: 'parsed',
               row_count: 2,
               committed_count: 0,
             },
@@ -357,36 +351,36 @@ describe("Control panel page", () => {
         });
       }
 
-      if (url === "/api/manual-imports/batch-1/rows" && method === "GET") {
+      if (url === '/api/manual-imports/batch-1/rows' && method === 'GET') {
         return createFetchResponse(200, {
           data: [
             {
-              id: "row-1",
+              id: 'row-1',
               row_index: 1,
-              posted_at: "2026-04-20T00:00:00Z",
-              description: "Coffee",
-              amount: "-5.25",
-              parse_status: "parsed",
-              review_decision: "accept",
+              posted_at: '2026-04-20T00:00:00Z',
+              description: 'Coffee',
+              amount: '-5.25',
+              parse_status: 'parsed',
+              review_decision: 'accept',
             },
             {
-              id: "row-2",
+              id: 'row-2',
               row_index: 2,
-              posted_at: "2026-04-21T00:00:00Z",
-              description: "Payroll",
-              amount: "2000.00",
-              parse_status: "parsed",
-              review_decision: "accept",
+              posted_at: '2026-04-21T00:00:00Z',
+              description: 'Payroll',
+              amount: '2000.00',
+              parse_status: 'parsed',
+              review_decision: 'accept',
             },
           ],
         });
       }
 
-      if (url === "/api/manual-imports/batch-1/commit" && method === "POST") {
+      if (url === '/api/manual-imports/batch-1/commit' && method === 'POST') {
         return createFetchResponse(200, {
           data: {
-            id: "batch-1",
-            status: "committed",
+            id: 'batch-1',
+            status: 'committed',
             committed_count: 2,
           },
         });
@@ -405,28 +399,119 @@ describe("Control panel page", () => {
       }),
     );
 
-    const csvInput = view.getByTestId("manual-import-csv") as HTMLTextAreaElement;
+    const csvInput = view.getByTestId('manual-import-csv') as HTMLTextAreaElement;
     fireEvent.change(csvInput, {
       target: {
-        value: "Date,Description,Amount\n2026-04-20,Coffee,-5.25\n2026-04-21,Payroll,2000.00\n",
+        value: 'Date,Description,Amount\n2026-04-20,Coffee,-5.25\n2026-04-21,Payroll,2000.00\n',
       },
     });
 
     await waitFor(() => {
-      assert.ok(csvInput.value.includes("Date,Description,Amount"));
+      assert.ok(csvInput.value.includes('Date,Description,Amount'));
     });
 
-    fireEvent.click(view.getByTestId("manual-import-parse"));
+    fireEvent.click(view.getByTestId('manual-import-parse'));
 
     await waitFor(() => {
-      assert.ok(view.getByText("Coffee"));
+      assert.ok(view.getByText('Coffee'));
       assert.ok(view.getByText(/Parsed 2 rows\./i));
     });
 
-    fireEvent.click(view.getByTestId("manual-import-commit"));
+    fireEvent.click(view.getByTestId('manual-import-commit'));
 
     await waitFor(() => {
-      assert.ok(view.getByText("Committed 2 rows to transactions."));
+      assert.ok(view.getByText('Committed 2 rows to transactions.'));
+    });
+  });
+
+  it('shows owner secret backend status and revalidates it', async () => {
+    const settings: ControlPanelSettings = {
+      profile: {
+        displayName: 'Ada Lovelace',
+        fullName: 'Ada Lovelace',
+        email: 'ada@example.com',
+        role: 'owner',
+      },
+      notifications: {
+        emailEnabled: true,
+        smsEnabled: false,
+        pushEnabled: false,
+        dashboardEnabled: true,
+        upcomingEnabled: true,
+        dueTodayEnabled: true,
+        overdueEnabled: true,
+        recoveredEnabled: true,
+        upcomingLeadDays: 3,
+        resendIntervalHours: 24,
+        maxResends: 2,
+      },
+      sessions: [],
+    };
+
+    const secretBackendStatus: SecretBackendStatus = {
+      backend: 'env',
+      selectedBy: 'default',
+      status: 'configured',
+      live: false,
+      groups: [
+        {
+          name: 'phoenix',
+          status: 'configured',
+          presentKeys: 1,
+          missingKeys: [],
+          errors: [],
+        },
+      ],
+    };
+
+    const fetchMock = async (input: RequestInfo | URL, init?: RequestInit) => {
+      assert.equal(input, '/api/owner/security/secret-backend/revalidate');
+      assert.equal(init?.method, 'POST');
+      assert.equal(init?.credentials, 'include');
+      assert.equal(
+        init?.headers && (init.headers as Record<string, string>)['x-csrf-token'],
+        CSRF_TOKEN,
+      );
+
+      return createFetchResponse(200, {
+        data: {
+          backend: 'env',
+          selected_by: 'default',
+          status: 'configured',
+          live: true,
+          groups: {
+            phoenix: {
+              status: 'configured',
+              present_keys: 1,
+              missing_keys: [],
+              errors: [],
+            },
+          },
+        },
+      });
+    };
+
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+
+    const view = render(
+      await renderControlPanelPage(async () => settings, {
+        csrfToken: CSRF_TOKEN,
+        fetchFundingAccounts: async () => [],
+        fetchObligations: async () => [],
+        fetchSecretBackendStatus: async () => secretBackendStatus,
+      }),
+    );
+
+    assert.ok(view.getByRole('heading', { name: 'Secret backend' }));
+    assert.ok(view.getByText('env mode selected by default.'));
+    assert.ok(view.getByText('1 present'));
+
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: 'Revalidate' }));
+    });
+
+    await waitFor(() => {
+      assert.ok(view.getByText('Secret backend revalidated.'));
     });
   });
 });

@@ -1575,8 +1575,6 @@ defmodule MoneyTreeWeb.DashboardLive do
     |> Decimal.to_integer()
   end
 
-  defp clamp_percent(_), do: 0
-
   defp rollup_progress_bar_class(%Decimal{} = value) do
     case Decimal.compare(value, Decimal.new("0")) do
       :lt -> "h-full rounded-full bg-rose-500 transition-all"
@@ -1671,8 +1669,6 @@ defmodule MoneyTreeWeb.DashboardLive do
   end
 
   defp parse_budget_period(_), do: :error
-
-  defp format_date(nil), do: "--"
 
   defp format_date(%Date{} = date) do
     Calendar.strftime(date, "%b %d, %Y")

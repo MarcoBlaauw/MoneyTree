@@ -61,6 +61,12 @@ pnpm --filter @money-tree/ui run build
 echo "==> Installing Elixir dependencies (mix deps.get)"
 mix deps.get
 
+if [[ "${MONEYTREE_SECRET_BACKEND:-env}" == "openbao" || "${SECRET_BACKEND_MODE:-}" == "openbao" ]]; then
+  echo "==> Ensuring local OpenBao dev service is provisioned"
+  "$ROOT_DIR/scripts/setup_openbao_dev.sh"
+  load_env_file "$ENV_FILE"
+fi
+
 if ! mix ecto.migrate >/dev/null 2>&1; then
   echo "==> Database migrate failed; attempting full ecto.setup"
   mix ecto.setup

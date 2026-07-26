@@ -668,7 +668,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
           "estimated_closing_costs_expected" => "6500.00",
           "estimated_cash_to_close_expected" => "9000.00",
           "lock_available" => "true",
-          "quote_expires_at" => "2026-06-01T00:00:00Z",
+          "quote_expires_at" => "2027-06-01T00:00:00Z",
           "status" => "active",
           "source_note" => "manual quote"
         }
@@ -683,7 +683,7 @@ defmodule MoneyTreeWeb.LoansLiveTest do
     assert html =~ "$6500.00"
     assert html =~ "Cash $9000.00"
     assert html =~ "Available"
-    assert html =~ "Jun 1, 2026"
+    assert html =~ "Jun 1, 2027"
     assert html =~ "Convert to scenario"
 
     assert [

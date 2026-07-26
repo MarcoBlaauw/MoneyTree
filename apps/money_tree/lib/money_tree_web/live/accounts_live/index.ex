@@ -137,7 +137,8 @@ defmodule MoneyTreeWeb.AccountsLive.Index do
             <p class="text-sm text-zinc-500">Account balances by MoneyTree classification, institution, and balance.</p>
           </div>
 
-          <form phx-change="change-account-list-preferences"
+          <form id="account-list-preferences-form"
+                phx-change="change-account-list-preferences"
                 class="grid gap-3 sm:grid-cols-2 md:w-[25rem]">
             <label class="space-y-1">
               <span class="text-xs font-medium uppercase tracking-wide text-zinc-500">View</span>
@@ -532,6 +533,7 @@ defmodule MoneyTreeWeb.AccountsLive.Index do
         </div>
       </div>
       <form :if={@editing_account_id == @account_summary.account.id}
+            id={"account-edit-form-#{@account_summary.account.id}"}
             phx-submit="update-account"
             phx-change="change-account-classification"
             phx-value-id={@account_summary.account.id}
@@ -626,6 +628,4 @@ defmodule MoneyTreeWeb.AccountsLive.Index do
   defp format_datetime(%DateTime{} = value) do
     Calendar.strftime(value, "%b %-d, %Y %I:%M %p")
   end
-
-  defp format_datetime(_value), do: "Unknown"
 end

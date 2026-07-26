@@ -8,8 +8,9 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
   import Phoenix.LiveViewTest
 
   alias Decimal
-  alias MoneyTree.Transactions.Transaction
+  alias MoneyTree.Categorization
   alias MoneyTree.Repo
+  alias MoneyTree.Transactions.Transaction
 
   defmodule FakeSynchronization do
     def schedule_incremental_sync(_connection, _opts \\ []), do: :ok
@@ -174,6 +175,9 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
         status: "posted"
       })
       |> Repo.insert!()
+
+    assert {:ok, _category} =
+             Categorization.create_category(user, %{name: "Groceries", kind: "expense"})
 
     {:ok, view, html} = live(conn, ~p"/app/transactions")
 

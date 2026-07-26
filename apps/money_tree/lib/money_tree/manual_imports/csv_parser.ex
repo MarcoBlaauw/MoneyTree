@@ -247,8 +247,6 @@ defmodule MoneyTree.ManualImports.CSVParser do
     end
   end
 
-  defp parse_date(nil), do: {:error, :invalid}
-
   defp parse_date(value) do
     trimmed = String.trim(to_string(value))
 
@@ -279,10 +277,8 @@ defmodule MoneyTree.ManualImports.CSVParser do
       serial_days = trunc(number)
       base_date = ~D[1899-12-30]
 
-      case Date.add(base_date, serial_days) do
-        %Date{} = date -> {:ok, to_utc_datetime(date)}
-        _ -> {:error, :invalid}
-      end
+      date = Date.add(base_date, serial_days)
+      {:ok, to_utc_datetime(date)}
     else
       _ -> {:error, :invalid}
     end

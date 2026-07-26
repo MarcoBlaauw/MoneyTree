@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "license": "UNLICENSED",
-  "packageManager": "pnpm@11.0.8",
+  "packageManager": "pnpm@11.17.0",
   "engines": {
-    "node": ">=18"
+    "node": ">=24.18.0 <25",
+    "pnpm": ">=11.17.0 <12"
   },
   "scripts": {
     "generate": "pnpm run generate:openapi && pnpm run generate:graphql",
@@ -18,14 +19,14 @@
   },
   "dependencies": {
     "@graphql-typed-document-node/core": "^3.2.0",
-    "graphql": "^16.13.2"
+    "graphql": "^16.14.2"
   },
   "devDependencies": {
-    "@graphql-codegen/cli": "^6.2.1",
-    "@graphql-codegen/typescript": "^5.0.9",
-    "@graphql-codegen/typescript-operations": "^5.0.9",
-    "@graphql-codegen/typed-document-node": "^6.1.7",
+    "@graphql-codegen/cli": "^7.2.0",
+    "@graphql-codegen/typed-document-node": "^7.1.0",
+    "@graphql-codegen/typescript": "^6.1.0",
+    "@graphql-codegen/typescript-operations": "^6.1.2",
     "openapi-typescript": "^7.13.0",
-    "typescript": "^5.5.4"
+    "typescript": "^5.9.3"
   }
 }

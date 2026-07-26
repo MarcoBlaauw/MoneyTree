@@ -28,7 +28,8 @@ defmodule MoneyTree.Loans.FeeQuoteAnalyzer do
   end
 
   @spec missing_required_fees([map()] | LenderQuote.t(), keyword()) :: [map()]
-  def missing_required_fees(classified_lines, fee_types) when is_list(fee_types) do
+  def missing_required_fees(classified_lines, fee_types)
+      when is_list(classified_lines) and is_list(fee_types) do
     present =
       classified_lines
       |> Enum.map(& &1[:loan_fee_type_id])
@@ -50,7 +51,7 @@ defmodule MoneyTree.Loans.FeeQuoteAnalyzer do
     end)
   end
 
-  def missing_required_fees(%LenderQuote{} = quote, opts) do
+  def missing_required_fees(%LenderQuote{} = quote, opts) when is_list(opts) do
     quote
     |> classify_quote(opts)
     |> Map.fetch!(:missing_required_fees)

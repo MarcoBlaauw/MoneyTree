@@ -295,8 +295,6 @@ defmodule MoneyTree.SimpleFin.Client do
     |> Enum.map(&Redaction.redact/1)
   end
 
-  defp simplefin_errors(_body), do: []
-
   defp normalize_body(body) when is_map(body), do: body
 
   defp normalize_body(body) when is_binary(body) do

@@ -1142,7 +1142,7 @@ defmodule MoneyTree.Accounts do
         role: user.role
       },
       security: %{
-        multi_factor_enabled: Map.get(user, :multi_factor_enabled, false),
+        multi_factor_enabled: false,
         password_enabled: is_binary(user.password_hash) and user.password_hash != "",
         magic_link_enabled: true,
         passkeys_count: length(passkeys),
@@ -1485,6 +1485,8 @@ defmodule MoneyTree.Accounts do
       {:ok,
        webauthn_adapter().new_registration_challenge(
          build_webauthn_challenge_options(
+           origin: challenge.origin,
+           rp_id: challenge.rp_id,
            user_verification: challenge.user_verification,
            bytes: challenge_bytes
          )
@@ -1497,6 +1499,8 @@ defmodule MoneyTree.Accounts do
       {:ok,
        webauthn_adapter().new_authentication_challenge(
          build_webauthn_challenge_options(
+           origin: challenge.origin,
+           rp_id: challenge.rp_id,
            user_verification: challenge.user_verification,
            allow_credentials: webauthn_allow_credentials(user),
            bytes: challenge_bytes

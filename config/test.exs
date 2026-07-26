@@ -14,7 +14,8 @@ test_db_port =
   System.get_env("TEST_DATABASE_PORT") || System.get_env("DATABASE_PORT") || "5432"
 
 test_db_pool_size =
-  System.get_env("TEST_DATABASE_POOL_SIZE") || "10"
+  System.get_env("TEST_DATABASE_POOL_SIZE") ||
+    Integer.to_string(max(System.schedulers_online(), 10))
 
 config :money_tree, MoneyTree.Repo,
   username: test_db_username,

@@ -202,12 +202,6 @@ defmodule MoneyTreeWeb.TellerWebhookController do
     |> json(%{error: "failed to record webhook"})
   end
 
-  defp respond(conn, {:error, _other}) do
-    conn
-    |> put_status(:bad_request)
-    |> json(%{error: "unable to process webhook"})
-  end
-
   defp fetch_raw_body(%Plug.Conn{assigns: %{raw_body: body}}) when is_binary(body) do
     {:ok, body}
   end

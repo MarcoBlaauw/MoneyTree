@@ -255,7 +255,6 @@ defmodule MoneyTree.AI do
         {:ok, run}
       end
     else
-      false -> {:error, :no_transactions}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -294,7 +293,6 @@ defmodule MoneyTree.AI do
         {:ok, run}
       end
     else
-      false -> {:error, :no_import_rows}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -1711,7 +1709,6 @@ defmodule MoneyTree.AI do
   end
 
   defp extract_json_candidate(value) when is_binary(value), do: parse_json_like(value)
-  defp extract_json_candidate(_value), do: :error
 
   defp parse_json_like(text) when is_binary(text) do
     trimmed = String.trim(text)

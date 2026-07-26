@@ -1,35 +1,35 @@
-import React from "react";
-import Link from "next/link";
+import React from 'react';
+import Link from 'next/link';
 
-import { ObligationManagerCard } from "./obligation-manager-card";
-import { NotificationPreferencesCard } from "./notification-preferences-card";
-import { ManualImportCard } from "./manual-import-card";
-import type { ControlPanelObligation, FundingAccountOption } from "../lib/obligations";
-import {
-  getControlPanelObligations,
-  getFundingAccountOptions,
-} from "../lib/obligations";
-import type { ControlPanelSettings } from "../lib/settings";
-import { getControlPanelSettings } from "../lib/settings";
+import { ObligationManagerCard } from './obligation-manager-card';
+import { NotificationPreferencesCard } from './notification-preferences-card';
+import { ManualImportCard } from './manual-import-card';
+import { SecretBackendCard } from './secret-backend-card';
+import type { ControlPanelObligation, FundingAccountOption } from '../lib/obligations';
+import { getControlPanelObligations, getFundingAccountOptions } from '../lib/obligations';
+import type { SecretBackendStatus } from '../lib/secret-backend';
+import { getSecretBackendStatus } from '../lib/secret-backend.server';
+import type { ControlPanelSettings } from '../lib/settings';
+import { getControlPanelSettings } from '../lib/settings';
 
 function formatDateTime(value: string | null): string {
   if (!value) {
-    return "Never";
+    return 'Never';
   }
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "Unknown";
+    return 'Unknown';
   }
 
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
   }).format(date);
 }
 
-function deriveLastLogin(sessions: ControlPanelSettings["sessions"]): string {
+function deriveLastLogin(sessions: ControlPanelSettings['sessions']): string {
   const latest = sessions.reduce<Date | null>((mostRecent, session) => {
     if (!session.lastUsedAt) {
       return mostRecent;
@@ -48,12 +48,12 @@ function deriveLastLogin(sessions: ControlPanelSettings["sessions"]): string {
   }, null);
 
   if (!latest) {
-    return "Never";
+    return 'Never';
   }
 
-  return new Intl.DateTimeFormat("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
   }).format(latest);
 }
 
@@ -61,6 +61,7 @@ type ControlPanelContentProps = {
   csrfToken: string;
   fundingAccounts: FundingAccountOption[];
   obligations: ControlPanelObligation[];
+  secretBackendStatus: SecretBackendStatus | null;
   settings: ControlPanelSettings | null;
 };
 
@@ -68,6 +69,7 @@ function ControlPanelContent({
   csrfToken,
   fundingAccounts,
   obligations,
+  secretBackendStatus,
   settings,
 }: ControlPanelContentProps) {
   if (!settings) {
@@ -75,10 +77,13 @@ function ControlPanelContent({
       <main className="bg-background text-foreground min-h-screen">
         <section className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-6 py-16">
           <header className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary">Owner tools</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              Owner tools
+            </p>
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">Control panel</h1>
             <p className="text-sm text-zinc-500">
-              Sign in to review your profile, manage notification preferences, and audit device sessions.
+              Sign in to review your profile, manage notification preferences, and audit device
+              sessions.
             </p>
           </header>
           <div className="rounded-xl border border-dashed border-primary/30 bg-white/70 p-6 text-sm text-zinc-600">
@@ -105,10 +110,11 @@ function ControlPanelContent({
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-foreground">Control panel</h1>
             <p className="text-sm text-zinc-500">
-              Manage profile information, fine-tune notification preferences, and monitor signed-in devices.
+              Manage profile information, fine-tune notification preferences, and monitor signed-in
+              devices.
             </p>
           </div>
-          {role === "owner" ? (
+          {role === 'owner' ? (
             <div>
               <Link
                 href="/owner/users"
@@ -119,7 +125,9 @@ function ControlPanelContent({
             </div>
           ) : null}
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-primary">
-            <p className="font-medium">Signed in as {displayName ?? fullName ?? email ?? "Unknown user"}.</p>
+            <p className="font-medium">
+              Signed in as {displayName ?? fullName ?? email ?? 'Unknown user'}.
+            </p>
             <p className="text-primary/80">Last login: {lastLogin}</p>
           </div>
         </header>
@@ -128,28 +136,27 @@ function ControlPanelContent({
           <article className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
             <div className="space-y-1">
               <h2 className="text-lg font-semibold text-zinc-900">Profile</h2>
-              <p className="text-sm text-zinc-500">Review the key details tied to your MoneyTree identity.</p>
+              <p className="text-sm text-zinc-500">
+                Review the key details tied to your MoneyTree identity.
+              </p>
             </div>
             <dl className="space-y-3 text-sm text-zinc-600">
               <div className="flex items-center justify-between">
                 <dt className="font-medium text-zinc-700">Full name</dt>
-                <dd className="text-right text-zinc-900">{fullName ?? "Not provided"}</dd>
+                <dd className="text-right text-zinc-900">{fullName ?? 'Not provided'}</dd>
               </div>
               <div className="flex items-center justify-between">
                 <dt className="font-medium text-zinc-700">Email</dt>
-                <dd className="text-right text-zinc-900">{email ?? "Unknown"}</dd>
+                <dd className="text-right text-zinc-900">{email ?? 'Unknown'}</dd>
               </div>
               <div className="flex items-center justify-between">
                 <dt className="font-medium text-zinc-700">Role</dt>
-                <dd className="text-right capitalize text-zinc-900">{role ?? "member"}</dd>
+                <dd className="text-right capitalize text-zinc-900">{role ?? 'member'}</dd>
               </div>
             </dl>
           </article>
 
-          <NotificationPreferencesCard
-            csrfToken={csrfToken}
-            initialNotifications={notifications}
-          />
+          <NotificationPreferencesCard csrfToken={csrfToken} initialNotifications={notifications} />
 
           <ObligationManagerCard
             csrfToken={csrfToken}
@@ -159,11 +166,16 @@ function ControlPanelContent({
 
           <ManualImportCard csrfToken={csrfToken} accounts={fundingAccounts} />
 
+          {role === 'owner' && secretBackendStatus ? (
+            <SecretBackendCard csrfToken={csrfToken} initialStatus={secretBackendStatus} />
+          ) : null}
+
           <article className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm lg:col-span-2">
             <div className="space-y-1">
               <h2 className="text-lg font-semibold text-zinc-900">Active sessions</h2>
               <p className="text-sm text-zinc-500">
-                Track which devices are authenticated. Sign out of any unfamiliar sessions from the Phoenix app.
+                Track which devices are authenticated. Sign out of any unfamiliar sessions from the
+                Phoenix app.
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -180,9 +192,11 @@ function ControlPanelContent({
                   {sessions.map((session) => (
                     <tr key={session.id} className="border-b border-zinc-100">
                       <td className="py-2 pr-4 font-medium text-zinc-800">{session.context}</td>
-                      <td className="py-2 pr-4 text-zinc-600">{formatDateTime(session.lastUsedAt)}</td>
-                      <td className="py-2 pr-4 text-zinc-600">{session.ipAddress ?? "Unknown"}</td>
-                      <td className="py-2 text-zinc-600">{session.userAgent ?? "Unknown"}</td>
+                      <td className="py-2 pr-4 text-zinc-600">
+                        {formatDateTime(session.lastUsedAt)}
+                      </td>
+                      <td className="py-2 pr-4 text-zinc-600">{session.ipAddress ?? 'Unknown'}</td>
+                      <td className="py-2 text-zinc-600">{session.userAgent ?? 'Unknown'}</td>
                     </tr>
                   ))}
                   {sessions.length === 0 ? (
@@ -205,6 +219,7 @@ function ControlPanelContent({
 type SettingsFetcher = () => Promise<ControlPanelSettings | null>;
 type ObligationsFetcher = () => Promise<ControlPanelObligation[]>;
 type FundingAccountsFetcher = () => Promise<FundingAccountOption[]>;
+type SecretBackendStatusFetcher = () => Promise<SecretBackendStatus | null>;
 
 export async function renderControlPanelPage(
   fetchSettings: SettingsFetcher = getControlPanelSettings,
@@ -212,19 +227,22 @@ export async function renderControlPanelPage(
     csrfToken?: string;
     fetchFundingAccounts?: FundingAccountsFetcher;
     fetchObligations?: ObligationsFetcher;
+    fetchSecretBackendStatus?: SecretBackendStatusFetcher;
   } = {},
 ) {
-  const [settings, fundingAccounts, obligations] = await Promise.all([
+  const [settings, fundingAccounts, obligations, secretBackendStatus] = await Promise.all([
     fetchSettings(),
     (options.fetchFundingAccounts ?? getFundingAccountOptions)(),
     (options.fetchObligations ?? getControlPanelObligations)(),
+    (options.fetchSecretBackendStatus ?? getSecretBackendStatus)(),
   ]);
 
   return (
     <ControlPanelContent
-      csrfToken={options.csrfToken ?? ""}
+      csrfToken={options.csrfToken ?? ''}
       fundingAccounts={fundingAccounts}
       obligations={obligations}
+      secretBackendStatus={secretBackendStatus}
       settings={settings}
     />
   );

@@ -4,34 +4,34 @@ MoneyTree is a Phoenix-powered financial management API designed to support secu
 
 ## Development Environment
 
-MoneyTree targets Elixir **1.19.2** and Erlang/OTP **28.1.1**. Install them with [mise](https://mise.jdx.dev/) or [asdf](https://asdf-vm.com/) before running any mix tasks.
+MoneyTree targets Elixir **1.20.2** and Erlang/OTP **29.0.3**. Install them with [mise](https://mise.jdx.dev/) or [asdf](https://asdf-vm.com/) before running any mix tasks.
 
 ```bash
 # Preferred: installs the exact versions declared in `.tool-versions`
 ./scripts/install_toolchain.sh
 
 # Alternatively, run the commands manually
-mise install erlang@28.1.1 elixir@1.19.2
+mise install erlang@29.0.3 elixir@1.20.2-otp-29
 # or
-asdf install erlang 28.1.1
-asdf install elixir 1.19.2
+asdf install erlang 29.0.3
+asdf install elixir 1.20.2-otp-29
 ```
 
 After installation, make sure `mix` is available on your `PATH` (`mix --version`). For `mise`, run `eval "$(mise activate bash)"` in your shell session. For `asdf`, source `${HOME}/.asdf/asdf.sh` (and `${HOME}/.asdf/completions/asdf.bash` for completions).
 
 ### JavaScript toolchain
 
-The repository also contains shared UI packages and a Next.js frontend managed with **pnpm 10**. Install the Node.js and pnpm toolchain before running any JavaScript tasks:
+The repository also contains shared UI packages and a Next.js frontend managed with **pnpm 11**. Install the Node.js and pnpm toolchain before running any JavaScript tasks:
 
 ```bash
-# Install Node.js v24.11.0 (latest LTS). Examples:
-mise install node@24.11.0
+# Install Node.js v24.18.0 (latest LTS). Examples:
+mise install node@24.18.0
 # or
-asdf install nodejs 24.11.0
+asdf install nodejs 24.18.0
 
 # Enable pnpm via Corepack once Node.js is installed
 corepack enable
-corepack prepare pnpm@10.18.3 --activate
+corepack prepare pnpm@11.17.0 --activate
 ```
 
 Verify both runtimes are ready:
@@ -59,24 +59,23 @@ pnpm --version
    ```bash
    docker compose up -d db
    ```
-4. Install dependencies, set up the database, and run required Oban migrations from the umbrella root:
+4. Install dependencies, set up the database, and run the local app stack through the repo startup script:
    ```bash
-   mix setup
-   ```
-5. Start the Phoenix server:
-   ```bash
-   mix phx.server
+   ./scripts/dev.sh
    ```
 
-6. Install JavaScript dependencies with [pnpm](https://pnpm.io/) to enable the shared Tailwind preset and upcoming frontends:
+   When `MONEYTREE_SECRET_BACKEND=openbao`, this script also provisions the local compose-backed
+   OpenBao service before running migrations and starting Phoenix/Next.
+
+5. To provision only the local OpenBao dev service without starting the app:
    ```bash
-   pnpm install
+   ./scripts/setup_openbao_dev.sh
    ```
 
-When you're finished working, stop the database container to free resources:
+When you're finished working, stop the database and OpenBao containers to free resources:
 
 ```bash
-docker compose stop db
+docker compose stop db openbao
 ```
 
 The API will be available on [http://localhost:4000](http://localhost:4000).

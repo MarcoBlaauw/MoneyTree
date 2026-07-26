@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": false,
     "skipLibCheck": true,
     "strict": true,
@@ -11,15 +15,25 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "incremental": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./app/*"],
-      "@money-tree/ui": ["../ui"],
-      "@money-tree/ui/*": ["../ui/*"],
-      "@moneytree/contracts": ["../contracts/src"],
-      "@moneytree/contracts/*": ["../contracts/src/*"]
+      "@/*": [
+        "./app/*"
+      ],
+      "@money-tree/ui": [
+        "../ui"
+      ],
+      "@money-tree/ui/*": [
+        "../ui/*"
+      ],
+      "@moneytree/contracts": [
+        "../contracts/src"
+      ],
+      "@moneytree/contracts/*": [
+        "../contracts/src/*"
+      ]
     },
     "plugins": [
       {
@@ -27,6 +41,14 @@
       }
     ]
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }

@@ -30,7 +30,31 @@ source .env
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
+| `MONEYTREE_SECRET_BACKEND` | No | `env` | Runtime secret provider. Use `env` for current deployments. `openbao` selects the OpenBao provider for known secret groups, but production migration/status surfaces are not complete yet. Unsupported values currently fall back to `env`. |
 | `CLOAK_VAULT_KEY` | Yes | — | Base64-encoded key that secures encrypted fields via Cloak. Rotate and store securely. |
+
+## OpenBao secret backend
+
+OpenBao support is being rolled out in phases. The current code supports AppRole login and KV reads for
+known secret groups. Local development can use the compose-backed OpenBao service by running
+`./scripts/setup_openbao_dev.sh`, which starts OpenBao, provisions the local policy/AppRole, seeds dev
+secret groups from `.env`, and writes the local `OPENBAO_*` metadata back to `.env`.
+`./scripts/dev.sh` runs this setup automatically when `MONEYTREE_SECRET_BACKEND=openbao`.
+
+Keep `MONEYTREE_SECRET_BACKEND=env` for deployments unless you have provisioned the documented OpenBao
+paths and policy.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `SECRET_BACKEND_MODE` | No | — | Compatibility alias for `MONEYTREE_SECRET_BACKEND`. `MONEYTREE_SECRET_BACKEND` takes precedence when both are set. |
+| `OPENBAO_ADDR` | Yes (when OpenBao enabled) | — | OpenBao server URL, such as `https://bao.internal:8200`. |
+| `OPENBAO_NAMESPACE` | No | — | Optional OpenBao namespace for deployments that use namespaces. |
+| `OPENBAO_AUTH_METHOD` | Yes (when OpenBao enabled) | `approle` | Auth method for the MoneyTree machine identity. Current scaffold validates `approle`. |
+| `OPENBAO_ROLE_ID` | Yes (AppRole) | — | AppRole role ID for the MoneyTree machine identity. |
+| `OPENBAO_SECRET_ID` | Yes (AppRole) | — | AppRole secret ID or wrapped/bootstrap-provided secret ID for the MoneyTree machine identity. |
+| `OPENBAO_KV_PREFIX` | Yes (when OpenBao enabled) | — | KV path prefix for this deployment, for example `kv/data/moneytree/prod`. |
+| `OPENBAO_SSL_VERIFY` | No | `true` | Whether to verify OpenBao TLS certificates. Keep `true` outside controlled local development. |
+| `OPENBAO_TIMEOUT_MS` | No | `5000` | Timeout in milliseconds for future OpenBao HTTP requests. |
 
 ## Oban background processing
 

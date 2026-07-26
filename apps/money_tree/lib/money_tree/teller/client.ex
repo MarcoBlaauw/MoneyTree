@@ -435,8 +435,6 @@ defmodule MoneyTree.Teller.Client do
     end)
   end
 
-  defp stringify_keys(_other), do: %{}
-
   defp pop_access_token(params) when is_map(params) do
     access_token =
       params[:access_token] || params["access_token"] || params[:token] || params["token"]

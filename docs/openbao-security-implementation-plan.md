@@ -17,6 +17,18 @@ following goals:
 
 This document is intentionally implementation-oriented and repo-specific.
 
+## Implementation status
+
+Status as of 2026-05-27:
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Phase 1 secrets abstraction | Done for env-backed behavior | `MoneyTree.Secrets`, `MoneyTree.Secrets.Provider`, and `MoneyTree.Secrets.Env` exist. Runtime secret reads for current sensitive groups now flow through the env-backed abstraction without changing current behavior. |
+| Phase 2 OpenBao read integration | Locally validated; staging/production pending | `MoneyTree.Secrets.OpenBao` supports metadata validation, AppRole auth, secret group path mapping, KV reads, payload normalization, and sanitized telemetry. The compose-backed local OpenBao service validates the app code path. Staging/production validation is still pending. |
+| Phase 3 status and observability | Locally validated; staging/production pending | `MoneyTree.Secrets.Health`, owner-only status/revalidation APIs, a status-only control-panel card, and sanitized health/fallback telemetry exist. The local health-summary path validates against compose-backed OpenBao. Staging/production validation is still pending. |
+| Phase 4 production migration | Prepared; cutover pending | Production policy, runbook, and preflight script exist. Production has not been switched to OpenBao-backed secret mode. |
+| Phase 5 follow-up hardening | Partially documented | Rotation and outage handling are documented in the production runbook. Lease renewal/expiry handling and bootstrap credential hardening remain future work. |
+
 ## End Goal
 
 MoneyTree production should be able to boot and operate with OpenBao as the authoritative source for
@@ -580,7 +592,7 @@ or add a card to the existing control panel page.
 
 ## API changes
 
-Add minimal owner-only endpoints if needed for status checks, for example:
+Owner-only endpoints added:
 
 - `GET /api/owner/security/secret-backend`
 - `POST /api/owner/security/secret-backend/revalidate`
@@ -593,15 +605,17 @@ These endpoints must return status metadata only.
 
 ## Phase 1 — planning and scaffolding
 
+Status: completed for env-backed behavior on 2026-05-26.
+
 Goal: introduce a secrets abstraction without changing production behavior yet.
 
 Tasks:
 
-1. add `MoneyTree.Secrets` modules and provider abstraction
-2. implement `Env` provider first
-3. add secret backend mode selection with `env` default
-4. refactor `runtime.exs` to use the abstraction while preserving current behavior
-5. add tests for secret group resolution and fail-fast behavior
+1. add `MoneyTree.Secrets` modules and provider abstraction — done
+2. implement `Env` provider first — done
+3. add secret backend mode selection with `env` default — done
+4. refactor `runtime.exs` to use the abstraction while preserving current behavior — done for current sensitive runtime groups
+5. add tests for secret group resolution and fail-fast behavior — env-backed normalization, group lookup, and provider selection are covered; existing runtime fail-fast rules are preserved
 
 Exit criteria:
 
@@ -610,21 +624,23 @@ Exit criteria:
 
 ## Phase 2 — OpenBao read integration
 
+Status: locally validated on 2026-05-27. Provider selection, metadata validation, AppRole auth, group path mapping, HTTP KV reads, payload normalization, and sanitized telemetry exist. The compose-backed local OpenBao service validates the MoneyTree provider code path. Staging/production validation is still pending.
+
 Goal: add production-capable OpenBao secret resolution.
 
 Tasks:
 
-1. implement `MoneyTree.Secrets.OpenBao`
-2. add OpenBao auth flow using constrained machine identity
+1. implement `MoneyTree.Secrets.OpenBao` — done for AppRole/KV v1-v2 read path
+2. add OpenBao auth flow using constrained machine identity — done for AppRole
 3. add read-only group resolution for:
    - database
    - cloak
    - phoenix
    - plaid
    - teller
-   - smtp
-4. add structured error handling and telemetry
-5. add integration tests around configuration resolution where feasible
+   - smtp — done through configured KV group paths
+4. add structured error handling and telemetry — done with sanitized request telemetry
+5. add integration tests around configuration resolution where feasible — focused Req-backed tests and local compose-backed OpenBao validation done; staging/production validation pending
 
 Exit criteria:
 
@@ -633,32 +649,36 @@ Exit criteria:
 
 ## Phase 3 — status and observability
 
+Status: locally validated on 2026-05-27. Backend health summaries, owner-only API endpoints, a status-only control-panel card, and sanitized health/fallback telemetry exist. The health-summary path validates against the compose-backed local OpenBao service. Staging/production validation remains.
+
 Goal: make the integration operationally visible without exposing values.
 
 Tasks:
 
-1. add `MoneyTree.Secrets.Health`
-2. add owner-only API endpoint(s) for status
-3. add a status-only control-panel card/page
-4. emit telemetry around health and fallback usage
-5. sanitize all returned/logged error messages
+1. add `MoneyTree.Secrets.Health` — done
+2. add owner-only API endpoint(s) for status — done for `GET /api/owner/security/secret-backend` and `POST /api/owner/security/secret-backend/revalidate`
+3. add a status-only control-panel card/page — done in the Next control panel for owner users
+4. emit telemetry around health and fallback usage — done with sanitized OpenBao request, health summary, and provider fallback events
+5. sanitize all returned/logged error messages — done for backend status payloads and current UI
 
 Exit criteria:
 
-- owners can see integration health
+- owners can see integration health in the control panel — done locally
 - no secret payloads are visible in the app
 
 ## Phase 4 — production migration
+
+Status: prepared on 2026-05-27. The production read policy, deployment runbook, and OpenBao preflight script exist. Real production/staging cutover still requires operator-provided OpenBao infrastructure and secret values.
 
 Goal: move production off direct secret env usage for the high-priority groups.
 
 Tasks:
 
-1. create production OpenBao paths and policies
-2. load production secret groups into OpenBao
-3. switch production to `openbao` mode
-4. verify startup, integrations, and mail/webhook flows
-5. remove or reduce redundant production env secrets where practical
+1. create production OpenBao paths and policies — policy file documented; actual production application pending
+2. load production secret groups into OpenBao — pending operator-provided secret values
+3. switch production to `openbao` mode — pending production/staging cutover
+4. verify startup, integrations, and mail/webhook flows — preflight script exists; production verification pending
+5. remove or reduce redundant production env secrets where practical — pending successful cutover
 
 Exit criteria:
 
@@ -667,14 +687,16 @@ Exit criteria:
 
 ## Phase 5 — follow-up hardening
 
+Status: partially documented on 2026-05-27. Rotation and outage handling are captured in the production runbook. Lease renewal/expiry behavior and stronger bootstrap credential handling remain future work.
+
 Goal: reduce residual risk and improve operational maturity.
 
 Tasks:
 
 1. add lease renewal/expiry handling if applicable
 2. reduce lifetime of bootstrap credentials
-3. document rotation playbooks
-4. document disaster recovery / OpenBao outage behavior
+3. document rotation playbooks — done in the production runbook
+4. document disaster recovery / OpenBao outage behavior — done at the application runbook level; infrastructure-specific restore procedure depends on the chosen OpenBao storage backend
 5. consider future step-up auth for sensitive owner operations
 
 Exit criteria:

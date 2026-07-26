@@ -122,8 +122,6 @@ defmodule MoneyTreeWeb.SettingsController do
     |> maybe_from_full_name(profile)
   end
 
-  defp display_name(_), do: nil
-
   defp maybe_from_full_name(full_name, profile) when is_binary(full_name) do
     full_name = String.trim(full_name)
 

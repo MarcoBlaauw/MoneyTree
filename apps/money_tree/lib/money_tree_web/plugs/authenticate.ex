@@ -3,15 +3,13 @@ defmodule MoneyTreeWeb.Plugs.Authenticate do
   Loads the current user from the session cookie and enforces role-based access.
   """
 
-  import Plug.Conn
+  @behaviour Plug
 
-  require Logger
+  import Plug.Conn
 
   alias MoneyTree.Accounts
   alias MoneyTree.Audit
   alias MoneyTreeWeb.Auth
-
-  @behaviour Plug
 
   @impl true
   def init(opts) do

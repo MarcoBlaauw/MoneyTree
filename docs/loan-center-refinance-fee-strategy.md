@@ -1,620 +1,164 @@
 # Loan Center Refinance Fee Strategy
 
-## Purpose
-
-Define a practical refinance fee strategy for MoneyTree's Loan Center so refinance scenarios do not default to unrealistic zero-cost assumptions.
-
-The goal is to make refinance analysis useful before lender integrations exist by generating reasonable, editable low / expected / high fee ranges from documented assumptions.
-
-This document supplements the existing Loan Center implementation plan. The existing plan already includes refinance fee items, true refinance costs, cash-flow timing costs, offsets, and low / expected / high cost ranges. This document turns that direction into a repo-adapted implementation strategy.
-
 ## Status
 
-This plan is adapted to the current MoneyTree repo state as of May 9, 2026.
+Archived as implemented for the current MoneyTree Loan Center scope as of 2026-05-26.
 
-Market-rate provider v1 is complete enough to support this work:
+This plan was originally written to prevent refinance analysis from treating missing fees as a complete `$0.00` cost scenario. That intended functionality is now implemented through the broader structured loan-fee subsystem and Loan Center refinance workspace.
 
-- FRED imports are implemented through `MoneyTree.Loans.RateProviders.Fred`.
-- Imported benchmark observations are normalized into existing `loan_rate_sources` and `loan_rate_observations`.
-- Loan Center already exposes market snapshots, trend windows, source attribution, data-quality warnings, and the required FRED notice.
-- Future market-rate work remains intentionally deferred: persistent snapshot cache, lock-period metadata, refinance opportunity score, and enterprise providers such as ICE Mortgage Technology or Optimal Blue.
+Do not use this document to schedule the older no-migration `RefinanceFeeCatalog` or `RefinanceFeeStrategy` path. That path was superseded by `docs/loan-fee-subsystem-implementation-plan.md`.
 
-This fee strategy should build on the current refinance structures instead of introducing a parallel model.
+## Implemented Current State
 
-Update after the broader loan-fee subsystem decision:
+The active implementation now lives in the Loans domain:
 
-- The no-migration `RefinanceFeeCatalog` path is superseded by `docs/loan-fee-subsystem-implementation-plan.md`.
-- `refinance_fee_items` remain the editable per-scenario output, but durable canonical fee configuration now lives in `loan_fee_types`, jurisdiction profiles, and jurisdiction rules.
-- Mortgage refinance is the first full consumer; other loan types start with sparse low-confidence fee definitions.
-
-## Comparison To Uploaded Source
-
-The uploaded source document adds important product requirements that were under-specified in the first repo-adapted version:
-
-- It explicitly treats missing fees as incomplete analysis, not `$0.00`.
-- It provides concrete generic national starting ranges.
-- It defines source priority for fee assumptions.
-- It calls out prepaid interest, escrow/prepaid timing, old escrow refunds, and lender credits in more detail.
-- It suggests reusable template storage as a future option.
-
-This version keeps those requirements, but adapts the implementation order to the current repo:
-
-- First pass should use an in-code catalog and estimator, not a new `refinance_fee_templates` table.
-- Template persistence remains a future additive migration after the static catalog proves useful.
-- Existing `refinance_fee_items`, quote conversion, document extraction, and deterministic calculator code remain the system of record.
-- Market-rate provider future work stays adjacent, not coupled to fee generation.
-
-## Problem
-
-The refinance calculator can compare payment, break-even, and full-term cost, but a refinance scenario with no fee assumptions produces misleading results.
-
-Symptoms:
-
-- break-even values can appear unrealistically short
-- full-term deltas can look overly favorable
-- cash-to-close can show `$0.00`
-- users may anchor on incomplete results
-
-MoneyTree should never silently treat missing fees as a complete zero-cost scenario. If no fee assumptions are loaded, the UI and analysis warnings should say so clearly.
-
-## Current Repo Fit
-
-Existing implementation surfaces:
-
-- `apps/money_tree/lib/money_tree/loans/refinance_fee_item.ex`
-  Existing line-item model for refinance cost and cash-flow timing assumptions.
-- `apps/money_tree/lib/money_tree/loans/refinance_scenario.ex`
-  Scenario assumptions including rate, term, points, lender credit, cash in/out, and quote linkage.
-- `apps/money_tree/lib/money_tree/loans/lender_quote.ex`
-  Lender quote model with closing-cost, cash-to-close, monthly payment, lock, and expiration fields.
-- `apps/money_tree/lib/money_tree/loans/refinance_calculator.ex`
-  Deterministic refinance math. This should remain the only place for calculation formulas.
 - `apps/money_tree/lib/money_tree/loans.ex`
-  Context functions for fee creation, quote conversion, document extraction conversion, scenario analysis, market snapshots, and alerts.
+- `apps/money_tree/lib/money_tree/loans/refinance_scenario.ex`
+- `apps/money_tree/lib/money_tree/loans/refinance_fee_item.ex`
+- `apps/money_tree/lib/money_tree/loans/refinance_calculator.ex`
+- `apps/money_tree/lib/money_tree/loans/fee_prediction_engine.ex`
+- `apps/money_tree/lib/money_tree/loans/fee_quote_analyzer.ex`
+- `apps/money_tree/lib/money_tree/loans/loan_fee_defaults.ex`
+- `apps/money_tree/lib/money_tree/loans/loan_fee_type.ex`
+- `apps/money_tree/lib/money_tree/loans/loan_fee_jurisdiction_profile.ex`
+- `apps/money_tree/lib/money_tree/loans/loan_fee_jurisdiction_rule.ex`
+- `apps/money_tree/lib/money_tree/loans/lender_quote_fee_line.ex`
 - `apps/money_tree/lib/money_tree_web/live/loans_live/index.ex`
-  Loan Center Refinance workspace UI.
 
-Existing fee behavior:
+Persistence for the completed strategy is provided by:
 
-- Fee items already support `kind`, `category`, amount ranges, lender credits, paid-at-closing, financed, true-cost classification, prepaid/escrow timing classification, and sort order.
-- Quote conversion already seeds:
-  - `Estimated lender quote costs`
-  - `Estimated prepaid and escrow timing costs`
-- Document extraction conversion already creates fee items from confirmed extraction candidates.
-- Break-even uses true refinance costs.
-- Cash-to-close timing uses prepaid/escrow or timing-cost items.
-- Imported market benchmarks remain informational and never overwrite user-entered mortgage or scenario records.
+- `refinance_fee_items` as editable per-scenario fee rows
+- `loan_fee_types` as canonical fee definitions
+- `loan_fee_jurisdiction_profiles` as loan-type and geography-specific fee profiles
+- `loan_fee_jurisdiction_rules` as localized fee calculation rules
+- `loan_lender_quote_fee_lines` as structured lender quote fee review rows
 
-## Goal
+The current implementation covers the original fee-strategy goals:
 
-Make refinance fees easier, safer, and less manual by introducing a structured fee strategy layer:
+- refinance scenarios no longer need to rely on silent zero-cost assumptions
+- fee assumptions can be seeded through "Add common fees"
+- seeded fee rows remain editable and reviewable
+- true refinance costs are separated from prepaid, escrow, and timing costs
+- credits and offsets are modeled separately from fees
+- deterministic analysis remains in Elixir code
+- quote and document-derived values can create reviewable fee/scenario records
+- no imported market benchmark is treated as a personalized lender offer
+- missing, generic, sparse, or low-confidence assumptions are surfaced through warnings/status
 
-- classify fees consistently
-- seed editable default assumptions
-- separate real refinance costs from cash-flow timing items
-- make lender credits and waived fees explicit
-- make quote/document-derived fees traceable
-- keep all calculations deterministic and reviewable
-- prepare for future opportunity scoring without presenting benchmarks as offers
+## Superseded Design Choices
 
-## Non-Goals
+These older recommendations should not be implemented as written:
 
-Do not implement these in the first fee-strategy pass:
+- Add `MoneyTree.Loans.RefinanceFeeCatalog`
+- Add `MoneyTree.Loans.RefinanceFeeStrategy`
+- Keep first-pass fee definitions only in code
+- Add a future `refinance_fee_templates` table
 
-- automatic personalized lender pricing
-- automatic overwrite of user fee items
-- persistent market snapshot cache
-- refinance opportunity score
-- ICE/Optimal Blue integrations
-- new financial advice language
-- AI-generated fee values without user review
+Those ideas were replaced by the durable loan-fee subsystem. Any future fee configuration work should extend `loan_fee_types`, jurisdiction profiles, and jurisdiction rules rather than introducing a parallel catalog/template model.
 
-## Design Principles
+## Current Fee Strategy
 
-- Use existing `refinance_fee_items` first. Add schema fields only when the current model cannot represent a required distinction.
-- Treat all seeded fees as editable assumptions.
-- Never silently replace user-edited fee items.
-- Keep source provenance visible enough to explain where a fee came from.
-- Keep `is_true_cost` and `is_prepaid_or_escrow` semantics strict:
-  - true cost affects break-even and full-term comparison
-  - prepaid/escrow/timing cost affects cash-to-close context but should not be treated as lost refinance cost
-- Lender credits, escrow refunds, waived fees, and other credits should reduce applicable cost totals through existing signed-fee behavior.
-- Imported benchmarks can suggest context, but not guaranteed closing costs or personalized offers.
+Use this source priority when presenting or applying refinance fee assumptions:
 
-## Recommended Data Model
-
-### Phase 1: No Migration
-
-The existing `refinance_fee_items` table can support the first implementation:
-
-- `category`
-- `code`
-- `name`
-- `low_amount`
-- `expected_amount`
-- `high_amount`
-- `fixed_amount`
-- `percentage_of_loan_amount`
-- `kind`
-- `paid_at_closing`
-- `financed`
-- `is_true_cost`
-- `is_prepaid_or_escrow`
-- `required`
-- `sort_order`
-- `notes`
-
-Add a fee catalog in code rather than a new table first.
-
-Suggested module:
-
-- `MoneyTree.Loans.RefinanceFeeCatalog`
-
-Responsibilities:
-
-- define canonical categories and default labels
-- define whether a category defaults to true cost or timing cost
-- define whether a category is usually paid at closing
-- expose preset fee templates for scenario seeding
-- provide display ordering and grouping
-
-### Future Additive Fields
-
-Add these only if source traceability becomes too awkward in `notes` or `category`:
-
-- `source_type` - `manual`, `lender_quote`, `document_extraction`, `catalog_default`, `provider_estimate`
-- `source_id` - nullable string or UUID reference captured as text
-- `review_status` - `draft`, `user_confirmed`, `user_modified`
-- `calculation_basis` - `fixed`, `percentage_of_loan`, `quote`, `document`, `manual`
-
-Do not add these until a focused implementation needs them.
-
-## Fee Taxonomy
-
-Use these canonical categories in the catalog:
-
-| Category | Default Kind | True Cost | Prepaid/Escrow | Notes |
-| --- | --- | --- | --- | --- |
-| `origination` | `fee` | yes | no | lender origination or underwriting charge |
-| `discount_points` | `fee` | yes | no | points paid to buy down rate |
-| `appraisal` | `fee` | yes | no | third-party appraisal |
-| `credit_report` | `fee` | yes | no | credit report or verification |
-| `title_lender_policy` | `fee` | yes | no | lender title policy |
-| `title_settlement` | `fee` | yes | no | settlement, escrow, or closing agent charge |
-| `recording` | `fee` | yes | no | government recording charges |
-| `transfer_tax` | `fee` | yes | no | where applicable |
-| `prepaid_interest` | `timing_cost` | no | yes | timing/cash-flow item |
-| `escrow_deposit` | `timing_cost` | no | yes | timing/cash-flow item |
-| `property_tax_proration` | `timing_cost` | no | yes | timing/cash-flow item |
-| `homeowners_insurance` | `timing_cost` | no | yes | timing/cash-flow item |
-| `lender_credit` | `lender_credit` | yes | no | reduces true refinance cost |
-| `escrow_refund` | `escrow_refund` | no | yes | can offset timing/cash-to-close context |
-| `waived_fee` | `waived_fee` | yes | no | explicit waived cost |
-| `other_credit` | `other_credit` | context-dependent | context-dependent | require user review |
-
-## Implementation Phases
-
-### Phase 1: Fee Catalog Foundation
-
-Status: Ready.
-
-Tasks:
-
-- Add `MoneyTree.Loans.RefinanceFeeCatalog`.
-- Add tests for catalog categories, defaults, grouping, and signed-cost behavior expectations.
-- Keep catalog output as plain maps or structs local to the Loans domain.
-- Do not change database schema.
-
-Acceptance criteria:
-
-- Code can ask for all known refinance fee categories.
-- Code can ask for default attrs for a category.
-- Defaults map cleanly to `RefinanceFeeItem.changeset/2`.
-
-### Phase 2: Fee Strategy Service
-
-Status: Ready after Phase 1.
-
-Suggested module:
-
-- `MoneyTree.Loans.RefinanceFeeStrategy`
-
-Tasks:
-
-- Add deterministic helpers to build editable fee-item attrs from:
-  - catalog defaults
-  - lender quote totals
-  - confirmed document extraction fields
-  - scenario points and lender credit
-- Add guardrails so strategy output never overwrites existing user fee rows automatically.
-- Prefer returning attrs for review over inserting rows directly, except where current flows already insert quote/extraction-derived rows.
-
-Acceptance criteria:
-
-- Existing quote conversion keeps working.
-- Existing extraction conversion keeps working.
-- New strategy helpers return explicit source labels in `notes` until source fields are added.
-- Unit tests cover true-cost totals vs timing-cost totals.
-
-### Phase 3: Loan Center Fee UX Cleanup
-
-Status: Ready after Phase 2.
-
-Tasks:
-
-- Rework the Refinance workspace cost assumptions section into grouped fee cards:
-  - True refinance costs
-  - Prepaids and escrow timing
-  - Credits and offsets
-- Add a clear "Add common fees" action that seeds editable draft rows from the catalog.
-- Keep manual "Add fee item" available for custom rows.
-- Show a compact explanation of how each group affects break-even and cash-to-close.
-- Avoid showing every form by default.
-
-Acceptance criteria:
-
-- User can seed common fees for a scenario without typing every category manually.
-- Seeded rows remain editable.
-- UI clearly distinguishes break-even costs from cash-flow timing.
-- Existing scenario analysis table remains usable and not more crowded.
-
-### Phase 4: Missing-Fee Warnings And Incomplete Analysis Labels
-
-Status: Ready after Phase 2.
-
-Tasks:
-
-- Add deterministic fee assumption status, likely in `MoneyTree.Loans.RefinanceFeeStrategy`.
-- Warn when a scenario has no fee items.
-- Warn when only generic national assumptions are used.
-- Warn when escrow/prepaid data is missing.
-- Label break-even as incomplete when there are no true-cost assumptions.
-- Avoid presenting `True cost $0.00` as complete unless the user explicitly confirms zero-cost assumptions.
-
-Suggested warning text:
-
-```text
-This scenario does not include refinance fee assumptions yet. Break-even and cash-to-close values are incomplete.
-```
-
-```text
-This scenario uses generic national fee estimates. Actual lender, title, recording, and escrow charges may vary.
-```
-
-Acceptance criteria:
-
-- No-fee scenarios are visibly incomplete in the Refinance workspace.
-- Existing deterministic analysis still runs, but warnings reduce confidence.
-- Tests cover no-fee and generic-assumption warning states.
-
-### Phase 5: Quote And Document Fee Mapping
-
-Status: Partial, refine after Phase 2.
-
-Current behavior already maps quote/document totals into fee items. This phase should make the mapping more structured.
-
-Tasks:
-
-- Route quote-derived fee rows through `RefinanceFeeStrategy`.
-- Route document-derived fee rows through the same strategy.
-- Preserve current behavior and tests while centralizing classification.
-- Add tests for:
-  - closing costs as true costs
-  - cash-to-close amount above closing costs as timing cost
-  - lender credit as credit
-  - prepaid/escrow values not inflating break-even
-
-Acceptance criteria:
-
-- Quote conversion and extraction conversion share classification rules.
-- The result is still user-reviewable and editable.
-
-### Phase 6: Market Context, Not Fee Authority
-
-Status: Ready after Phase 3.
-
-Market benchmarks can enrich fee strategy but should not generate personalized costs.
-
-Tasks:
-
-- Use `Loans.mortgage_market_snapshot/0` only to explain market context beside fee assumptions.
-- If market data is stale or incomplete, show warnings from snapshot quality.
-- Do not infer closing costs from FRED rates.
-- If future manual/provider imports include lender-advertised fee ranges, keep them as supplemental observations or quotes, not guaranteed offers.
-
-Acceptance criteria:
-
-- Fee UI can show market context without changing fee rows.
-- Stale market data is labeled.
-- No benchmark rate is described as a user offer.
-
-### Phase 7: Optional Persistent Fee Templates
-
-Status: Future, only after static catalog and estimator prove useful.
-
-The uploaded plan suggested a reusable table named `refinance_fee_templates`. That shape is reasonable, but it should not be first because the current repo can validate the behavior without a migration.
-
-Potential table:
-
-- `id`
-- `loan_type`
-- `state_region`
-- `county_or_parish`
-- `category`
-- `code`
-- `name`
-- `description`
-- `kind`
-- `is_true_cost`
-- `is_prepaid_or_escrow`
-- `calculation_method`
-- `fixed_low_amount`
-- `fixed_expected_amount`
-- `fixed_high_amount`
-- `percent_low`
-- `percent_expected`
-- `percent_high`
-- `minimum_amount`
-- `maximum_amount`
-- `required`
-- `confidence_level`
-- `source_label`
-- `source_url`
-- `notes`
-- `enabled`
-- `sort_order`
-- timestamps
-
-Supported `calculation_method` values:
-
-- `fixed_amount`
-- `percent_of_loan_amount`
-- `fixed_plus_percent`
-- `manual_only`
-- `per_county_schedule` in a later localized phase
-
-Supported `confidence_level` values:
-
-- `low`
-- `moderate`
-- `high`
-
-Do not store provider secrets or external API keys in fee templates.
-
-## Initial Static Assumptions
-
-Add conservative national defaults first. These are not exact lender pricing. They exist to prevent zero-cost analysis and to help users understand likely ranges.
-
-These defaults should be clearly labeled as generic assumptions until the user enters a lender quote or imports a Loan Estimate.
-
-| Fee | Category | Kind | Low | Expected | High | Notes |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| Origination | `origination` | true cost | 0.00% | 0.50% | 1.00% | Percent of new loan amount |
-| Discount points | `discount_points` | true cost | 0.00% | 0.00% | user-defined | Usually 1 point = 1% of loan amount |
-| Appraisal | `appraisal` | true cost | $400 | $650 | $900 | May be waived for some refis |
-| Credit report | `credit_report` | true cost | $25 | $50 | $100 | Small third-party fee |
-| Flood certification | `flood_certification` | true cost | $10 | $20 | $40 | Mortgage-specific |
-| Title search | `title_search` | true cost | $150 | $300 | $600 | Varies by state/provider |
-| Title insurance | `title_insurance` | true cost | 0.20% | 0.40% | 0.80% | Very state-dependent |
-| Settlement/closing | `settlement_or_closing` | true cost | $300 | $600 | $1,200 | Escrow/closing/settlement agent |
-| Recording | `recording` | true cost | $50 | $150 | $400 | State/county dependent |
-| Attorney/notary | `attorney_or_notary` | true cost | $0 | $250 | $900 | State-dependent; optional in many states |
-| Release fee | `release_fee` | true cost | $0 | $75 | $200 | Payoff/release related |
-| Prepaid interest | `prepaid_interest` | timing cost | computed | computed | computed | Depends on closing date and daily interest |
-| Initial escrow deposit | `escrow_deposit` | timing cost | $0 | computed | computed | Depends on taxes/insurance and escrow setup |
-| Homeowners insurance prepaid | `homeowners_insurance` | timing cost | $0 | user/current policy | user/current policy | Often not a true new cost |
-| Property tax escrow | `property_tax_escrow` | timing cost | $0 | computed | computed | Based on tax due dates if known |
-| Old escrow refund | `old_escrow_refund` | offset | $0 | estimated current escrow balance | user-confirmed | Shown separately from true costs |
-| Lender credit | `lender_credit` | offset | $0 | $0 | user-entered | Usually tied to rate/APR tradeoff |
-
-## Calculation Rules
-
-### Fee Amount Calculation
-
-For each catalog entry, generate low / expected / high fee item attrs.
-
-Pseudo-logic:
-
-```text
-if calculation_method == fixed_amount:
-  amount = fixed range
-
-if calculation_method == percent_of_loan_amount:
-  amount = new_loan_amount * percent range
-
-if calculation_method == fixed_plus_percent:
-  amount = fixed range + (new_loan_amount * percent range)
-
-if calculation_method == manual_only:
-  do not generate automatically unless user provides value
-```
-
-Apply `minimum_amount` and `maximum_amount` when present.
-
-### Points
-
-Discount points should be modeled separately from the interest rate.
-
-Rules:
-
-- 1 point = 1% of the new loan amount.
-- Points are true refinance costs.
-- Points may reduce rate, but MoneyTree should not automatically infer that reduction unless the user or quote provides it.
-- If a market benchmark scenario uses zero points, label it clearly.
-
-### Lender Credits
-
-Lender credits should be credit/offset items.
-
-Rules:
-
-- reduce cash to close
-- may reduce true refinance cost depending on how the quote presents them
-- should not be silently assumed
-- should be tied to quote/rate assumptions when imported from a lender quote
-
-### Prepaid Interest
-
-Prepaid interest should be computed if the user provides an assumed closing date.
-
-Suggested formula:
-
-```text
-daily_interest = new_principal_amount * annual_rate / 365
-prepaid_interest = daily_interest * days_until_first_payment_period
-```
-
-Keep this estimate editable because lenders calculate prepaid interest based on exact closing and first-payment timing.
-
-### Escrow And Prepaids
-
-Escrow funding should be shown as cash timing, not true cost.
-
-If existing mortgage or asset data later includes escrow inputs, use it as an estimate source:
-
-- current property tax amount
-- homeowners insurance amount
-- flood insurance amount
-- current escrow balance if available
-- expected old escrow refund if available
-
-If no escrow data exists, show an explicit missing-data warning.
-
-## Generated Scenario Behavior
-
-When a scenario is created from a benchmark rate, MoneyTree should offer to add estimated fee assumptions.
-
-Suggested options:
-
-- `No fees yet` - allowed, but produces a warning and disables strong recommendations.
-- `Use generic national estimates` - generates editable low / expected / high fee items.
-- `Use state/local estimates` - future option.
-- `Enter lender quote manually` - user enters real quote values.
-- `Import Loan Estimate` - document extraction workflow.
-
-Do not automatically overwrite user-entered fee items when assumptions are refreshed. Offer a review step instead.
-
-## Source Priority
-
-When multiple fee sources exist, use this priority order:
-
-1. User-confirmed lender quote or Loan Estimate
+1. User-confirmed lender quote or Loan Estimate-derived values
 2. User-entered manual fee items
-3. Parsed document values after user confirmation
-4. State/local fee template
-5. Generic national fee template
-6. No fee assumptions, with warning
+3. Confirmed document extraction values
+4. State/local fee profile rules
+5. Generic or sparse default fee profile rules
+6. No assumptions, with explicit incomplete-analysis warning
 
-Never let generic assumptions override user-confirmed values without review.
+Rules that remain binding:
 
-## Suggested Context Functions
+- Never silently overwrite user-entered or user-confirmed fee items.
+- Never treat missing fee assumptions as a complete zero-cost scenario.
+- Keep lender/title/recording/origination costs separate from escrow and prepaid timing costs.
+- Keep fee estimates editable.
+- Keep market-rate observations as context, not offers.
+- Do not use AI-generated fee values as authoritative calculations.
 
-Names should follow repo conventions, but useful functions include:
+## Remaining Work
 
-```elixir
-list_refinance_fee_catalog_entries(filters)
-estimate_refinance_fee_range(scenario, opts)
-generate_refinance_fee_item_attrs_for_scenario(scenario, opts)
-create_generic_refinance_fee_items(user, scenario, opts)
-fee_assumption_status(scenario)
-```
+The intended functionality of this plan is complete. Remaining items are future enhancements, not blockers for archiving this guide.
 
-If persistent templates are added later, extend with:
+### Localized Data Hardening
 
-```elixir
-list_refinance_fee_templates(filters)
-get_refinance_fee_template!(id)
-create_refinance_fee_template(attrs)
-update_refinance_fee_template(template, attrs)
-disable_refinance_fee_template(template)
-```
+Improve source quality for existing and future jurisdiction rules:
 
-## Future Work Alignment
+- parish/county source URL verification
+- exact Louisiana endorsement pricing where source-backed
+- broader non-Louisiana mortgage refinance profiles
+- broader auto refinance fee research
+- source-backed personal/student loan fee research before expanding sparse estimates
 
-### Persistent Snapshot Cache
+### Fee Provenance
 
-Do not add a cache for fee strategy v1.
+Only add more provenance fields if the current combination of fee type, quote fee lines, document extraction records, and notes becomes insufficient.
 
-Add a persistent `loan_market_snapshots` cache only when repeated reads become expensive or when these features need shared snapshot inputs:
+Potential additive fields on `refinance_fee_items` could include:
+
+- `source_type`
+- `source_id`
+- `review_status`
+- `calculation_basis`
+
+Do not add these preemptively. Use the existing structured quote/document/fee-type records first.
+
+### Prediction Snapshots
+
+Consider persisted prediction snapshots only when there is a concrete consumer that needs historical comparison or reproducibility beyond current analysis results.
+
+Possible consumers:
 
 - dashboards
+- financial evaluations
 - alerts
 - AI summaries
-- refinance opportunity scoring
-- trend widgets across multiple loans
-
-Fee strategy should call existing snapshot functions until that need is real.
-
-### Lock-Period Metadata
-
-`LenderQuote` already has `lock_available` and `lock_expires_at`, but not `lock_period_days`.
-
-Future additive fields:
-
-- `loan_lender_quotes.lock_period_days`
-- `loan_rate_observations.lock_period_days` if provider/manual observations include lock-period semantics
-
-Do not add lock-period fields to FRED observations. FRED benchmark averages are not lock-period-specific personalized pricing.
+- future opportunity scoring
 
 ### Refinance Opportunity Score
 
-Do not implement in this fee strategy pass.
+Still deferred. If implemented later, it must be rule-based and explainable. It should use current deterministic outputs such as:
 
-The eventual score should be rule-based and explainable, using:
-
-- payment reduction
+- payment change
 - break-even months
-- full-term finance cost delta
 - true refinance cost
-- expected years before sale/refi
-- market trend context
-- data quality
+- cash-to-close timing cost
+- full-term and fixed-horizon interest deltas
+- expected years before sale/refinance
 - quote freshness
-- lock availability
-- user-entered or confirmed equity/LTV inputs
+- market data quality
+- fee assumption confidence
 
-The score must never imply loan approval or a guaranteed offer.
+It must not imply approval, eligibility, legal compliance, or a guaranteed lender offer.
 
-### Enterprise Providers
+### Provider Expansion
 
-ICE Mortgage Technology and Optimal Blue remain future provider candidates.
+Enterprise or lender-pricing providers remain future work. If added, they should enter through the existing Loans provider/quote architecture:
 
-If added later, they should enter through the provider architecture documented in `docs/loan-center-market-rate-provider-implementation-plan.md`, not through fee UI components. Provider-derived lender pricing should create attributed lender quotes or supplemental market observations for user review.
+- market context through rate observations
+- user-specific offers through lender quotes
+- fee rows only after review or explicit conversion
 
-## Test Plan
+Do not couple provider-specific logic directly to Loan Center UI components.
 
-Unit tests:
+## Validation References
 
-- catalog category defaults
-- strategy attrs for common fee rows
-- true-cost total excludes prepaid/escrow timing items
-- timing-cost total includes prepaid/escrow/timing items
-- credits reduce applicable totals
-- quote/extraction mapping remains deterministic
+Relevant focused checks for future changes:
 
-LiveView tests:
+```sh
+mix test apps/money_tree/test/money_tree/loans/loan_fee_subsystem_test.exs
+mix test apps/money_tree/test/money_tree/loans/refinance_calculator_test.exs
+mix test apps/money_tree/test/money_tree_web/live/loans_live_test.exs
+```
 
-- Refinance workspace shows grouped cost assumptions.
-- "Add common fees" seeds editable fee rows.
-- Manual custom fee row still works.
-- Seeded fees update break-even and cash-to-close outputs correctly.
-- Fee seeding does not overwrite existing fee items.
+For schema-affecting changes, apply migrations to the development database before treating work as complete.
 
-Regression tests:
+## Archive Boundary
 
-- lender quote conversion still creates a draft scenario with seeded fees
-- confirmed document extraction still creates scenario/quote rows with fee items
-- market snapshot warnings do not break Refinance workspace
+This document is archived for implementation planning. Keep it as historical context for why refinance fee assumptions exist and why missing fees must be visibly incomplete.
 
-## Validation
+Use these active documents for future work:
 
-For any implementation slice:
-
-- Run focused Loans tests.
-- Run focused Loan Center LiveView tests.
-- Run `mix test` before marking a phase done.
-- Apply migrations immediately if a later phase adds schema fields.
-
-## Open Implementation Choice
-
-The first coding slice should be Phase 1 only: `RefinanceFeeCatalog` plus tests. It is low risk, requires no migration, and gives later UI/strategy work a stable vocabulary.
+- `docs/loan-fee-subsystem-implementation-plan.md`
+- `docs/loan-center-market-rate-provider-implementation-plan.md`
+- `docs/03-mortgage-center-implementation-plan.md`

@@ -69,7 +69,7 @@ defmodule MoneyTreeWeb.CoreComponents do
     ~H"""
     <div class="flex flex-col gap-1">
       <label :if={@label} for={@field.id} class="text-sm font-medium text-zinc-700">
-        <%= @label || Phoenix.Naming.humanize(@field.field) %>
+        <%= @label %>
       </label>
       <input :if={@type in [:text, :email, :password, :number]}
              type={@type}

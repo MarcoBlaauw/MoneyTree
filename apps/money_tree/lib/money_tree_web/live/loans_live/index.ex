@@ -1746,7 +1746,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
           </div>
 
           <div class="space-y-3">
-            <form phx-change="select-loan" class="min-w-64">
+            <form id="loan-workspace-selector-form" phx-change="select-loan" class="min-w-64">
               <label class="text-sm font-medium text-zinc-700" for="loan_workspace_selector">Browse loans</label>
               <select id="loan_workspace_selector" name="loan_id" class="input">
                 <%= Phoenix.HTML.Form.options_for_select(loan_workspace_options(@all_mortgages, @generic_loans), @route_loan_id) %>
@@ -3909,7 +3909,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
               <h2 class="text-lg font-semibold text-zinc-900"><%= mortgage_form_title(@mortgage_form_mode) %></h2>
               <p class="text-sm text-zinc-500"><%= mortgage_form_description(@mortgage_form_mode) %></p>
             </div>
-            <button :if={@mortgage_form_open?} type="button" class="btn btn-outline" phx-click="cancel-mortgage">
+            <button type="button" class="btn btn-outline" phx-click="cancel-mortgage">
               Cancel
             </button>
           </div>
@@ -4092,7 +4092,7 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp loan_form_kind_selector(assigns) do
     ~H"""
     <div class="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
-      <form phx-change="select-loan-form-kind" class="space-y-3">
+      <form id="loan-form-kind-selector" phx-change="select-loan-form-kind" class="space-y-3">
         <div>
           <label class="text-sm font-medium text-zinc-700" for="loan_form_kind">Loan type</label>
           <select id="loan_form_kind" name="loan_form[kind]" class="input">
@@ -4836,16 +4836,11 @@ defmodule MoneyTreeWeb.LoansLive.Index do
   defp mortgage_state_code(%Mortgage{state_region: state_region}),
     do: normalize_state_code(state_region)
 
-  defp mortgage_state_code(_mortgage), do: nil
-
   defp loan_state_code(%Loan{state_region: state_region}), do: normalize_state_code(state_region)
-  defp loan_state_code(_loan), do: nil
 
   defp mortgage_county_or_parish(%Mortgage{county_or_parish: county_or_parish}) do
     normalize_county_or_parish(county_or_parish)
   end
-
-  defp mortgage_county_or_parish(_mortgage), do: nil
 
   defp normalize_state_code(nil), do: nil
 
@@ -6336,8 +6331,6 @@ defmodule MoneyTreeWeb.LoansLive.Index do
     |> Enum.uniq_by(& &1.url)
     |> Enum.take(4)
   end
-
-  defp prediction_last_verified_at(nil), do: nil
 
   defp prediction_last_verified_at(prediction) do
     profile_verified_at =

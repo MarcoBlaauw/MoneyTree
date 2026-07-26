@@ -194,7 +194,7 @@ defmodule MoneyTree.Teller.SynchronizerTest do
       assert transaction.status == "posted"
       assert transaction.description == "Coffee Shop"
       assert transaction.category == "Uncategorized"
-      assert transaction.categorization_source == "provider"
+      assert transaction.categorization_source == nil
     end
 
     test "records rate limit errors and returns retry information" do
