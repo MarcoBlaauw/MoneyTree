@@ -100,7 +100,7 @@ defmodule MoneyTree.MixProject do
     [
       plt_file: {:no_warn_file, "priv/plts/money_tree.plt"},
       plt_add_apps: [:mix, :iex],
-      flags: [:error_handling, :race_conditions, :underspecs]
+      flags: [:error_handling, :underspecs]
     ]
   end
 

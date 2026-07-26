@@ -1223,6 +1223,7 @@ defmodule MoneyTree.Loans do
           {:ok, %{source: RateSource.t(), imported: [RateObservation.t()]}}
           | {:error, :not_found | :disabled | :no_configured_observations}
           | {:error, Ecto.Changeset.t()}
+          | {:error, term()}
   def process_rate_import_job(source_id) when is_binary(source_id) do
     with {:ok, source} <- fetch_rate_source(source_id, preload: []),
          :ok <- ensure_rate_source_enabled(source) do
