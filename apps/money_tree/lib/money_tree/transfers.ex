@@ -41,9 +41,8 @@ defmodule MoneyTree.Transfers do
       %TransferRequest{}
       |> TransferRequest.changeset(attrs, accounts: accounts, action: :validate)
 
-    with {:ok, transfer} <- Changeset.apply_action(changeset, :validate) do
-      do_submit_transfer(user, transfer)
-    else
+    case Changeset.apply_action(changeset, :validate) do
+      {:ok, transfer} -> do_submit_transfer(user, transfer)
       {:error, %Changeset{} = invalid_changeset} -> {:error, invalid_changeset}
     end
   end

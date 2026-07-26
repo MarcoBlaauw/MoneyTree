@@ -2277,27 +2277,29 @@ defmodule MoneyTree.Accounts do
   defp resolve_invitee(%AccountInvitation{} = invitation, params) do
     password = Map.get(params, :password) || Map.get(params, "password")
 
-    with password when is_binary(password) <- password do
-      case get_user_by_email(invitation.email) do
-        nil ->
-          encrypted_full_name =
-            Map.get(params, :encrypted_full_name) || Map.get(params, "encrypted_full_name")
+    case password do
+      password when is_binary(password) ->
+        case get_user_by_email(invitation.email) do
+          nil ->
+            encrypted_full_name =
+              Map.get(params, :encrypted_full_name) || Map.get(params, "encrypted_full_name")
 
-          if is_binary(encrypted_full_name) do
-            register_user(%{
-              email: invitation.email,
-              password: password,
-              encrypted_full_name: encrypted_full_name
-            })
-          else
-            {:error, :full_name_required}
-          end
+            if is_binary(encrypted_full_name) do
+              register_user(%{
+                email: invitation.email,
+                password: password,
+                encrypted_full_name: encrypted_full_name
+              })
+            else
+              {:error, :full_name_required}
+            end
 
-        %User{} = _existing ->
-          authenticate_user(invitation.email, password)
-      end
-    else
-      _ -> {:error, :password_required}
+          %User{} = _existing ->
+            authenticate_user(invitation.email, password)
+        end
+
+      _ ->
+        {:error, :password_required}
     end
   end
 
@@ -2543,11 +2545,13 @@ defmodule MoneyTree.Accounts do
   end
 
   defp password_needs_rehash?(hash) when is_binary(hash) do
-    with {:ok, params} <- extract_argon2_params(hash) do
-      current = expected_argon2_params()
-      Enum.any?(current, fn {key, value} -> Map.get(params, key) != value end)
-    else
-      _ -> true
+    case extract_argon2_params(hash) do
+      {:ok, params} ->
+        current = expected_argon2_params()
+        Enum.any?(current, fn {key, value} -> Map.get(params, key) != value end)
+
+      _ ->
+        true
     end
   end
 
@@ -2559,9 +2563,8 @@ defmodule MoneyTree.Accounts do
       |> String.split("$")
       |> Enum.find(fn segment -> String.contains?(segment, "m=") end)
 
-    with %{} = params <- parse_params(params_segment) do
-      {:ok, params}
-    else
+    case parse_params(params_segment) do
+      %{} = params -> {:ok, params}
       _ -> {:error, :unknown_hash_format}
     end
   end

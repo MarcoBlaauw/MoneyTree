@@ -1726,9 +1726,8 @@ defmodule MoneyTree.AI do
           {:ok, decoded}
 
         {:error, _reason} ->
-          with {:ok, extracted} <- decode_fenced_or_embedded_json(trimmed) do
-            {:ok, extracted}
-          else
+          case decode_fenced_or_embedded_json(trimmed) do
+            {:ok, extracted} -> {:ok, extracted}
             _ -> :error
           end
       end

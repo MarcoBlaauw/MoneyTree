@@ -79,13 +79,15 @@ defmodule MoneyTreeWeb.DashboardLive do
         %{"period" => period_param},
         %{assigns: %{current_user: current_user}} = socket
       ) do
-    with {:ok, period} <- parse_budget_period(period_param) do
-      {:noreply,
-       socket
-       |> assign(:budget_period, period)
-       |> assign_metrics(current_user, period: period)}
-    else
-      :error -> {:noreply, socket}
+    case parse_budget_period(period_param) do
+      {:ok, period} ->
+        {:noreply,
+         socket
+         |> assign(:budget_period, period)
+         |> assign_metrics(current_user, period: period)}
+
+      :error ->
+        {:noreply, socket}
     end
   end
 

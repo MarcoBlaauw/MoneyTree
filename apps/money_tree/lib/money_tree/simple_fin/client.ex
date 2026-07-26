@@ -149,16 +149,18 @@ defmodule MoneyTree.SimpleFin.Client do
   end
 
   defp normalize_accounts_response(response) do
-    with {:ok, body} <- normalize_response(response) do
-      {:ok,
-       %{
-         "accounts" => List.wrap(Map.get(body, "accounts", [])),
-         "connections" => List.wrap(Map.get(body, "connections", [])),
-         "errors" => simplefin_errors(body),
-         "raw" => body
-       }}
-    else
-      {:error, reason} -> {:error, reason}
+    case normalize_response(response) do
+      {:ok, body} ->
+        {:ok,
+         %{
+           "accounts" => List.wrap(Map.get(body, "accounts", [])),
+           "connections" => List.wrap(Map.get(body, "connections", [])),
+           "errors" => simplefin_errors(body),
+           "raw" => body
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

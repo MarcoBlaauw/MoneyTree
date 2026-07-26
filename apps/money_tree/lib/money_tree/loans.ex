@@ -2897,16 +2897,18 @@ defmodule MoneyTree.Loans do
   end
 
   defp run_ocrmypdf(path) do
-    with {:ok, executable} <- find_executable("ocrmypdf") do
-      ocr_path = ocr_output_path(path)
+    case find_executable("ocrmypdf") do
+      {:ok, executable} ->
+        ocr_path = ocr_output_path(path)
 
-      case run_extraction_cmd(executable, ["--force-ocr", "--quiet", path, ocr_path]) do
-        {_output, 0} -> {:ok, ocr_path}
-        {_output, :timeout} -> {:error, :pdf_ocr_timed_out}
-        {_output, _status} -> {:error, :pdf_ocr_failed}
-      end
-    else
-      {:error, _reason} = error -> error
+        case run_extraction_cmd(executable, ["--force-ocr", "--quiet", path, ocr_path]) do
+          {_output, 0} -> {:ok, ocr_path}
+          {_output, :timeout} -> {:error, :pdf_ocr_timed_out}
+          {_output, _status} -> {:error, :pdf_ocr_failed}
+        end
+
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -3485,9 +3487,10 @@ defmodule MoneyTree.Loans do
   defp process_rate_import_source(%RateSource{provider_key: "fred"} = source) do
     settings = RateProvider.settings_from_source(source, fred_settings())
 
-    with {:ok, observations} <- Fred.fetch_rates(settings) do
-      import_rate_observations(source, observations)
-    else
+    case Fred.fetch_rates(settings) do
+      {:ok, observations} ->
+        import_rate_observations(source, observations)
+
       {:error, reason} ->
         mark_rate_source_import_error(source, rate_import_error_message(reason))
         {:error, reason}
