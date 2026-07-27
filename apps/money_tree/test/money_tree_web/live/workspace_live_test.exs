@@ -153,7 +153,7 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
 
     {:ok, _view, html} = live(conn, ~p"/app/obligations")
 
-    assert html =~ "Obligations"
+    assert html =~ "Bills &amp; Subscriptions"
     assert html =~ "Travel Card"
     assert html =~ "day 12"
   end

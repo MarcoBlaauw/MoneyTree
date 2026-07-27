@@ -9,7 +9,11 @@ defmodule MoneyTreeWeb.Layouts do
       %{label: "Accounts", path: ~p"/app/accounts", page_title: "Accounts & Institutions"},
       %{label: "Transactions", path: ~p"/app/transactions", page_title: "Transactions"},
       %{label: "Budgets", path: ~p"/app/budgets", page_title: "Budgets"},
-      %{label: "Obligations", path: ~p"/app/obligations", page_title: "Obligations"},
+      %{
+        label: "Bills & Subscriptions",
+        path: ~p"/app/obligations",
+        page_title: "Bills & Subscriptions"
+      },
       %{label: "Assets", path: ~p"/app/assets", page_title: "Assets"},
       %{label: "Loan Center", path: ~p"/app/loans", page_title: "Loan Center"},
       %{label: "Transfers", path: ~p"/app/transfers", page_title: "Transfers"},

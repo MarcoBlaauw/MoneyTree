@@ -52,7 +52,7 @@ defmodule MoneyTreeWeb.AppRoutesTest do
       assert render(transactions) =~ "Recent transactions"
 
       {:ok, obligations, _html} = live(authed_conn, ~p"/app/obligations")
-      assert render(obligations) =~ "Obligations"
+      assert render(obligations) =~ "Bills &amp; Subscriptions"
 
       {:ok, assets, _html} = live(authed_conn, ~p"/app/assets")
       assert render(assets) =~ "Assets"

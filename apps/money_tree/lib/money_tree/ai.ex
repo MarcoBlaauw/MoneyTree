@@ -1353,8 +1353,8 @@ defmodule MoneyTree.AI do
 
   defp recurring_obligation_type(payload) do
     case normalize_transaction_kind(get(payload, "transaction_kind")) do
-      "loan_payment" -> "loan_payment"
-      "credit_card_payment" -> "credit_card_payment"
+      "loan_payment" -> "debt_payment"
+      "credit_card_payment" -> "debt_payment"
       _ -> "subscription"
     end
   end

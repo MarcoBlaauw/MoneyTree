@@ -18,7 +18,7 @@ defmodule MoneyTree.Obligations.Obligation do
   @timestamps_opts [type: :utc_datetime_usec]
 
   @due_rules ~w(calendar_day last_day_of_month)
-  @obligation_types ~w(bill subscription recurring_payment loan_payment credit_card_payment other)
+  @obligation_types ~w(subscription utility insurance housing debt_payment tax_or_fee membership other)
   @sources ~w(manual model recurring_detection import)
 
   schema "obligations" do
@@ -30,7 +30,7 @@ defmodule MoneyTree.Obligations.Obligation do
     field :grace_period_days, :integer, default: 0
     field :alert_preferences, :map, default: %{}
     field :active, :boolean, default: true
-    field :obligation_type, :string, default: "bill"
+    field :obligation_type, :string, default: "other"
     field :source, :string, default: "manual"
 
     belongs_to :user, User

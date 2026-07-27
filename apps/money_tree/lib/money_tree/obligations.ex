@@ -187,7 +187,7 @@ defmodule MoneyTree.Obligations do
     with %Transaction{} = transaction <- series.last_transaction,
          {:ok, obligation} <-
            create_from_transaction(user, transaction, %{
-             "obligation_type" => "recurring_payment",
+             "obligation_type" => "other",
              "source" => "recurring_detection"
            }) do
       obligation
