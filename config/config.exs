@@ -77,12 +77,24 @@ config :money_tree, MoneyTree.Loans.RateProviders.Fred,
   api_key: nil,
   timeout_ms: 15_000
 
+config :money_tree, MoneyTree.Assets.ProviderRegistry,
+  enabled_providers: [],
+  monthly_request_limit: 450,
+  refresh_interval_days: 7
+
+config :money_tree, MoneyTree.Assets.VehicleValuationProviders.MarketCheck,
+  base_url: "https://api.marketcheck.com",
+  api_key: nil,
+  dealer_type: "independent",
+  timeout_ms: 15_000
+
 config :money_tree, Oban,
   repo: MoneyTree.Repo,
   queues: [
     default: 10,
     mailers: 5,
-    reporting: 5
+    reporting: 5,
+    market_data: 1
   ],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 86_400},
@@ -91,7 +103,9 @@ config :money_tree, Oban,
      crontab: [
        {"0 * * * *", MoneyTree.SimpleFin.SyncWorker, args: %{"mode" => "dispatch"}},
        {"0 7 * * *", MoneyTree.Obligations.CheckWorker, args: %{}},
-       {"30 7 * * *", MoneyTree.Loans.Workers.RateImportWorker, args: %{"provider" => "fred"}}
+       {"30 7 * * *", MoneyTree.Loans.Workers.RateImportWorker, args: %{"provider" => "fred"}},
+       {"15 8 * * *", MoneyTree.Assets.Workers.ValuationRefreshWorker,
+        args: %{"mode" => "dispatch", "provider" => "marketcheck"}}
      ]}
   ]
 

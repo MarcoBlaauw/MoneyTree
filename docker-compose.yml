@@ -19,18 +19,15 @@ services:
     cap_add:
       - IPC_LOCK
     ports:
-      # Bound to loopback only: this is a dev-mode OpenBao instance (no TLS,
-      # a well-known default root token below) -- never expose it beyond the
-      # local machine.
+      # Bound to loopback only. This local instance uses plaintext HTTP and
+      # must never be exposed beyond the development machine.
       - "127.0.0.1:8200:8200"
     environment:
       BAO_ADDR: http://127.0.0.1:8200
-      BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
-      # Override with your own value via .env (OPENBAO_DEV_ROOT_TOKEN) rather
-      # than relying on this repo-known default, especially on a shared or
-      # otherwise multi-user development machine.
-      BAO_DEV_ROOT_TOKEN_ID: ${OPENBAO_DEV_ROOT_TOKEN:-moneytree-dev-root-token}
-    command: server -dev
+    command: server -config=/openbao/config/dev.hcl
+    volumes:
+      - ./config/openbao/dev.hcl:/openbao/config/dev.hcl:ro
+      - money_tree_openbao_data:/openbao/file
     healthcheck:
       test: ["CMD", "bao", "status", "-address=http://127.0.0.1:8200"]
       interval: 5s
@@ -39,4 +36,6 @@ services:
 
 volumes:
   money_tree_db_data:
+    driver: local
+  money_tree_openbao_data:
     driver: local

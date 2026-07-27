@@ -149,6 +149,56 @@ config :money_tree,
        MoneyTree.Loans.RateProviders.Fred,
        Keyword.merge(base_fred_config, fred_runtime_config)
 
+marketcheck_enabled? = parse_bool_env.(env.("MARKETCHECK_ENABLED"))
+
+marketcheck_registry_config =
+  [
+    enabled_providers: if(marketcheck_enabled?, do: ["marketcheck"], else: []),
+    monthly_request_limit:
+      case env.("MARKETCHECK_MONTHLY_REQUEST_LIMIT") do
+        nil -> nil
+        value -> String.to_integer(value)
+      end,
+    refresh_interval_days:
+      case env.("MARKETCHECK_REFRESH_INTERVAL_DAYS") do
+        nil -> nil
+        value -> String.to_integer(value)
+      end
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+config :money_tree,
+       MoneyTree.Assets.ProviderRegistry,
+       Keyword.merge(
+         Application.get_env(:money_tree, MoneyTree.Assets.ProviderRegistry, []),
+         marketcheck_registry_config
+       )
+
+marketcheck_config =
+  [
+    api_key: env.("MARKETCHECK_API_KEY"),
+    base_url: env.("MARKETCHECK_BASE_URL"),
+    dealer_type: env.("MARKETCHECK_DEALER_TYPE")
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+config :money_tree,
+       MoneyTree.Assets.VehicleValuationProviders.MarketCheck,
+       Keyword.merge(
+         Application.get_env(
+           :money_tree,
+           MoneyTree.Assets.VehicleValuationProviders.MarketCheck,
+           []
+         ),
+         marketcheck_config
+       )
+
+if config_env() == :prod and marketcheck_enabled? and env.("MARKETCHECK_API_KEY") in [nil, ""] do
+  raise """
+  environment variable MARKETCHECK_API_KEY is required in production when MarketCheck is enabled.
+  """
+end
+
 ai_env = env
 
 ai_runtime_config =
@@ -345,7 +395,8 @@ if config_env() != :test do
     queues: [
       default: String.to_integer(default_limit),
       mailers: String.to_integer(mailer_limit),
-      reporting: String.to_integer(reporting_limit)
+      reporting: String.to_integer(reporting_limit),
+      market_data: 1
     ]
 
   if otlp_endpoint = System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT") do

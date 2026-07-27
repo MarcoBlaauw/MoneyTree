@@ -60,6 +60,17 @@ config :money_tree, MoneyTree.Loans.RateProviders.Fred,
   api_key: nil,
   timeout_ms: 5000
 
+config :money_tree, MoneyTree.Assets.ProviderRegistry,
+  enabled_providers: [],
+  monthly_request_limit: 450,
+  refresh_interval_days: 7
+
+config :money_tree, MoneyTree.Assets.VehicleValuationProviders.MarketCheck,
+  base_url: "https://api.marketcheck.com",
+  api_key: nil,
+  dealer_type: "independent",
+  timeout_ms: 5000
+
 config :money_tree, MoneyTree.BankSync.ProviderRegistry,
   enabled_providers: ["simplefin", "manual", "plaid"],
   primary_provider: "simplefin"

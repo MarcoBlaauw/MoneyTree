@@ -5,12 +5,12 @@ Tracks: [GitHub issue #82](https://github.com/MarcoBlaauw/MoneyTree/issues/82)
 ## Status
 
 Planned after [101](./archive/101-bills-and-subscriptions-rename-implementation-plan.md) (completed)
-and [102](./102-vehicle-asset-management-implementation-plan.md). Phase 1 is the first executable
+and [102](./archive/102-vehicle-asset-management-implementation-plan.md) (completed). Phase 1 is the first executable
 slice; automated market data, AI narrative, and advanced analytics remain later phases.
 
 Sequencing: last of the three, after
 [101](./archive/101-bills-and-subscriptions-rename-implementation-plan.md) (completed)
-and [102](./102-vehicle-asset-management-implementation-plan.md). This is the largest of the three
+and [102](./archive/102-vehicle-asset-management-implementation-plan.md) (completed). This is the largest of the three
 by a wide margin — a new domain, an append-only transaction ledger, a deterministic analytics
 engine, a market-data provider integration, and an optional AI narrative layer. Treat this document
 as a roadmap, not a single PR: Phase 1 is the actual near-term target; later phases are scoped in
@@ -18,6 +18,9 @@ outline so the shape of the whole feature is visible up front.
 
 Decisions already made for this plan (confirmed with the product owner before writing it):
 
+- **Household net worth**: integrate tangible-asset net equity and investment value together after
+  102 Phase 1 and this plan's manual investment ledger/positions are complete. This is an explicit
+  phase in this plan, not an item the product owner must remember to re-request.
 - **Market-data provider**: Twelve Data is the target for the first automated integration
   (Phase 3), chosen over Finnhub/Massive/Alpha Vantage for its broad instrument coverage (stocks,
   ETFs, mutual funds, forex, commodities, crypto) in one API and a usable free tier for
@@ -59,7 +62,7 @@ in the codebase are direct templates for major pieces of it:
   free.
 - **`MoneyTree.Accounts.net_worth_snapshot/2`** — today, purely financial-account balances. Adding
   investment accounts to household net worth is new integration work; see the note in
-  [102](./102-vehicle-asset-management-implementation-plan.md) about doing this as one pass across
+  [102](./archive/102-vehicle-asset-management-implementation-plan.md) about doing this as one pass across
   both tangible assets and investments rather than twice.
 - **Oban** currently has three queues (`default`, `mailers`, `reporting`) and a small cron table in
   `config/config.exs`. This work needs a new `market_data` queue and at least one new cron entry
@@ -217,12 +220,22 @@ New `/app/investments` LiveView (`MoneyTree.InvestmentsLive.Index`), added to
    `investment_transactions`/`tax_lots`, manual instrument entry (no external lookup yet), manual
    EOD price entry, and positions derived from the ledger. This is the real target for a first PR
    out of this plan.
-2. **Core charts and deterministic return/allocation analytics.** Value-over-time, allocation
+2. **Household net-worth integration across tangible assets and investments.** Once Plan 102's
+   tangible-asset gross/net-equity calculation and this plan's deterministic investment positions
+   are complete, update `Accounts.net_worth_snapshot/2` in one coordinated pass. The integration
+   must:
+   - include tangible-asset value minus linked loan/mortgage balances
+   - include investment holdings at the latest valid price
+   - avoid double-counting investment-account cash or any linked financial account balance
+   - preserve currency-aware breakdowns and show each contribution category separately
+   - test missing/stale valuations, linked-debt subtraction, shared-account authorization, and
+     double-count prevention
+3. **Core charts and deterministic return/allocation analytics.** Value-over-time, allocation
    breakdowns, TWR/XIRR where history supports it, holdings table.
-3. **Twelve Data adapter + scheduled price refresh + richer instrument metadata** (sector/
+4. **Twelve Data adapter + scheduled price refresh + richer instrument metadata** (sector/
    geography/fundamentals for allocation breakdowns beyond asset class).
-4. **Optional Ollama interpretation**, as above.
-5. **Advanced tax-lot and risk analytics** (configurable cost-basis method beyond FIFO, beta/
+5. **Optional Ollama interpretation**, as above.
+6. **Advanced tax-lot and risk analytics** (configurable cost-basis method beyond FIFO, beta/
    Sharpe/drawdown once enough price history exists, contribution-vs-market attribution).
 
 ## Acceptance criteria checklist (from the issue)
@@ -235,20 +248,16 @@ New `/app/investments` LiveView (`MoneyTree.InvestmentsLive.Index`), added to
 - [ ] AI output stays optional and read-only — cannot modify portfolio data, cannot be the source
       of a persisted metric.
 - [ ] Every metric has test coverage for its formula and an explicit insufficient-data state.
-- [ ] Household net worth (once integrated, see Open Questions) includes investments without
-      double-counting a linked financial account's cash balance.
+- [ ] Household net worth includes tangible-asset net equity and investments without
+      double-counting linked debt, investment-account cash, or another linked financial account.
 
 ## Open questions for the user
 
-1. **Net worth integration timing**: fold investment total value into
-   `Accounts.net_worth_snapshot/2` in Phase 1, or keep it as a separate "Investments" total until
-   both this and [102](./102-vehicle-asset-management-implementation-plan.md)'s tangible-asset
-   equity are ready, so net worth changes shape once instead of twice? Recommend the latter.
-2. **Cost-basis method**: FIFO-only for Phase 1, or does average-cost matter enough (e.g. for
+1. **Cost-basis method**: FIFO-only for Phase 1, or does average-cost matter enough (e.g. for
    mutual fund reinvestment-heavy accounts) to build a per-account method setting from the start?
    Recommend FIFO-only first; it's the common default and avoids building configurability before
    there's a real need for it.
-3. **`ai_suggestion_runs` reuse vs. a dedicated table**: this plan recommends reusing the existing
+2. **`ai_suggestion_runs` reuse vs. a dedicated table**: this plan recommends reusing the existing
    table with a new `feature` value rather than creating `ai_insight_runs`. Flagging in case there's
    a reason (e.g. wanting a hard schema boundary between categorization AI and investment AI) to
    keep them separate.

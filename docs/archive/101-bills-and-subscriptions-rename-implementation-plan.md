@@ -13,7 +13,7 @@ API/JSON field names are unchanged, as scoped. No deferred work remains from thi
 [the roadmap](../roadmap.md#past-work) for the completed entry.
 
 Sequencing (historical): shipped first, before
-[102](../102-vehicle-asset-management-implementation-plan.md) and
+[102](102-vehicle-asset-management-implementation-plan.md) and
 [103](../103-investment-portfolio-implementation-plan.md).
 
 ## Purpose and scope

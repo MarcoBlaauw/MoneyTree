@@ -40,6 +40,14 @@ defmodule MoneyTree.SecretsTest do
       end)
     end
 
+    test "returns the MarketCheck API key from its dedicated group" do
+      with_env("MARKETCHECK_API_KEY", "marketcheck-secret", fn ->
+        assert Env.get_group(:marketcheck) == %{
+                 "MARKETCHECK_API_KEY" => "marketcheck-secret"
+               }
+      end)
+    end
+
     test "unknown groups are empty maps" do
       assert Env.get_group(:unknown_group) == %{}
     end
@@ -164,6 +172,9 @@ defmodule MoneyTree.SecretsTest do
 
         assert OpenBao.path_for_group(:fred, config) ==
                  {:ok, "kv/data/moneytree/dev/fred"}
+
+        assert OpenBao.path_for_group(:marketcheck, config) ==
+                 {:ok, "kv/data/moneytree/dev/marketcheck"}
 
         assert OpenBao.path_for_group(:phoenix, config) ==
                  {:ok, "kv/data/moneytree/dev/phoenix"}
@@ -348,6 +359,30 @@ defmodule MoneyTree.SecretsTest do
 
       with_openbao_env(valid_openbao_env(), fn ->
         assert OpenBao.get("FRED_API_KEY", plug: {Req.Test, __MODULE__}) == "fred-secret"
+      end)
+    end
+
+    test "reads the MarketCheck API key from its dedicated group" do
+      Req.Test.expect(__MODULE__, 2, fn
+        %{method: "POST", request_path: "/v1/auth/approle/login"} = conn ->
+          Req.Test.json(conn, %{"auth" => %{"client_token" => "bao-token"}})
+
+        %{method: "GET", request_path: "/v1/kv/data/moneytree/dev/marketcheck"} = conn ->
+          Req.Test.json(conn, %{
+            "data" => %{"data" => %{"MARKETCHECK_API_KEY" => "marketcheck-secret"}}
+          })
+      end)
+
+      with_openbao_env(valid_openbao_env(), fn ->
+        assert OpenBao.get("MARKETCHECK_API_KEY", plug: {Req.Test, __MODULE__}) ==
+                 "marketcheck-secret"
+      end)
+    end
+
+    test "keeps non-secret runtime configuration in the environment" do
+      with_env("MAILER_FROM_EMAIL", "local@example.test", fn ->
+        assert OpenBao.get("MAILER_FROM_EMAIL", plug: {Req.Test, __MODULE__}) ==
+                 "local@example.test"
       end)
     end
 

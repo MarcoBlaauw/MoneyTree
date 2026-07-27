@@ -1,5 +1,5 @@
 defmodule MoneyTreeWeb.WorkspaceLiveTest do
-  use MoneyTreeWeb.ConnCase, async: true
+  use MoneyTreeWeb.ConnCase, async: false
 
   import MoneyTree.AccountsFixtures
   import MoneyTree.AssetsFixtures
@@ -8,7 +8,11 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
   import Phoenix.LiveViewTest
 
   alias Decimal
+  alias MoneyTree.Assets
+  alias MoneyTree.Assets.ProviderRegistry
+  alias MoneyTree.Assets.VehicleValuationProviders.MarketCheck
   alias MoneyTree.Categorization
+  alias MoneyTree.Loans
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
 
@@ -18,6 +22,9 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
 
   setup do
     original = Application.get_env(:money_tree, :synchronization)
+    original_registry = Application.get_env(:money_tree, ProviderRegistry)
+    original_marketcheck = Application.get_env(:money_tree, MarketCheck)
+
     Application.put_env(:money_tree, :synchronization, FakeSynchronization)
 
     on_exit(fn ->
@@ -26,10 +33,15 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
       else
         Application.put_env(:money_tree, :synchronization, original)
       end
+
+      restore_env(ProviderRegistry, original_registry)
+      restore_env(MarketCheck, original_marketcheck)
     end)
 
     :ok
   end
+
+  setup {Req.Test, :verify_on_exit!}
 
   test "accounts page renders account summary and accounts", %{conn: conn} do
     {:ok, %{conn: conn, user: user}} = register_and_log_in_user(%{conn: conn})
@@ -197,6 +209,29 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
     account = account_fixture(user, %{name: "Asset Funding"})
     asset_fixture(account, %{name: "Family Cabin", valuation_amount: Decimal.new("245000.00")})
 
+    {:ok, vehicle_loan} =
+      Loans.create_loan(user, %{
+        loan_type: "auto",
+        name: "Collector car loan",
+        current_balance: "18000",
+        current_interest_rate: "0.06",
+        remaining_term_months: 48,
+        monthly_payment_total: "425"
+      })
+
+    Application.put_env(:money_tree, ProviderRegistry,
+      enabled_providers: ["marketcheck"],
+      monthly_request_limit: 450,
+      refresh_interval_days: 7
+    )
+
+    Application.put_env(:money_tree, MarketCheck,
+      api_key: "test-key",
+      base_url: "https://api.marketcheck.test",
+      dealer_type: "independent",
+      plug: {Req.Test, __MODULE__}
+    )
+
     {:ok, view, html} = live(conn, ~p"/app/assets")
 
     assert html =~ "Assets"
@@ -204,30 +239,177 @@ defmodule MoneyTreeWeb.WorkspaceLiveTest do
 
     view |> element("button", "Add asset") |> render_click()
 
+    assert has_element?(view, "#vehicle-lookup-form")
+    refute has_element?(view, "#asset-form")
+
+    Req.Test.expect(__MODULE__, fn conn ->
+      assert conn.request_path == "/v2/decode/car/1HGCM82633A004352/specs"
+
+      Req.Test.json(conn, %{
+        "is_valid" => true,
+        "year" => 2003,
+        "make" => "Honda",
+        "model" => "Accord",
+        "trim" => "EX",
+        "body_type" => "Sedan"
+      })
+    end)
+
+    Req.Test.expect(__MODULE__, fn conn ->
+      assert conn.request_path == "/v2/predict/car/us/marketcheck_price"
+      Req.Test.json(conn, %{"marketcheck_price" => 52_000})
+    end)
+
     view
-    |> form("#asset-form", %{
+    |> form("#vehicle-lookup-form", %{
+      vehicle: %{
+        vin: "1HGCM82633A004352",
+        mileage: "125000",
+        market_region: "60601"
+      }
+    })
+    |> render_submit()
+
+    preview_html = render(view)
+    assert preview_html =~ "Review before saving"
+    assert preview_html =~ "2003 Honda Accord"
+    assert preview_html =~ "USD 52000.00"
+    assert Assets.list_assets(user) |> Enum.all?(&(&1.name != "Collector Car"))
+
+    view
+    |> form("#vehicle-confirm-form", %{
       asset: %{
         account_id: account.id,
         name: "Collector Car",
-        asset_type: "Vehicle",
-        category: "Classic",
-        valuation_amount: "52000.00",
-        valuation_currency: "USD",
-        ownership_type: "Owned",
+        linked_loan_id: "",
+        acquisition_cost: "",
+        ownership_type: "individual",
         ownership_details: "",
         location: "Garage",
         notes: "",
         acquired_on: "",
-        last_valued_on: "",
         documents_text: "title.pdf"
       }
     })
     |> render_submit()
 
     rendered = render(view)
-    assert rendered =~ "Asset added successfully."
+    assert rendered =~ "Vehicle added from the reviewed MarketCheck estimate."
     assert rendered =~ "Collector Car"
+    assert rendered =~ "Gross value"
+    assert rendered =~ "Net equity"
+
+    collector_car = Enum.find(Assets.list_assets(user), &(&1.name == "Collector Car"))
+
+    view
+    |> element(~s(button[phx-click="view-asset"][phx-value-id="#{collector_car.id}"]))
+    |> render_click()
+
+    assert render(view) =~ "Record manual valuation"
+    assert render(view) =~ "Vehicle details"
+    assert has_element?(view, "#asset-debt-link-form")
+
+    view
+    |> form("#asset-debt-link-form", %{
+      asset: %{linked_loan_id: vehicle_loan.id}
+    })
+    |> render_submit()
+
+    rendered = render(view)
+    assert rendered =~ "Linked debt updated."
+    assert rendered =~ "USD 18000.00"
+
+    collector_car = Assets.get_asset!(user, collector_car.id)
+    assert collector_car.linked_loan_id == vehicle_loan.id
+
+    render_submit(view, "record-valuation", %{
+      "asset_valuation" => %{
+        "amount" => "50000",
+        "currency" => "USD",
+        "valued_on" => "2026-07-27",
+        "mileage" => "126000",
+        "source" => "provider",
+        "provider_key" => "forged-provider"
+      }
+    })
+
+    rendered = render(view)
+    assert rendered =~ "Valuation recorded without replacing prior history."
+    assert rendered =~ "Provider estimate"
+    assert rendered =~ "Manual value"
+    assert rendered =~ "Depreciation"
+    assert rendered =~ "USD 2000.00"
+    assert rendered =~ "+1000 miles"
+
+    assert {:ok, valuations} = Assets.list_asset_valuations(user, collector_car)
+    assert length(valuations) == 2
+    assert Decimal.equal?(hd(valuations).amount, Decimal.new("50000"))
+    assert hd(valuations).source == "manual"
+    assert hd(valuations).provider_key == nil
   end
+
+  test "assets page uses a compact form for non-vehicle assets", %{conn: conn} do
+    {:ok, %{conn: conn}} = register_and_log_in_user(%{conn: conn})
+    {:ok, view, _html} = live(conn, ~p"/app/assets")
+
+    view |> element("button", "Add asset") |> render_click()
+
+    view
+    |> form("#asset-type-form", %{asset_setup: %{type: "equipment"}})
+    |> render_change()
+
+    assert has_element?(view, "#asset-form")
+    refute has_element?(view, "#vehicle-lookup-form")
+    assert has_element?(view, "#asset-form details", "More details")
+
+    view
+    |> form("#asset-form", %{
+      asset: %{
+        asset_type: "equipment",
+        name: "Workshop tools",
+        valuation_amount: "2500",
+        valuation_currency: "USD",
+        ownership_type: "individual"
+      }
+    })
+    |> render_submit()
+
+    assert render(view) =~ "Asset added successfully."
+    assert render(view) =~ "Workshop tools"
+  end
+
+  test "assets page presents provider ranges ahead of point estimates", %{conn: conn} do
+    {:ok, %{conn: conn, user: user}} = register_and_log_in_user(%{conn: conn})
+    asset = unlinked_asset_fixture(user, %{name: "Range vehicle"})
+
+    assert {:ok, %{asset: updated}} =
+             Assets.record_valuation(user, asset, %{
+               amount: "20000",
+               currency: "USD",
+               source: "provider",
+               provider_key: "marketcheck",
+               valued_on: ~D[2026-07-27],
+               mileage: 50_000,
+               value_low: "18000",
+               value_high: "22000",
+               confidence: "medium"
+             })
+
+    {:ok, view, _html} = live(conn, ~p"/app/assets")
+
+    view
+    |> element(~s(button[phx-click="view-asset"][phx-value-id="#{updated.id}"]))
+    |> render_click()
+
+    rendered = render(view)
+    assert rendered =~ "USD 18000.00 – USD 22000.00"
+    assert rendered =~ "Point estimate: USD 20000.00"
+    assert rendered =~ "MarketCheck estimate"
+    assert rendered =~ "Medium confidence"
+  end
+
+  defp restore_env(key, nil), do: Application.delete_env(:money_tree, key)
+  defp restore_env(key, value), do: Application.put_env(:money_tree, key, value)
 
   defp assert_before(html, left, right) do
     assert {left_index, _length} = :binary.match(html, left)

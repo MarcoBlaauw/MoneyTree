@@ -39,12 +39,43 @@ source .env
 
 OpenBao support is being rolled out in phases. The current code supports AppRole login and KV reads for
 known secret groups. Local development can use the compose-backed OpenBao service by running
-`./scripts/setup_openbao_dev.sh`, which starts OpenBao, provisions the local policy/AppRole, seeds dev
-secret groups from `.env`, and writes the local `OPENBAO_*` metadata back to `.env`.
+`./scripts/setup_openbao_dev.sh`, which starts a persistent, local-only OpenBao service, provisions the
+local policy/AppRole, seeds dev secret groups from `.env`, and writes the local `OPENBAO_*` metadata back
+to `.env`.
 `./scripts/dev.sh` runs this setup automatically when `MONEYTREE_SECRET_BACKEND=openbao`.
 
 Keep `MONEYTREE_SECRET_BACKEND=env` for deployments unless you have provisioned the documented OpenBao
 paths and policy.
+
+To migrate supported application secrets out of the local `.env` after seeding them, run:
+
+```bash
+MIGRATE_ENV_SECRETS=true ./scripts/setup_openbao_dev.sh
+```
+
+The migration verifies each value through OpenBao before removing its plaintext `.env` entry. OpenBao
+connection settings, AppRole credentials, and the local unseal/root bootstrap values remain in `.env`;
+they are required to reach and unlock the secret store. The compose service stores encrypted OpenBao
+data in the `money_tree_openbao_data` volume, so migrated values survive normal container restarts.
+Variables outside the supported secret groups remain in the process environment and are not copied to
+OpenBao.
+
+The current ownership boundary is:
+
+| OpenBao group | Values moved from `.env` |
+| --- | --- |
+| `database` | `DATABASE_URL`, or the separate `DATABASE_USERNAME`, `DATABASE_PASSWORD`, `DATABASE_HOST`, and `DATABASE_NAME` values |
+| `cloak` | `CLOAK_VAULT_KEY` |
+| `fred` | `FRED_API_KEY` |
+| `marketcheck` | `MARKETCHECK_API_KEY` |
+| `phoenix` | `SECRET_KEY_BASE` |
+| `plaid` | `PLAID_CLIENT_ID`, `PLAID_SECRET`, and `PLAID_WEBHOOK_SECRET` when the legacy integration is enabled |
+| `smtp` | `MAILER_SMTP_HOST`, `MAILER_SMTP_USERNAME`, and `MAILER_SMTP_PASSWORD` |
+
+Keep operational settings such as public URLs and origins, ports, TLS modes, provider flags, queue
+limits, observability endpoints, mail sender identity, and `FRED_BASE_URL` in the process environment.
+OpenBao connection/AppRole/bootstrap values must also remain outside OpenBao so the application and
+provisioning script can reach and unlock it.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -57,6 +88,8 @@ paths and policy.
 | `OPENBAO_KV_PREFIX` | Yes (when OpenBao enabled) | — | KV path prefix for this deployment, for example `kv/data/moneytree/prod`. |
 | `OPENBAO_SSL_VERIFY` | No | `true` | Whether to verify OpenBao TLS certificates. Keep `true` outside controlled local development. |
 | `OPENBAO_TIMEOUT_MS` | No | `5000` | Timeout in milliseconds for future OpenBao HTTP requests. |
+| `OPENBAO_DEV_UNSEAL_KEY` | Local compose only | generated | Unlocks the persistent local OpenBao service after a restart. Keep it secret and never reuse it outside local development. |
+| `OPENBAO_DEV_ROOT_TOKEN` | Local compose only | generated | Local administrative bootstrap token used by the provisioning script. Keep it secret and never deploy it. |
 
 ## Oban background processing
 
@@ -65,6 +98,43 @@ paths and policy.
 | `OBAN_DEFAULT_LIMIT` | No | `10` | Concurrent jobs allowed on the default queue. |
 | `OBAN_MAILER_LIMIT` | No | `5` | Concurrent jobs allowed on the mailer queue. |
 | `OBAN_REPORTING_LIMIT` | No | `5` | Concurrent jobs allowed on the reporting queue. |
+
+The `market_data` queue is deliberately fixed at one concurrent job. It is not runtime-configurable
+because it protects low-volume external provider quotas.
+
+## MarketCheck vehicle valuations
+
+Vehicle onboarding uses MarketCheck's basic VIN-specification endpoint and base-price endpoint: one
+request decodes the VIN and one produces a normalized USD estimate. The user reviews both results
+before MoneyTree creates any asset, profile, or valuation rows. Identical successful previews are
+cached for one day. Scheduled refreshes use only the base-price endpoint, so a refresh job can
+consume at most one MarketCheck call. Comparables calls and provider HTTP retries are disabled.
+
+The Free tier currently documents 500 calls per calendar month, 5 calls per second, and a 100-mile
+radius restriction. MoneyTree defaults to a lower 450-call monthly application budget, enforces an
+absolute 500-call ceiling in code and the database, persists every started request, restricts the
+market-data queue to one concurrent job, and also enforces the five-call rolling one-second window.
+Every onboarding and refresh request is counted in the same deployment-wide budget. Successful and
+failed refresh requests start the same seven-day per-vehicle cooldown. The daily dispatcher cannot
+refresh a vehicle more than weekly.
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `MARKETCHECK_API_KEY` | Yes when enabled | — | Server-side MarketCheck API key. With OpenBao, store it in the `marketcheck` group. |
+| `MARKETCHECK_ENABLED` | No | `false` | Explicit cost-control switch. Both this flag and a non-empty key are required before any request is queued. |
+| `MARKETCHECK_MONTHLY_REQUEST_LIMIT` | No | `450` | Deployment-wide monthly request budget. Values above 500 are clamped to 500. |
+| `MARKETCHECK_REFRESH_INTERVAL_DAYS` | No | `7` | Minimum elapsed time between outgoing requests for the same vehicle, including failed requests. |
+| `MARKETCHECK_DEALER_TYPE` | No | `independent` | Explicit required MarketCheck Price model assumption: `independent` or `franchise`. |
+| `MARKETCHECK_BASE_URL` | No | `https://api.marketcheck.com` | Optional controlled endpoint override. |
+
+New vehicles require VIN, mileage, and a five-digit market ZIP. MoneyTree validates those inputs
+locally before spending quota, then stores them in the encrypted vehicle profile only after the user
+confirms the provider preview.
+The 100-mile search-radius restriction does not affect this integration because MoneyTree calls the
+ZIP-based base price-prediction endpoint rather than an inventory-radius search endpoint.
+
+MarketCheck webhook subscriptions are deferred until their event types, verification mechanism,
+delivery/retry behavior, and quota treatment can be validated against an enabled account.
 
 ## Observability
 

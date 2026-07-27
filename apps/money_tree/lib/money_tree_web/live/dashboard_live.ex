@@ -345,7 +345,7 @@ defmodule MoneyTreeWeb.DashboardLive do
   end
 
   defp assign_asset_data(socket, current_user) do
-    summary = Assets.dashboard_summary(current_user, preload: [:account])
+    summary = Assets.dashboard_summary(current_user)
     accounts = Accounts.list_accessible_accounts(current_user, order_by: {:asc, :name})
 
     assign(socket, asset_summary: summary, asset_accounts: accounts)
@@ -649,7 +649,7 @@ defmodule MoneyTreeWeb.DashboardLive do
   defp account_count_label(_count, singular), do: "0 #{singular}s"
 
   defp asset_total_summary(%{totals: [total | _totals]}, show_balances?) do
-    visible_value(show_balances?, total.valuation, total.valuation_masked)
+    "#{visible_value(show_balances?, total.net_equity, total.net_equity_masked)} net equity"
   end
 
   defp asset_total_summary(_asset_summary, _show_balances?), do: "No asset values tracked"
@@ -1036,18 +1036,16 @@ defmodule MoneyTreeWeb.DashboardLive do
             <div>
               <p class="font-medium text-zinc-900"><%= summary.asset.name %></p>
               <p class="text-xs text-zinc-500">
-                <%= summary.asset.asset_type %> • <%= summary.asset.account.name %>
+                <%= summary.asset.asset_type %> • <%= asset_account_name(summary.asset) %>
               </p>
             </div>
             <div class="text-right">
               <p class="text-sm font-semibold text-zinc-900">
-                <%= visible_value(@show_balances?, summary.valuation, summary.valuation_masked) %>
+                <%= visible_value(@show_balances?, summary.net_equity, summary.net_equity_masked) %>
               </p>
               <p class="text-xs text-zinc-500">
-                <%= summary.asset.ownership_type %>
-                <%= if summary.asset.location do %>
-                  • <%= summary.asset.location %>
-                <% end %>
+                Net equity •
+                <%= visible_value(@show_balances?, summary.gross_value, summary.gross_value_masked) %> gross
               </p>
             </div>
           </div>
@@ -1056,9 +1054,7 @@ defmodule MoneyTreeWeb.DashboardLive do
             <span :if={summary.asset.acquired_on}>
               Acquired <%= format_date(summary.asset.acquired_on) %>
             </span>
-            <span :if={summary.asset.last_valued_on}>
-              Last valued <%= format_date(summary.asset.last_valued_on) %>
-            </span>
+            <span><%= summary.valuation_freshness %></span>
           </div>
 
           <p :if={summary.asset.notes} class="text-xs text-zinc-500"><%= summary.asset.notes %></p>
@@ -1090,12 +1086,12 @@ defmodule MoneyTreeWeb.DashboardLive do
         </li>
       </ul>
 
-      <div class="grid gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3 sm:grid-cols-2">
-        <div :for={total <- @asset_summary.totals} class="flex items-center justify-between text-sm">
+      <div class="grid gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3">
+        <div :for={total <- @asset_summary.totals} class="grid gap-2 text-sm sm:grid-cols-4">
           <span class="text-zinc-600"><%= total.currency %> • <%= total.asset_count %> assets</span>
-          <span class="font-semibold text-zinc-800">
-            <%= visible_value(@show_balances?, total.valuation, total.valuation_masked) %>
-          </span>
+          <span>Gross <strong><%= visible_value(@show_balances?, total.gross_value, total.gross_value_masked) %></strong></span>
+          <span>Debt <strong><%= visible_value(@show_balances?, total.linked_debt, total.linked_debt_masked) %></strong></span>
+          <span>Net equity <strong><%= visible_value(@show_balances?, total.net_equity, total.net_equity_masked) %></strong></span>
         </div>
         <div :if={Enum.empty?(@asset_summary.totals)} class="text-sm text-zinc-500">
           Totals appear after at least one asset valuation is recorded.
@@ -1462,16 +1458,22 @@ defmodule MoneyTreeWeb.DashboardLive do
   end
 
   defp asset_account_options(accounts) do
-    Enum.map(accounts, fn account ->
-      label =
-        case account.currency do
-          nil -> account.name
-          currency -> "#{account.name} (#{currency})"
-        end
+    [
+      {"No linked funding account", ""}
+      | Enum.map(accounts, fn account ->
+          label =
+            case account.currency do
+              nil -> account.name
+              currency -> "#{account.name} (#{currency})"
+            end
 
-      {label, account.id}
-    end)
+          {label, account.id}
+        end)
+    ]
   end
+
+  defp asset_account_name(%Asset{account: %{name: name}}) when is_binary(name), do: name
+  defp asset_account_name(%Asset{}), do: "No funding account"
 
   defp format_input_date(nil), do: nil
   defp format_input_date(%Date{} = date), do: Date.to_iso8601(date)

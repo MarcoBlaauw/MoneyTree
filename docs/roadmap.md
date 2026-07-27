@@ -33,33 +33,30 @@ superseded plans are indexed in [`archive/`](archive/README.md).
 | Initial financial evaluations | Deterministic status summary, JSON endpoint, `/app/evaluations`, dashboard entry points, and notification integration completed. | [Active evaluation plan](04-financial-evaluation-implementation-plan.md) |
 | OpenBao application integration | Environment/OpenBao provider boundary, AppRole KV reads, owner-only health status, local validation, production policy, and runbook completed. | [OpenBao architecture plan](architecture/openbao-security-implementation-plan.md) |
 | Bills & Subscriptions naming and categorization | Renamed the user-facing Obligations workspace to Bills & Subscriptions and replaced `obligation_type` with an expense-category taxonomy (subscription, utility, insurance, housing, debt_payment, tax_or_fee, membership, other), including a data migration for existing rows. Internal context, table, routes, and JSON fields intentionally unchanged. | [Archived rename plan](archive/101-bills-and-subscriptions-rename-implementation-plan.md) |
+| Vehicle and tangible-asset management | Direct ownership, encrypted vehicle profiles, append-only valuations, linked-debt equity, progressive MarketCheck onboarding, persistent quota controls, scheduled refresh, and source/range/trend history presentation completed and validated with the configured provider. | [Archived vehicle-assets plan](archive/102-vehicle-asset-management-implementation-plan.md) |
 
 ## Current work
 
 Work in this section is sequenced, not parallel by default.
 
-1. **Vehicle and tangible-asset management, Phase 1**
-   - Make funding-account links optional and non-destructive.
-   - Add vehicle profiles, sensitive VIN handling, append-only valuation snapshots, linked debt,
-     manual valuation, history, and gross-versus-net-equity presentation.
-   - Keep manual entry first-class; do not block Phase 1 on a commercial provider.
-   - Source: [102 implementation plan](102-vehicle-asset-management-implementation-plan.md).
-
-2. **Financial evaluation expansion**
+1. **Financial evaluation expansion**
    - Add evaluation-owned data only where no current domain owns the facts.
    - Sequence insurance and rent profiles after the completed Bills & Subscriptions rename and
      coordinate vehicle evaluation work with the asset schema from plan 102.
    - Preserve deterministic statuses and review-first document extraction.
    - Source: [financial evaluation plan](04-financial-evaluation-implementation-plan.md).
 
-3. **Investment portfolio management, Phase 1**
+2. **Investment portfolio management, Phase 1**
    - Add manual investment accounts, instruments, an append-only activity ledger, tax lots,
      manually entered end-of-day pricing, and deterministic positions.
    - Keep contributions separate from returns and expose explicit insufficient-data states.
+   - After manual positions and Plan 102 net-equity calculations are ready, perform the explicit
+     household net-worth integration across tangible assets and investments in one pass, with
+     linked-debt and investment-account double-count prevention.
    - Defer automated prices and AI narrative until the manual ledger and analytics are proven.
    - Source: [103 implementation plan](103-investment-portfolio-implementation-plan.md).
 
-4. **OpenBao production readiness**
+3. **OpenBao production readiness**
    - Validate a real staging/production deployment with persistent storage, TLS, network controls,
      least-privilege AppRole, FRED and other required secret groups, rotation, and rollback.
    - Reduce redundant plaintext production secrets only after a successful cutover.
@@ -88,8 +85,9 @@ Deferred items have value but are intentionally not in the immediate execution q
 
 ## Future work
 
-- **Vehicle valuation providers:** add MarketCheck only after a real account and response contract are
-  available; consider KBB or J.D. Power later behind the same provider boundary.
+- **Vehicle valuation provider follow-ups:** evaluate MarketCheck webhook subscriptions after their
+  event/signature/quota contract is verified; consider KBB or J.D. Power later behind the same
+  provider boundary.
 - **Insurance and rent evaluation domains:** model renewal, premium/rent, verification, and staleness
   without duplicating Assets, Loans, or Obligations.
 - **Automated investment market data:** add Twelve Data after the manual ledger is proven and a
@@ -98,8 +96,6 @@ Deferred items have value but are intentionally not in the immediate execution q
   read-only Ollama narrative, and advanced tax-lot/risk analytics incrementally.
 - **Crypto holdings:** keep outside the first investment model until crypto-specific tax-lot and
   corporate-action assumptions are explicitly designed.
-- **Household net-worth integration:** decide once tangible assets and investments can be incorporated
-  together, avoiding multiple incompatible definitions of net worth.
 - **Non-mortgage benchmark depth:** add source-backed auto refinance, used-auto, personal-loan, and
   student-loan benchmark data with clear APR/term/credit assumptions.
 - **Additional jurisdiction coverage:** use the

@@ -10,6 +10,10 @@ path "kv/data/moneytree/prod/fred" {
   capabilities = ["read"]
 }
 
+path "kv/data/moneytree/prod/marketcheck" {
+  capabilities = ["read"]
+}
+
 path "kv/data/moneytree/prod/phoenix" {
   capabilities = ["read"]
 }

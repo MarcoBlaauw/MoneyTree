@@ -4,11 +4,32 @@ Tracks: [GitHub issue #81](https://github.com/MarcoBlaauw/MoneyTree/issues/81)
 
 ## Status
 
-Planned next, now that [101](./archive/101-bills-and-subscriptions-rename-implementation-plan.md)
-(Bills & Subscriptions rename) is complete, and before
-[103](./103-investment-portfolio-implementation-plan.md). Phase 1 is fully local/manual. Automated
-MarketCheck work in Phase 2 depends on obtaining and validating a real provider account and API
-contract.
+Completed and archived on 2026-07-27, after
+[101](./101-bills-and-subscriptions-rename-implementation-plan.md) (Bills & Subscriptions rename)
+and before [103](../103-investment-portfolio-implementation-plan.md).
+
+The completed implementation includes:
+
+- assets have a required direct `user_id`, optional `account_id`, non-destructive account unlinking,
+  acquisition cost, and optional loan/mortgage links
+- existing asset owners were backfilled from the owning account
+- vehicle profiles store VIN and license plate values through Cloak and validate VIN format,
+  condition, mileage, and core vehicle metadata
+- asset valuations are append-only; context-created assets receive an initial manual snapshot, and
+  `Assets.record_valuation/3` updates only the cached latest value
+- tenant authorization covers directly owned assets, shared-account assets, vehicle profiles,
+  valuations, and linked debt
+- the Assets workspace provides vehicle-specific details, manual valuation entry,
+  source/date/mileage history, a simple value-over-time visualization, and deterministic 90-day
+  freshness labeling
+- the Assets workspace and dashboard distinguish gross value, linked debt, and net equity without
+  changing the household net-worth calculation reserved for plan 103
+
+The Phase 2 MarketCheck VIN-decode/base-price onboarding flow, persistent request ledger, quota
+controls, weekly worker, OpenBao secret mapping, usage UI, and real review/confirmation flow were
+validated with the configured provider key. Value history now distinguishes provider estimates from
+manual values, shows deterministic value and mileage trends, and presents provider ranges ahead of
+point estimates when ranges are available.
 
 The append-only valuation snapshot pattern, provider-neutral adapter behaviour, and Oban refresh-job
 scaffolding built here become the template for the investment market-data and portfolio snapshots in
@@ -22,9 +43,9 @@ specific identification and condition data, optional links to a funding account 
 (loan/mortgage), and a provider-neutral vehicle valuation interface with manual entry as the
 always-available first-class path.
 
-## Current repo fit
+## Starting repo fit
 
-`MoneyTree.Assets` is a working but intentionally thin domain:
+At the start of this plan, `MoneyTree.Assets` was a working but intentionally thin domain:
 
 - `assets` table / `MoneyTree.Assets.Asset` — one row per asset, one mutable `valuation_amount` +
   `last_valued_on`, `asset_type` as a free-text string (no vehicle-specific fields at all),
@@ -64,6 +85,10 @@ New tables (all `binary_id` primary keys, `utc_datetime_usec` timestamps, matchi
 convention):
 
 ### `assets` (alter existing table)
+- Add `user_id references(:users, on_delete: :delete_all)` as the required direct owner. Backfill
+  existing rows from `accounts.user_id`. This is required for secure ownership when `account_id`
+  becomes optional: linked assets remain shareable through account membership, while unlinked
+  assets are visible only to their direct owner.
 - Make `account_id` nullable; change its FK to `on_delete: :nilify_all`.
 - Add `owner_notes` is already covered by `notes`; no change needed there.
 - Add `linked_loan_id references(:loans, on_delete: :nilify_all)` (nullable) and
@@ -170,21 +195,21 @@ Provider candidates from the issue, with recommended sequencing:
 
 ## Phases
 
-**Phase 1 — manual vehicles, VIN decode, manual valuation.**
-- Migrations: alter `assets` (nullable `account_id`, new columns), create `vehicle_profiles`,
+**Phase 1 — manual vehicles, VIN capture, manual valuation.**
+- [x] Migrations: alter `assets` (direct owner, nullable `account_id`, new columns), create `vehicle_profiles`,
   `asset_valuations`.
-- `MoneyTree.Assets.Asset` changeset updates: drop `account_id` from `validate_required`; add
+- [x] `MoneyTree.Assets.Asset` changeset updates: drop `account_id` from `validate_required`; add
   `asset_type` validation against a fixed list (`vehicle | real_estate | equipment | collectible |
   other`) instead of free text; keep backward compatibility for any existing free-text values.
-- New `MoneyTree.Assets.VehicleProfile` schema + changeset (VIN format validation — 17-character
+- [x] New `MoneyTree.Assets.VehicleProfile` schema + changeset (VIN format validation — 17-character
   alphanumeric, no I/O/Q — should be validated even before any provider call).
-- `Assets.record_valuation/3` — inserts an `asset_valuations` row, then updates the asset's cached
+- [x] `Assets.record_valuation/3` — inserts an `asset_valuations` row, then updates the asset's cached
   `valuation_amount`/`last_valued_on` from the latest snapshot (never overwrites history).
-- LiveView: extend `AssetsLive.Index` with an asset-type-aware form (vehicle fields appear when
+- [x] LiveView: extend `AssetsLive.Index` with an asset-type-aware detail form (vehicle fields appear when
   `asset_type == "vehicle"`), a manual "Record valuation" action, and a per-asset detail view
   (new `AssetsLive.Show` or a detail panel) showing the valuation history table and a simple
   value-over-time chart.
-- Dashboard: split "Assets" card into gross asset value and net equity (gross minus any linked
+- [x] Dashboard: split "Assets" card into gross asset value and net equity (gross minus any linked
   loan/mortgage current balance), and clearly label which is which — this satisfies "Dashboard
   totals must clearly distinguish gross asset value from net equity" without yet integrating into
   `Accounts.net_worth_snapshot/2`. Full net-worth integration (folding tangible-asset net equity
@@ -192,19 +217,32 @@ Provider candidates from the issue, with recommended sequencing:
   question below rather than silently changing what net worth means today.
 
 **Phase 2 — MarketCheck adapter + scheduled refresh.**
-- `MoneyTree.Assets.VehicleValuationProviders.MarketCheck` implementing the behaviour above.
-- `MoneyTree.Assets.ProviderRegistry` (enabled/disabled + `MARKETCHECK_API_KEY` wiring in
+- [x] `MoneyTree.Assets.VehicleValuationProviders.MarketCheck` implements the provider-neutral
+  behavior against the basic VIN-specification and base-price endpoints. Onboarding uses exactly
+  those two calls; scheduled refreshes use only one base-price call. HTTP retries are disabled.
+- [x] `MoneyTree.Assets.ProviderRegistry` (enabled/disabled + `MARKETCHECK_API_KEY` wiring in
   `config/runtime.exs`, documented in `docs/architecture/environment-variables.md`).
-- `MoneyTree.Assets.Workers.ValuationRefreshWorker` (Oban), scheduled nightly/weekly via
-  `config/config.exs`'s `crontab`, one job per vehicle asset with a configured provider. Must:
-  - Skip (not error) assets whose latest valuation is `manually_overridden: true` and recent,
-    unless the user explicitly requests a refresh.
-  - Respect provider rate limits (same `TimedCmd`/timeout discipline used elsewhere for external
-    calls is not directly applicable here since this is plain HTTP via `Req`, but apply a
-    `receive_timeout` and treat `429`/`Retry-After` explicitly).
-  - On any error, write a `valuation_provider_runs` row and leave the asset's last known value
+- [x] `valuation_provider_runs` persists every started call, outcome, duration, monthly budget, and
+  remaining local allowance. A PostgreSQL advisory lock makes the deployment-wide 450/month default
+  and 500/month hard ceiling atomic across concurrent jobs.
+- [x] `MoneyTree.Assets.Workers.ValuationRefreshWorker` (Oban), checked daily for new baselines and
+  limited to one provider call per vehicle per seven days. The dedicated `market_data` queue has
+  concurrency one, and a persistent rolling-window guard enforces MarketCheck's 5 calls/second limit.
+  The worker:
+  - skips assets whose latest valuation is a recent manual override
+  - respects provider rate limits and monthly quota. `429` is recorded without retry, and successful
+    and failed calls both start the same seven-day cooldown.
+  - on any error, writes a `valuation_provider_runs` row and leaves the asset's last known value
     untouched — this is an explicit acceptance criterion.
-- UI: value-over-time chart with provider vs. manual points distinguished, depreciation trend,
+- [x] UI: shows monthly MarketCheck usage/remaining budget, configuration state, value history
+  source/date/mileage, and existing value-over-time presentation.
+- [x] Progressive asset onboarding: choose the type first; vehicles ask only for VIN, mileage, and
+  ZIP, show decoded specifications and the estimate for explicit review, then persist the asset,
+  encrypted vehicle profile, and provider valuation together. Optional ownership, account/debt,
+  location, and document fields are under “More details.” Identical previews are reused for one day
+  without spending more quota.
+- [x] Rich provider UI: value-over-time chart with provider vs. manual points distinguished,
+  depreciation trend,
   mileage history, source/date labeling, and a visible range (not a false point-precision number)
   whenever the provider returns `value_low`/`value_high`.
 
@@ -224,31 +262,32 @@ Provider candidates from the issue, with recommended sequencing:
 
 ## Acceptance criteria checklist (from the issue)
 
-- [ ] A user can add a vehicle and record a manual value.
-- [ ] Every valuation creates a historical snapshot; nothing overwrites `asset_valuations` rows.
-- [ ] Current asset totals and net equity are derived from the latest valid snapshot per asset.
-- [ ] Provider failures never erase or replace the last known value (verified by a regression test
+- [x] A user can add a vehicle and record a manual value.
+- [x] Every valuation creates a historical snapshot; nothing overwrites `asset_valuations` rows.
+- [x] Current asset totals and net equity are derived from the latest valid snapshot per asset.
+- [x] Provider failures never erase or replace the last known value (verified by a regression test
       that simulates a provider error and asserts the asset's cached valuation and history are
       unchanged).
-- [ ] Provider-specific payloads (MarketCheck's raw JSON shape) stay inside the adapter + `raw`
+- [x] Provider-specific payloads (MarketCheck's raw JSON shape) stay inside the adapter + `raw`
       column; no MarketCheck-specific field names appear in `MoneyTree.Assets`'s public API or the
       LiveView beyond the normalized valuation shape.
-- [ ] Tests cover: ownership authorization (asset access via `account_id` membership when present,
+- [x] Tests cover: ownership authorization (asset access via `account_id` membership when present,
       direct user ownership otherwise), valuation freshness/staleness labeling, linked-debt net
-      equity math, and provider error handling (timeout, rate limit, invalid response).
+      equity math, provider error handling (timeout, rate limit, invalid response), monthly quota,
+      weekly cooldown, and five-calls-per-second reservation.
 
-## Open questions for the user
+## Decisions and open questions
 
-1. **Net worth integration**: should tangible-asset net equity fold into
-   `Accounts.net_worth_snapshot/2` (the number shown as household net worth today), or stay a
-   separate "asset equity" figure next to it? The issue only requires the Assets page/dashboard
-   card to distinguish gross vs. net; it doesn't require changing the existing net-worth number.
-   Recommend keeping them separate for this phase and revisiting once 103 (investments) also needs
-   to feed into net worth, so it's one integration pass instead of two.
+1. **Net worth integration — resolved**: Plan 102 will show gross asset value and asset net equity
+   without changing `Accounts.net_worth_snapshot/2`. Plan 103 now contains an explicit household
+   net-worth integration phase that adds tangible-asset net equity and investment value together,
+   with double-count prevention. This is tracked work, not a future reminder for the product owner.
 2. **VIN encryption**: confirm treating VIN like an account number (Cloak-encrypted at rest,
    never logged) is the right sensitivity bar — it's a real identifier but less sensitive than an
    account/routing number. This plan encrypts it either way unless told otherwise, since it's cheap
    and the issue explicitly calls it out as "encrypted or otherwise treated as sensitive."
-3. **MarketCheck account/pricing**: needs an actual account and API key before Phase 2 can be
-   built against a real response shape rather than documentation alone. Flag as a prerequisite,
-   not something this plan can unblock.
+3. **MarketCheck live validation — completed**: the persistent OpenBao `marketcheck` group contains
+   the real key, and a user-reviewed VIN decode and baseline price response completed successfully.
+4. **MarketCheck webhooks — deferred**: evaluate subscriptions later, after the real account exposes
+   the available event types and their signature, delivery/retry, and quota behavior. Webhooks must
+   use the same normalized provider boundary and may not bypass monthly request accounting.

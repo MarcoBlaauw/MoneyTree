@@ -1,10 +1,10 @@
 defmodule MoneyTree.Secrets.OpenBao do
   @moduledoc """
-  OpenBao-backed secret provider scaffold.
+  OpenBao-backed runtime secret provider.
 
-  This module currently validates connection/auth metadata and provides the
-  provider boundary for the next integration slice. It intentionally does not
-  perform OpenBao reads yet.
+  Known application secrets are resolved from constrained OpenBao groups.
+  Keys outside those groups are ordinary runtime configuration and continue
+  to resolve from the process environment.
   """
 
   @behaviour MoneyTree.Secrets.Provider
@@ -19,6 +19,7 @@ defmodule MoneyTree.Secrets.OpenBao do
     database: "database",
     cloak: "cloak",
     fred: "fred",
+    marketcheck: "marketcheck",
     phoenix: "phoenix",
     plaid: "plaid",
     smtp: "smtp"
@@ -45,7 +46,7 @@ defmodule MoneyTree.Secrets.OpenBao do
          secrets when is_map(secrets) <- get_group(group, opts) do
       Map.get(secrets, key)
     else
-      {:error, :unknown_key} -> nil
+      {:error, :unknown_key} -> Env.get(key)
     end
   end
 

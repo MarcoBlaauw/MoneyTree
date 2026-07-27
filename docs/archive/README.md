@@ -24,6 +24,7 @@ Use [`../roadmap.md`](../roadmap.md) for current sequencing and
 | [Refinance fee strategy](loan-center-refinance-fee-strategy.md) | Superseded and completed by the structured loan-fee subsystem. |
 | [Loan-fee subsystem plan](loan-fee-subsystem-implementation-plan.md) | V1 persistence, prediction, quote analysis, Louisiana starter data, and Loan Center integration completed. |
 | [Bills & Subscriptions rename plan](101-bills-and-subscriptions-rename-implementation-plan.md) | UI rename and obligation-type taxonomy realignment completed; internal context/table/routes intentionally unchanged. |
+| [Vehicle and tangible-asset plan](102-vehicle-asset-management-implementation-plan.md) | Manual and provider-backed vehicle assets, valuation history, linked-debt equity, quota controls, and progressive onboarding completed. |
 
 Deferred work mentioned inside archived plans has been normalized into the roadmap instead of keeping
 the plans active indefinitely.
