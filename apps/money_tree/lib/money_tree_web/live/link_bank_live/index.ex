@@ -11,6 +11,7 @@ defmodule MoneyTreeWeb.LinkBankLive.Index do
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Institutions.Institution
   alias MoneyTree.Repo
+  alias MoneyTree.SimpleFin
   alias MoneyTree.SimpleFin.Redaction
   alias MoneyTree.Synchronization
 
@@ -310,39 +311,8 @@ defmodule MoneyTreeWeb.LinkBankLive.Index do
   end
 
   defp persist_import_review(%Connection{} = connection, account_ids) do
-    current_review =
-      connection.provider_metadata
-      |> get_in(["simplefin", "import_review"])
-      |> normalize_map()
-
-    provider_metadata =
-      put_in_simplefin(connection.provider_metadata, "import_review", %{
-        "status" => "confirmed",
-        "account_ids" => account_ids,
-        "selected_count" => length(account_ids),
-        "confirmed_at" => DateTime.to_iso8601(DateTime.utc_now())
-      })
-      |> then(fn metadata ->
-        put_in_simplefin(
-          metadata,
-          "import_review",
-          Map.merge(current_review, metadata["simplefin"]["import_review"])
-        )
-      end)
-
-    connection
-    |> Connection.changeset(%{provider_metadata: provider_metadata})
-    |> Repo.update()
+    SimpleFin.confirm_import(connection, account_ids)
   end
-
-  defp put_in_simplefin(provider_metadata, key, value) do
-    provider_metadata = normalize_map(provider_metadata)
-    current = provider_metadata |> Map.get("simplefin", %{}) |> normalize_map()
-    Map.put(provider_metadata, "simplefin", Map.put(current, key, value))
-  end
-
-  defp normalize_map(value) when is_map(value), do: value
-  defp normalize_map(_value), do: %{}
 
   defp ensure_plaid_institution(name) when is_binary(name) and name != "" do
     slug = normalize_slug(name)
@@ -506,11 +476,16 @@ defmodule MoneyTreeWeb.LinkBankLive.Index do
   attr :connection, :map, required: true
 
   defp simplefin_import_review(assigns) do
-    review = get_in(assigns.connection.provider_metadata, ["simplefin", "import_review"])
-    assigns = assign(assigns, :review, review)
+    review = get_in(assigns.connection.provider_metadata, ["simplefin", "import_review"]) || %{}
+    pending_new_accounts = review["pending_new_accounts"] || []
+
+    assigns =
+      assigns
+      |> assign(:review, review)
+      |> assign(:pending_new_accounts, pending_new_accounts)
 
     ~H"""
-    <div :if={@review && @review["status"] == "pending"} class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+    <div :if={@review["status"] == "pending"} class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
       <p class="text-sm font-semibold text-amber-800">Review accounts to import</p>
       <form phx-submit="confirm-import" class="mt-3 space-y-2">
         <input type="hidden" name="connection_id" value={@connection.id} />
@@ -519,6 +494,21 @@ defmodule MoneyTreeWeb.LinkBankLive.Index do
           <%= account["name"] %>
         </label>
         <button type="submit" class="btn">Confirm import</button>
+      </form>
+    </div>
+
+    <div :if={@pending_new_accounts != []} class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <p class="text-sm font-semibold text-amber-800">New accounts found at SimpleFIN</p>
+      <p class="mt-1 text-xs text-amber-700">
+        These accounts weren't part of your original import. Select which ones to add.
+      </p>
+      <form phx-submit="confirm-import" class="mt-3 space-y-2">
+        <input type="hidden" name="connection_id" value={@connection.id} />
+        <label :for={account <- @pending_new_accounts} class="flex items-center gap-2 text-sm text-zinc-700">
+          <input type="checkbox" name="account_ids[]" value={account["id"]} checked />
+          <%= account["name"] %>
+        </label>
+        <button type="submit" class="btn">Add selected accounts</button>
       </form>
     </div>
     """

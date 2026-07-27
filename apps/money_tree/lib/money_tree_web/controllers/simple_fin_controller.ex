@@ -7,6 +7,7 @@ defmodule MoneyTreeWeb.SimpleFinController do
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Institutions.Institution
   alias MoneyTree.Repo
+  alias MoneyTree.SimpleFin
   alias MoneyTree.SimpleFin.Redaction
 
   def config(conn, _params) do
@@ -315,44 +316,25 @@ defmodule MoneyTreeWeb.SimpleFinController do
   end
 
   defp serialize_import_review(%Connection{} = connection) do
-    connection.provider_metadata
-    |> get_in(["simplefin", "import_review"])
-    |> case do
-      review when is_map(review) ->
+    case SimpleFin.import_review(connection) do
+      review when map_size(review) == 0 ->
+        nil
+
+      review ->
         %{
           status: review["status"],
           account_count: review["account_count"],
           selected_count: review["selected_count"],
           discovered_at: review["discovered_at"],
           confirmed_at: review["confirmed_at"],
-          accounts: review["discovered_accounts"] || []
+          accounts: review["discovered_accounts"] || [],
+          new_accounts: review["pending_new_accounts"] || []
         }
-
-      _ ->
-        nil
     end
   end
 
   defp persist_import_review(%Connection{} = connection, account_ids) do
-    current_review =
-      connection.provider_metadata
-      |> get_in(["simplefin", "import_review"])
-      |> normalize_map()
-
-    provider_metadata =
-      put_simplefin_metadata(connection.provider_metadata, %{
-        "import_review" =>
-          Map.merge(current_review, %{
-            "status" => "confirmed",
-            "account_ids" => account_ids,
-            "selected_count" => length(account_ids),
-            "confirmed_at" => DateTime.utc_now() |> DateTime.to_iso8601()
-          })
-      })
-
-    connection
-    |> Connection.changeset(%{provider_metadata: provider_metadata})
-    |> Repo.update()
+    SimpleFin.confirm_import(connection, account_ids)
   end
 
   defp claim_status(validation) do
@@ -461,15 +443,6 @@ defmodule MoneyTreeWeb.SimpleFinController do
     |> String.replace(~r/-+/, "-")
     |> String.trim("-")
   end
-
-  defp put_simplefin_metadata(provider_metadata, updates) do
-    provider_metadata = normalize_map(provider_metadata)
-    current = provider_metadata |> Map.get("simplefin", %{}) |> normalize_map()
-    Map.put(provider_metadata, "simplefin", Map.merge(current, updates))
-  end
-
-  defp normalize_map(value) when is_map(value), do: value
-  defp normalize_map(_value), do: %{}
 
   defp translate_error({msg, opts}) do
     Enum.reduce(opts, msg, fn {key, value}, acc ->

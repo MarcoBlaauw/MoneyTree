@@ -16,6 +16,7 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
   alias MoneyTree.Institutions.Institution
   alias MoneyTree.Recurring
   alias MoneyTree.Repo
+  alias MoneyTree.SimpleFin
   alias MoneyTree.SimpleFin.Client
   alias MoneyTree.SimpleFin.Redaction
   alias MoneyTree.Transactions.Fingerprints
@@ -63,6 +64,7 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
          {:ok, response} <-
            get_accounts(client_module, access_url, sync_options(connection, mode)),
          {:ok, connection} <- record_request_usage(connection, response),
+         {:ok, connection} <- note_new_accounts(connection, response["accounts"]),
          {:ok, institution_map} <- ensure_account_institutions(response["connections"]),
          {:ok, account_records} <-
            persist_accounts(connection, response["accounts"], institution_map),
@@ -155,7 +157,7 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
 
   defp persist_accounts(connection, accounts, institution_map) do
     timestamp = DateTime.utc_now()
-    selected_account_ids = selected_simplefin_account_ids(connection)
+    selected_account_ids = SimpleFin.selected_account_ids(connection)
 
     accounts
     |> List.wrap()
@@ -495,19 +497,27 @@ defmodule MoneyTree.SimpleFin.Synchronizer do
     |> normalize_map()
   end
 
-  defp selected_simplefin_account_ids(connection) do
-    connection.provider_metadata
-    |> normalize_map()
-    |> get_in(["simplefin", "import_review", "account_ids"])
-    |> case do
-      ids when is_list(ids) ->
-        ids
-        |> Enum.filter(&is_binary/1)
-        |> MapSet.new()
+  defp note_new_accounts(connection, accounts) do
+    case SimpleFin.selected_account_ids(connection) do
+      nil ->
+        {:ok, connection}
 
-      _ ->
-        nil
+      selected_ids ->
+        accounts
+        |> List.wrap()
+        |> Enum.filter(&is_binary(simplefin_account_id(&1)))
+        |> Enum.reject(&selected_simplefin_account?(&1, selected_ids))
+        |> Enum.map(&discovered_account_summary/1)
+        |> then(&SimpleFin.note_new_accounts(connection, &1))
     end
+  end
+
+  defp discovered_account_summary(payload) do
+    %{
+      "id" => simplefin_account_id(payload),
+      "name" => account_name(payload),
+      "balance" => get_any(payload, ["balance", :balance])
+    }
   end
 
   defp selected_simplefin_account?(_payload, nil), do: true

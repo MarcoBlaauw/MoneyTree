@@ -183,6 +183,43 @@ defmodule MoneyTreeWeb.SimpleFinControllerTest do
            ]
   end
 
+  test "confirm import merges newly approved accounts with the existing confirmed selection", %{
+    conn: conn,
+    user: user
+  } do
+    institution = institution_fixture(%{name: "SimpleFIN Bridge"})
+
+    connection =
+      connection_fixture(user, %{
+        institution: institution,
+        provider: "simplefin",
+        provider_metadata: %{
+          "simplefin" => %{
+            "import_review" => %{
+              "status" => "confirmed",
+              "account_ids" => ["acct-1"],
+              "pending_new_accounts" => [%{"id" => "acct-2", "name" => "New Savings"}]
+            }
+          }
+        }
+      })
+
+    response =
+      conn
+      |> post(~p"/api/simplefin/connections/#{connection.id}/imports/confirm", %{
+        "account_ids" => ["acct-2"]
+      })
+      |> json_response(200)
+
+    assert response["data"]["import_review"]["new_accounts"] == []
+
+    refreshed = Repo.get!(Connection, connection.id)
+    review = get_in(refreshed.provider_metadata, ["simplefin", "import_review"])
+
+    assert Enum.sort(review["account_ids"]) == ["acct-1", "acct-2"]
+    assert review["pending_new_accounts"] == []
+  end
+
   test "connections lists active SimpleFIN connections", %{conn: conn, user: user} do
     institution = institution_fixture(%{name: "SimpleFIN Bridge"})
 

@@ -86,4 +86,40 @@ defmodule MoneyTreeWeb.LinkBankLiveTest do
     assert html =~ "Legacy connections"
     assert html =~ "Purge credentials"
   end
+
+  test "surfaces newly discovered accounts for approval and merges them on confirm", %{conn: conn} do
+    {:ok, %{conn: conn, user: user}} = register_and_log_in_user(%{conn: conn})
+
+    connection =
+      connection_fixture(user, %{
+        provider: "simplefin",
+        provider_metadata: %{
+          "simplefin" => %{
+            "import_review" => %{
+              "status" => "confirmed",
+              "account_ids" => ["acct-1"],
+              "pending_new_accounts" => [%{"id" => "acct-2", "name" => "New Savings"}]
+            }
+          }
+        }
+      })
+
+    {:ok, view, html} = live(conn, ~p"/app/link-bank")
+
+    assert html =~ "New accounts found at SimpleFIN"
+    assert html =~ "New Savings"
+
+    render_submit(view, "confirm-import", %{
+      "connection_id" => connection.id,
+      "account_ids" => ["acct-2"]
+    })
+
+    refreshed = MoneyTree.Repo.get!(MoneyTree.Institutions.Connection, connection.id)
+    review = MoneyTree.SimpleFin.import_review(refreshed)
+
+    assert Enum.sort(review["account_ids"]) == ["acct-1", "acct-2"]
+    assert review["pending_new_accounts"] == []
+
+    refute render(view) =~ "New accounts found at SimpleFIN"
+  end
 end

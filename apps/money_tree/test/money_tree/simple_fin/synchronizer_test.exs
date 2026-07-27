@@ -8,6 +8,7 @@ defmodule MoneyTree.SimpleFin.SynchronizerTest do
   alias MoneyTree.Institutions.Institution
   alias MoneyTree.InstitutionsFixtures
   alias MoneyTree.Repo
+  alias MoneyTree.SimpleFin
   alias MoneyTree.SimpleFin.Synchronizer
   alias MoneyTree.Transactions.Transaction
 
@@ -182,6 +183,47 @@ defmodule MoneyTree.SimpleFin.SynchronizerTest do
 
       assert result.accounts_synced == 0
       assert Repo.aggregate(Account, :count) == 0
+
+      refreshed = Repo.get!(Connection, connection.id)
+
+      assert [%{"id" => "account-moved"}] =
+               SimpleFin.import_review(refreshed)["pending_new_accounts"]
+    end
+
+    test "imports a newly discovered account once confirmed, without dropping the original selection" do
+      user = AccountsFixtures.user_fixture()
+      original_account_id = "account-" <> String.duplicate("x", 150)
+
+      connection =
+        simplefin_connection(user, %{
+          provider_metadata: %{
+            "simplefin" => %{
+              "import_review" => %{
+                "status" => "confirmed",
+                "account_ids" => [original_account_id]
+              }
+            }
+          }
+        })
+
+      assert {:ok, %{accounts_synced: 0}} =
+               Synchronizer.sync(connection, client: MovedAccountClient)
+
+      connection = Repo.get!(Connection, connection.id)
+      assert {:ok, connection} = SimpleFin.confirm_import(connection, ["account-moved"])
+
+      review = SimpleFin.import_review(connection)
+      assert Enum.sort(review["account_ids"]) == Enum.sort([original_account_id, "account-moved"])
+      assert review["pending_new_accounts"] == []
+
+      assert {:ok, %{accounts_synced: 1}} =
+               Synchronizer.sync(connection, client: MovedAccountClient)
+
+      account = Repo.one!(Account)
+      assert account.external_id == "simplefin:#{connection.id}:account-moved"
+
+      final_review = SimpleFin.import_review(Repo.get!(Connection, connection.id))
+      assert original_account_id in final_review["account_ids"]
     end
 
     test "persists provider errors without treating them as fatal" do
