@@ -49,7 +49,7 @@ Orleans Parish is modeled as a special case. For normal residential refinance am
 
 ## Louisiana Title Insurance
 
-Louisiana lender title policy cost is modeled from the filed-rate tier schedule summarized in `docs/deep-research-report.md`.
+Louisiana lender title policy cost is modeled from the filed-rate tier schedule summarized in `docs/architecture/deep-research-report.md`.
 
 V1 behavior:
 
@@ -107,11 +107,11 @@ MoneyTree seeds researched parish profiles for:
 
 All Louisiana parish profiles still inherit statewide title, settlement, notary, origination, and escrow/prepaid assumptions unless a parish-specific rule overrides them.
 
-Use `docs/loan-fee-parish-research-template.md` to collect recording base fees, per-page fees, indexing fees, mortgage certificate fees, cancellation/release fees, e-recording surcharges, local documentary taxes, source URLs, last verified dates, and confidence level.
+Use `docs/architecture/loan-fee-parish-research-template.md` to collect recording base fees, per-page fees, indexing fees, mortgage certificate fees, cancellation/release fees, e-recording surcharges, local documentary taxes, source URLs, last verified dates, and confidence level.
 
 ## Parish Recording Rules Added From Deep Research
 
-The following rules are seeded from `docs/deep-research-report.md`:
+The following rules are seeded from `docs/architecture/deep-research-report.md`:
 
 | Parish | Recording low / expected / high | Release low / expected / high | Notes |
 | --- | ---: | ---: | --- |

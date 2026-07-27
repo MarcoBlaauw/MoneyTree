@@ -1,6 +1,6 @@
 # MoneyTree
 
-MoneyTree is a Phoenix-powered financial management API designed to support secure account aggregation, background processing, and observability from the ground up.
+MoneyTree is a Phoenix and LiveView financial management application designed to support secure account aggregation, background processing, and observability from the ground up.
 
 ## Development Environment
 
@@ -44,7 +44,7 @@ pnpm --version
 ## Initial Setup
 
 1. Copy the example environment file and adjust secrets (including the Cloak vault key) to your needs
-   (see [`docs/environment-variables.md`](docs/environment-variables.md) for a full reference of
+   (see [`docs/architecture/environment-variables.md`](docs/architecture/environment-variables.md) for a full reference of
    supported settings):
    ```bash
    cp .env.example .env
@@ -174,51 +174,17 @@ Telemetry pollers are supervised alongside an OpenTelemetry exporter. Configure 
 - `GET /api/healthz` is public and deliberately minimal: `{"status": "ok" | "degraded"}` only (HTTP 503 on degraded), with no internal detail. Suitable for anonymous load balancer/uptime-monitor polling.
 - `GET /api/owner/healthz` and `GET /api/owner/metrics` (owner-authenticated) expose the detailed view: database latency/error text and per-queue Oban state/job counts.
 
-## Product Vision & Roadmap
+## Documentation And Roadmap
 
-The following notes capture the broader product direction for MoneyTree. They remain aspirational but inform the system design decisions above.
+MoneyTree keeps one canonical delivery view in [`docs/roadmap.md`](docs/roadmap.md). It records past, current, deferred, and future work; implementation plans and archived documents should not maintain competing project-status lists.
 
-### 🔐 Core Account & Data Management
+| Location | Purpose |
+| --- | --- |
+| [`docs/roadmap.md`](docs/roadmap.md) | Canonical status, sequencing, deferred work, and future direction |
+| [`docs/`](docs/) | Active implementation plans only |
+| [`docs/architecture/`](docs/architecture/README.md) | Current architecture, scaffolding, technical references, research, and runbooks |
+| [`docs/archive/`](docs/archive/README.md) | Completed, superseded, and redundant plans retained for historical context |
 
-- User accounts with secure authentication (2FA support)
-- Multi-user support (family/shared access, read-only roles)
-- Currency support with real-time exchange rates
-- Bank connection methods:
-  - Plaid integration (where available)
-  - File import (CSV, OFX, QFX, XLSX)
-  - Manual transaction entry
-- Categorization system (automatic + manual)
+Before adding a plan, check the roadmap, active plans, and both documentation indexes to avoid duplication. Keep an active plan at the root of `docs/`, and update the roadmap whenever its status or priority changes. When the work is completed or superseded, record the outcome, move the plan to `docs/archive/`, update the archive index and inbound links, and carry any unresolved work into the roadmap.
 
-### 📊 Core Finance Features
-
-- Unified transaction view
-- Customizable dashboards per institution, account, and global
-- Categorization and tag filtering
-- Charts & graphs:
-  - Spending by category
-  - Income vs. expenses
-  - Monthly trend lines
-- Budgeting and payment calendar
-- Subscription tracking
-- Recurring expense detection
-- Basic trend analysis (rolling averages, YoY/period comparisons)
-
-### 🧾 Security & Privacy
-
-- Encrypted storage for financial data
-- Secure session & access controls
-- Explicit consent for data connections
-- Audit log for user access
-
-### ⚡ Infrastructure
-
-- Phoenix API backend with Oban job workers
-- PostgreSQL double-entry ledger
-- `cloak_ecto` for encryption of sensitive fields
-- Decimal/NUMERIC for money handling
-- SvelteKit frontend (basic dashboard)
-- Email & notification support
-
-### 🌳 Full Release Must-Haves & Beyond
-
-The remainder of the original vision (advanced insights, asset tracking, tax tooling, smart recommendations, etc.) is preserved from the initial roadmap and will be revisited as implementation proceeds.
+The complete rules for planning documents, architecture updates, and documentation validation are in [`AGENTS.md`](AGENTS.md#documentation-planning-and-lifecycle).

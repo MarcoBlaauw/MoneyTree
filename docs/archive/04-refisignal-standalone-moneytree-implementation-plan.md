@@ -251,7 +251,7 @@ This document is archived for implementation planning. It should remain as histo
 
 Use these active documents for future execution:
 
-- `docs/03-mortgage-center-implementation-plan.md`
-- `docs/loan-fee-subsystem-implementation-plan.md`
-- `docs/loan-center-market-rate-provider-implementation-plan.md`
+- `docs/archive/03-mortgage-center-implementation-plan.md`
+- `docs/archive/loan-fee-subsystem-implementation-plan.md`
+- `docs/architecture/loan-center-market-rate-provider-implementation-plan.md`
 - `docs/04-financial-evaluation-implementation-plan.md`

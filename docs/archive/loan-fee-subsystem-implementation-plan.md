@@ -14,7 +14,7 @@ The goal is to replace loose, free-form fee entry with predefined, loan-type-awa
 - confidence scoring
 - future credit-score-aware pricing assumptions
 
-This plan builds on `docs/loan-fee-regulatory-research.md` and the existing Loan Center refinance fee strategy.
+This plan builds on `docs/architecture/loan-fee-regulatory-research.md` and the existing Loan Center refinance fee strategy.
 
 ## Implementation status
 
@@ -32,10 +32,10 @@ Status as of May 18, 2026:
 | Credit score support | Metadata only | Fee types can be marked credit-score-sensitive, but no pricing adjustment is applied. |
 | Deferred future work | Pending | Parish source URL hardening, exact endorsement pricing, prediction snapshots, opportunity scoring, and enterprise providers remain out of v1. |
 
-Louisiana verification details are tracked in `docs/loan-fee-louisiana-verification-notes.md`.
-The deep research source report is tracked in `docs/deep-research-report.md`.
-The normalized parish-level Louisiana mortgage/title research is tracked in `docs/louisiana-mortgage-title-fees-parish-level.md`.
-The source-bearing PDF export is tracked in `docs/loan-fee-deep-research-sources.pdf`.
+Louisiana verification details are tracked in `docs/architecture/loan-fee-louisiana-verification-notes.md`.
+The deep research source report is tracked in `docs/architecture/deep-research-report.md`.
+The normalized parish-level Louisiana mortgage/title research is tracked in `docs/architecture/louisiana-mortgage-title-fees-parish-level.md`.
+The source-bearing PDF export is tracked in `docs/architecture/loan-fee-deep-research-sources.pdf`.
 
 ## Non-Mortgage Fee Status And Research Needed
 

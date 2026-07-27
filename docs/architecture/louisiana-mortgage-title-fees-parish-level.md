@@ -21,7 +21,7 @@ This document is research input for modeled estimates only. It is not legal advi
 
 ## Source Caveat
 
-The raw markdown research is tracked in `docs/deep-research-report-2.md`. The source-bearing PDF export is tracked in `docs/loan-fee-deep-research-sources.pdf`.
+The raw markdown research is tracked in `docs/architecture/deep-research-report-2.md`. The source-bearing PDF export is tracked in `docs/architecture/loan-fee-deep-research-sources.pdf`.
 
 For database seed data, every rule should include:
 

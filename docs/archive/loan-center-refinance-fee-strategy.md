@@ -6,7 +6,7 @@ Archived as implemented for the current MoneyTree Loan Center scope as of 2026-0
 
 This plan was originally written to prevent refinance analysis from treating missing fees as a complete `$0.00` cost scenario. That intended functionality is now implemented through the broader structured loan-fee subsystem and Loan Center refinance workspace.
 
-Do not use this document to schedule the older no-migration `RefinanceFeeCatalog` or `RefinanceFeeStrategy` path. That path was superseded by `docs/loan-fee-subsystem-implementation-plan.md`.
+Do not use this document to schedule the older no-migration `RefinanceFeeCatalog` or `RefinanceFeeStrategy` path. That path was superseded by `docs/archive/loan-fee-subsystem-implementation-plan.md`.
 
 ## Implemented Current State
 
@@ -159,6 +159,6 @@ This document is archived for implementation planning. Keep it as historical con
 
 Use these active documents for future work:
 
-- `docs/loan-fee-subsystem-implementation-plan.md`
-- `docs/loan-center-market-rate-provider-implementation-plan.md`
-- `docs/03-mortgage-center-implementation-plan.md`
+- `docs/archive/loan-fee-subsystem-implementation-plan.md`
+- `docs/architecture/loan-center-market-rate-provider-implementation-plan.md`
+- `docs/archive/03-mortgage-center-implementation-plan.md`

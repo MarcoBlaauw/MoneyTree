@@ -2,7 +2,7 @@
 
 ## Status
 
-Active as of 2026-05-22.
+Active, refreshed for the Phoenix-only application as of 2026-07-26.
 
 This plan has been reset to fit the current MoneyTree codebase. Earlier versions assumed that
 mortgages, loan documents, lender quotes, and refinance workflows still needed new evaluation-owned
@@ -20,7 +20,7 @@ Keep this plan if the goal is:
 - a dedicated `/evaluations` surface that summarizes what needs attention
 - deterministic stale-data, missing-data, expiring, and opportunity checks
 - insurance, rent, and vehicle evaluation records that are not already modeled elsewhere
-- contract-backed APIs that Next can consume without ad hoc response shapes
+- stable Phoenix JSON and LiveView interfaces without duplicating evaluation logic
 - dashboard and notification integration for important evaluation state changes
 
 Do not use this plan for:
@@ -41,7 +41,7 @@ The finished state is:
 - New evaluation-specific schemas exist only where no current domain owns the data, such as insurance policies, rent profiles, and vehicle-specific policy or lease facts.
 - Deterministic Elixir code computes status, warnings, missing fields, stale fields, and opportunity flags.
 - AI may extract or explain, but never calculates authoritative amounts, eligibility, or recommendations.
-- The same backend evaluation status feeds Next pages, Phoenix LiveViews, contracts, notifications, and dashboard cards.
+- The same backend evaluation status feeds Phoenix LiveViews, JSON endpoints, notifications, and dashboard cards.
 - Users can act on evaluation results through review, update, and alert flows.
 
 ## Current Codebase Baseline
@@ -68,20 +68,18 @@ Use these existing domains as the source of truth:
   - durable notification events and delivery attempts
 - `MoneyTree.Assets`
   - tangible property and vehicle anchors
-- `apps/contracts`
-  - OpenAPI source and generated REST types
-- `apps/next/app`
-  - server-rendered pages, `fetchWithSession()`, and route-specific `app/lib/*` normalizers
+- `MoneyTreeWeb.EvaluationsLive.Index`
+  - Phoenix-native `/app/evaluations` page backed directly by the evaluation context
 
 Already implemented for this plan:
 
 - `MoneyTree.Evaluations.status_summary/2`
 - authenticated `GET /api/evaluations/status-summary`
-- OpenAPI contract and generated REST type updates
+- authenticated JSON endpoint with controller coverage
 - deterministic initial summary over active mortgages, generic loans, pending loan document extractions, and lender quote expirations
-- Next `/evaluations` index page backed by the status summary API
+- Phoenix `/app/evaluations` LiveView backed by the status summary context
 - status summary expansion for failed/stuck loan documents, lender quote fee review lines, and open recurring anomalies
-- Phoenix dashboard evaluation status entry point linked to `/app/react/evaluations`
+- Phoenix dashboard evaluation status entry point linked to `/app/evaluations`
 - durable financial evaluation notification events synced through `MoneyTree.Notifications.pending/2`
 
 ## Architecture Rules
@@ -131,18 +129,14 @@ AI is not allowed for:
 - setting thresholds
 - persisting extracted facts without user confirmation
 
-### Contract Discipline
+### Interface Discipline
 
-Every Phoenix JSON endpoint consumed by Next must be added to `apps/contracts/specs/openapi.yaml`.
+Keep evaluation calculations in `MoneyTree.Evaluations`. LiveViews and JSON controllers should call
+the same context functions so status vocabulary, tenant scoping, and deterministic reasons cannot
+drift between interfaces.
 
-After editing the contract:
-
-```sh
-pnpm --dir apps/contracts run generate:openapi
-pnpm --dir apps/contracts run verify:openapi
-```
-
-Do not edit generated contract files by hand.
+When a JSON response changes, update its controller tests and preserve backward compatibility where
+practical.
 
 ### Migration Discipline
 
@@ -196,11 +190,11 @@ Implemented files:
 
 - `apps/money_tree/lib/money_tree/evaluations.ex`
 - `apps/money_tree/lib/money_tree_web/controllers/evaluation_controller.ex`
+- `apps/money_tree/lib/money_tree_web/live/evaluations_live/index.ex`
 - `apps/money_tree/lib/money_tree_web/router.ex`
-- `apps/contracts/specs/openapi.yaml`
-- `apps/contracts/src/generated/rest.ts`
 - `apps/money_tree/test/money_tree/evaluations_test.exs`
 - `apps/money_tree/test/money_tree_web/controllers/evaluation_controller_test.exs`
+- `apps/money_tree/test/money_tree_web/live/evaluations_live_test.exs`
 
 Current deterministic checks:
 
@@ -212,7 +206,7 @@ Current deterministic checks:
 
 ## Implementation Roadmap
 
-### Task 1: Next Evaluations Index
+### Task 1: Phoenix Evaluations Index
 
 Status:
 
@@ -220,34 +214,23 @@ Status:
 
 Goal:
 
-- Make `/evaluations` show the current status summary using the implemented API.
-
-Files likely affected:
-
-- `apps/next/app/evaluations/page.tsx`
-- `apps/next/app/evaluations/render-evaluations-page.tsx`
-- `apps/next/app/lib/evaluations.ts`
-- `apps/next/test/unit/*`
+- Make `/app/evaluations` show the current status summary through the Phoenix-native app shell.
 
 Implementation:
 
-- fetch `GET /api/evaluations/status-summary` with `fetchWithSession()`
-- type response using generated REST types where practical
+- call `MoneyTree.Evaluations.status_summary/2` from the authenticated LiveView
 - show count tiles for incomplete, needs review, stale, expiring, and opportunity
 - show the highest-severity current items with links to `target_path`
-- handle unauthenticated or failed fetch as an empty signed-out state
+- rely on the standard authenticated LiveView session boundary
 
 Validation:
 
-- `pnpm --dir apps/next test`
-- `pnpm --dir apps/contracts run verify:openapi`
+- `mix test apps/money_tree/test/money_tree_web/live/evaluations_live_test.exs`
 
 Implemented files:
 
-- `apps/next/app/evaluations/page.tsx`
-- `apps/next/app/evaluations/render-evaluations-page.tsx`
-- `apps/next/app/lib/evaluations.ts`
-- `apps/next/test/unit/evaluations-page.test.tsx`
+- `apps/money_tree/lib/money_tree_web/live/evaluations_live/index.ex`
+- `apps/money_tree/test/money_tree_web/live/evaluations_live_test.exs`
 
 ### Task 2: Status Summary Expansion
 
@@ -301,7 +284,7 @@ Files likely affected:
 Implementation:
 
 - add compact count cards or badges
-- deep-link to `/app/react/evaluations` or existing Loan Center targets
+- deep-link to `/app/evaluations` or existing Loan Center targets
 - do not duplicate evaluation calculations in LiveView
 
 Implemented:
@@ -309,7 +292,7 @@ Implemented:
 - Dashboard KPI count for evaluation items
 - Dashboard right-rail evaluation status panel
 - Top current evaluation items rendered from `MoneyTree.Evaluations.status_summary/2`
-- Link to the Next evaluations index
+- Link to the Phoenix evaluations index
 
 Validation:
 
@@ -364,7 +347,7 @@ Files likely affected:
 - `apps/money_tree/lib/money_tree/evaluations/insurance_policy.ex`
 - `apps/money_tree/lib/money_tree/evaluations.ex`
 - controller and route if API-backed
-- contract updates if consumed by Next
+- controller and route if a JSON interface is required
 
 Minimal schema:
 
@@ -395,7 +378,7 @@ Validation:
 - migration applied to dev database
 - schema/context tests
 - controller tests if API is added
-- contract verify if API is added
+- controller tests if API is added
 
 ### Task 6: Rent Profile Domain
 
@@ -549,7 +532,7 @@ Validation:
 
 ## Recommended Execution Order
 
-1. Next evaluations index
+1. Phoenix evaluations index
 2. Status summary expansion over existing data
 3. Dashboard and LiveView entry points
 4. Notification integration
@@ -575,14 +558,12 @@ For controller/API changes:
 
 ```sh
 mix test apps/money_tree/test/money_tree_web/controllers/evaluation_controller_test.exs
-pnpm --dir apps/contracts run verify:openapi
 ```
 
-For Next evaluation pages:
+For the Phoenix evaluation page:
 
 ```sh
-pnpm --dir apps/next test
-pnpm --dir apps/next lint
+mix test apps/money_tree/test/money_tree_web/live/evaluations_live_test.exs
 ```
 
 For schema changes:
@@ -595,7 +576,6 @@ Then run the narrow context/controller tests that cover the migrated schema.
 
 ## Open Questions
 
-- Should `/evaluations` live as a Next page only, or should Phoenix `/app/dashboard` link to it with a compact status card?
 - Should healthy evaluation coverage be counted explicitly, or should the index focus only on actionable statuses?
 - Should insurance policies be managed under `/evaluations/insurance`, `/app/obligations`, or both?
 - Should vehicle lease facts extend `MoneyTree.Loans.Loan`, `MoneyTree.Assets.Asset`, or a small evaluation-owned vehicle fact table?

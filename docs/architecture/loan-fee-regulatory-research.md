@@ -628,4 +628,4 @@ Create a structured loan fee subsystem that uses this research to:
 4. Localize assumptions by state and parish/county.
 5. Prepare for future credit-score-aware pricing.
 
-See `docs/loan-fee-subsystem-implementation-plan.md` for implementation details.
+See `docs/archive/loan-fee-subsystem-implementation-plan.md` for implementation details.

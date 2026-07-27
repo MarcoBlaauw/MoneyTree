@@ -2,7 +2,7 @@
 
 ## Implementation Status (2026-04-25)
 
-This plan is complete for the manual-import MVP scope in `docs/02-manual-transaction-import-implementation-plan.md`.
+This plan is complete for the manual-import MVP scope in `docs/archive/02-manual-transaction-import-implementation-plan.md`.
 
 Implemented in repo:
 
@@ -22,7 +22,7 @@ Deferred by design (non-blocking for current MVP):
 
 ## Purpose
 
-This document defines the prerequisite work MoneyTree should complete before building the manual transaction import workflow described in `docs/02-manual-transaction-import-implementation-plan.md`.
+This document defines the prerequisite work MoneyTree should complete before building the manual transaction import workflow described in `docs/archive/02-manual-transaction-import-implementation-plan.md`.
 
 Manual imports will only be useful if MoneyTree can correctly distinguish real spending from money movement. A checking account payment to a credit card, a transfer to Ally savings, or a payment split across checking accounts should not inflate household expenses. This plan creates the foundation for reliable transaction identity, transfer matching, account relationship modeling, category rules, and cash-flow reporting.
 
@@ -84,7 +84,7 @@ Build the minimum transaction identity and transfer foundation needed before man
 
 This gives the manual import feature a safe place to land staged and committed rows without requiring the entire end-state review UX first.
 
-This prerequisite plan should be interpreted as support for the short-term manual import MVP in `docs/02-manual-transaction-import-implementation-plan.md`, not as a requirement to complete every future-facing transfer or reconciliation idea before importing real user data.
+This prerequisite plan should be interpreted as support for the short-term manual import MVP in `docs/archive/02-manual-transaction-import-implementation-plan.md`, not as a requirement to complete every future-facing transfer or reconciliation idea before importing real user data.
 
 ## Phase 0: Inspect Existing Models
 

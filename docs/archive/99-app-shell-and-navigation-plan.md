@@ -21,7 +21,7 @@ This document covers:
 
 This document does not redefine the dashboard visual system already covered in:
 
-- `docs/99-ui-ux-implementation-plan.md`
+- `docs/archive/99-ui-ux-implementation-plan.md`
 
 ## Current-State Assessment
 

@@ -13,7 +13,8 @@ browser surfaces.
 
 ## Production policy
 
-Apply the read-only policy in [`config/openbao/moneytree-prod-read.hcl`](../config/openbao/moneytree-prod-read.hcl).
+Apply the read-only policy in
+[`config/openbao/moneytree-prod-read.hcl`](../../config/openbao/moneytree-prod-read.hcl).
 
 Example:
 
@@ -25,6 +26,7 @@ The policy grants read access only to:
 
 - `kv/data/moneytree/prod/database`
 - `kv/data/moneytree/prod/cloak`
+- `kv/data/moneytree/prod/fred`
 - `kv/data/moneytree/prod/phoenix`
 - `kv/data/moneytree/prod/plaid`
 - `kv/data/moneytree/prod/smtp`
@@ -39,6 +41,7 @@ Use the exact environment variable names that MoneyTree already resolves:
 | --- | --- | --- |
 | `database` | `kv/moneytree/prod/database` | `DATABASE_URL` or `DATABASE_USERNAME`, `DATABASE_PASSWORD`, `DATABASE_HOST`, `DATABASE_NAME` |
 | `cloak` | `kv/moneytree/prod/cloak` | `CLOAK_VAULT_KEY` |
+| `fred` | `kv/moneytree/prod/fred` | `FRED_API_KEY` |
 | `phoenix` | `kv/moneytree/prod/phoenix` | `SECRET_KEY_BASE` |
 | `plaid` | `kv/moneytree/prod/plaid` | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_WEBHOOK_SECRET` |
 | `smtp` | `kv/moneytree/prod/smtp` | `MAILER_SMTP_HOST`, `MAILER_SMTP_USERNAME`, `MAILER_SMTP_PASSWORD` |

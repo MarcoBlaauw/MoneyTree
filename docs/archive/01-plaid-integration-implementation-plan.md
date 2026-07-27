@@ -19,7 +19,7 @@ implementation is not a real integration:
 - `apps/money_tree/lib/money_tree/plaid/client.ex` is a placeholder
 - `apps/money_tree/lib/money_tree_web/controllers/plaid_controller.ex` generates a local fake
   link token instead of calling Plaid
-- `config/runtime.exs`, `.env.example`, and `docs/environment-variables.md` do not define any
+- `config/runtime.exs`, `.env.example`, and `docs/architecture/environment-variables.md` do not define any
   `PLAID_*` runtime configuration
 - `apps/money_tree/lib/money_tree/plaid/synchronizer.ex` delegates to
   `MoneyTree.Teller.Synchronizer`, which is not a safe long-term design for Plaid-specific
@@ -84,9 +84,9 @@ The first Plaid implementation should be anchored to these existing files and mo
 - `apps/next/app/link-bank/page.tsx`
 - `apps/next/app/link-bank/link-bank-client.tsx`
 - `config/runtime.exs`
-- `docs/environment-variables.md`
+- `docs/architecture/environment-variables.md`
 - `.env.example`
-- `docs/vendor-integrations.md`
+- `docs/architecture/vendor-integrations.md`
 - `apps/money_tree/test/money_tree_web/controllers/plaid_controller_test.exs`
 - `apps/money_tree/test/money_tree_web/controllers/plaid_webhook_controller_test.exs`
 - `apps/money_tree/test/money_tree/plaid/sync_worker_test.exs`
@@ -143,7 +143,7 @@ Add Plaid configuration in the same style as the Teller runtime setup.
 Update:
 
 - `config/runtime.exs`
-- `docs/environment-variables.md`
+- `docs/architecture/environment-variables.md`
 - `.env.example`
 
 Expected runtime keys:
@@ -293,7 +293,7 @@ against the actual implementation.
 Update:
 
 - `apps/money_tree/lib/money_tree_web/plugs/content_security_policy.ex`
-- `docs/vendor-integrations.md`
+- `docs/architecture/vendor-integrations.md`
 
 Implementation steps:
 
@@ -307,7 +307,7 @@ Create a day-two operations document similar in spirit to `docs/teller_runbook.m
 
 Suggested file:
 
-- `docs/plaid_runbook.md`
+- `docs/architecture/plaid_runbook.md`
 
 Include:
 

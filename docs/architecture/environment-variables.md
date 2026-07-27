@@ -1,7 +1,7 @@
 # Environment variable reference
 
 MoneyTree loads configuration from the process environment at runtime. Use the values in
-[`.env.example`](../.env.example) as a starting point, then tailor them to your local or hosted
+[`.env.example`](../../.env.example) as a starting point, then tailor them to your local or hosted
 setup. Copy the example file to `.env` and export it in your shell (or configure your terminal to
 load it automatically) before starting the application.
 

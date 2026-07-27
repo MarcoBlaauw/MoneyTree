@@ -13,16 +13,15 @@ following goals:
 - avoid turning the app or its admin panel into a second secret-management UI
 - support secret rotation and least-privilege access
 - keep local development simple while making production stricter
-- fit MoneyTree's current Phoenix + Next.js + runtime-config architecture
+- fit MoneyTree's current Phoenix/LiveView runtime configuration
 
 This document is intentionally implementation-oriented and repo-specific.
 
 ## Implementation status
 
-> **Note (post-2026-05-27):** Teller discontinued its API and the Teller integration has since
-> been removed from MoneyTree (code, config, and the `:teller` secret group). References to
-> `teller`/`TELLER_*` below describe the state at the time this plan was written and are
-> historical; do not provision a `teller` OpenBao secret group or path for new environments.
+> **Current architecture note (2026-07-26):** Next.js, Stripe, and the active Teller integration
+> have been removed. Historical Teller columns/records may remain readable for migration safety,
+> but no Teller or Stripe secret group should be provisioned.
 
 Status as of 2026-05-27:
 
@@ -44,8 +43,8 @@ The desired finished state is:
 
 - Runtime secret loading goes through a `MoneyTree.Secrets` abstraction with `env` and `openbao`
   providers.
-- Production can run in OpenBao-backed mode for database, Cloak, Phoenix, Plaid/Teller legacy secrets
-  where still enabled, SMTP, and future provider credentials.
+- Production can run in OpenBao-backed mode for database, Cloak, Phoenix, FRED, optional Plaid,
+  SMTP, and future provider credentials.
 - MoneyTree has read-only access to exact secret paths and never receives broad vault permissions.
 - Missing critical production secrets fail startup clearly and safely.
 - Owners can view secret-provider health/status only; raw secret values are never exposed in UI,
@@ -63,15 +62,14 @@ MoneyTree already has several strong foundations:
 - Phoenix runtime configuration is centralized in `config/runtime.exs`
 - the app fails fast in production for several missing critical settings
 - WebAuthn/passkey support already exists in the auth/control-panel surface
-- owner-aware UI already exists in the Next control panel
+- owner-aware status UI exists in the Phoenix application
 - authenticated API routing already distinguishes normal and owner access
 
 At the same time, `config/runtime.exs` currently loads many sensitive values directly from environment
 variables in production, including:
 
-- Teller webhook secret
-- Teller client certificate / private key material
 - Plaid secret and webhook secret
+- FRED API key
 - SMTP credentials
 - `CLOAK_VAULT_KEY`
 - database credentials / URL
@@ -318,7 +316,7 @@ an ambiguous or degraded state.
 ### Strongly recommended critical groups
 
 - `:plaid` if Plaid is enabled in production
-- `:teller` if Teller is enabled in production
+- `:fred` if automated FRED imports are enabled
 - `:smtp` if production mail delivery is required
 
 ## Why this matters
@@ -585,15 +583,10 @@ Update `config/runtime.exs` so that:
 - production fail-fast rules remain or become stricter
 - local development stays simple
 
-## Next app changes
+## Phoenix owner-status changes
 
-Add an owner-only status surface in the control panel area, but keep it status-only.
-
-Possible route:
-
-- `/app/react/control-panel/security`
-
-or add a card to the existing control panel page.
+Keep the owner-only secret backend surface status-only. It may live in the existing Phoenix owner
+area or settings UI, but it must never display secret values.
 
 ## API changes
 
@@ -770,7 +763,7 @@ Add tests for:
 Validate manually in staging:
 
 - app boots with OpenBao-backed secrets
-- Plaid/Teller integrations still initialize correctly
+- FRED and any intentionally enabled Plaid integration initialize correctly
 - SMTP still sends mail
 - encrypted data access still works through Cloak
 - health page reports expected status

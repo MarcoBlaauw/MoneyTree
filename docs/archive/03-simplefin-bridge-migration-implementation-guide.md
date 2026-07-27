@@ -77,9 +77,9 @@ The repo already contains Teller and Plaid integration surfaces. Do not start by
 
 Relevant current surfaces:
 
-- `docs/01-plaid-integration-implementation-plan.md`
-- `docs/environment-variables.md`
-- `docs/vendor-integrations.md`
+- `docs/archive/01-plaid-integration-implementation-plan.md`
+- `docs/architecture/environment-variables.md`
+- `docs/architecture/vendor-integrations.md`
 - `apps/money_tree/lib/money_tree/institutions/connection.ex`
 - `apps/money_tree/lib/money_tree/teller/`
 - `apps/money_tree/lib/money_tree/plaid/`
@@ -93,7 +93,7 @@ Important current constraint:
 
 - `MoneyTree.Institutions.Connection` currently validates `provider` against only `"teller"` and `"plaid"`. Add `"simplefin"` before attempting to persist SimpleFIN connections.
 
-This guide intentionally supersedes the Plaid-first direction from `docs/01-plaid-integration-implementation-plan.md`, but that older document can remain as historical context until SimpleFIN is stable.
+This guide intentionally supersedes the Plaid-first direction from `docs/archive/01-plaid-integration-implementation-plan.md`, but that older document can remain as historical context until SimpleFIN is stable.
 
 ## Decision
 
@@ -166,7 +166,7 @@ Use the brand spelling `SimpleFIN` in user-facing copy and documentation.
 
 SimpleFIN does not need Plaid-style app secrets or Teller-style mTLS certificates.
 
-Add these variables to `.env.example`, `config/runtime.exs`, and `docs/environment-variables.md`:
+Add these variables to `.env.example`, `config/runtime.exs`, and `docs/architecture/environment-variables.md`:
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -470,8 +470,8 @@ Frontend requirements:
 
 Docs requirements:
 
-1. Update `docs/vendor-integrations.md` to say Plaid/Teller origins are legacy-only and not needed when disabled.
-2. Update `docs/environment-variables.md` so Teller/Plaid variables are required only if those providers are enabled.
+1. Update `docs/architecture/vendor-integrations.md` to say Plaid/Teller origins are legacy-only and not needed when disabled.
+2. Update `docs/architecture/environment-variables.md` so Teller/Plaid variables are required only if those providers are enabled.
 3. Add SimpleFIN variables and setup instructions.
 4. Add a short migration note to `README.md` if the README currently points users toward Teller or Plaid.
 
@@ -663,7 +663,7 @@ Files likely touched:
 
 - `config/runtime.exs`
 - `.env.example`
-- `docs/environment-variables.md`
+- `docs/architecture/environment-variables.md`
 - `apps/money_tree/lib/money_tree/bank_sync/provider_registry.ex`
 - new tests under `apps/money_tree/test/money_tree/bank_sync/`
 
@@ -749,7 +749,7 @@ Files likely touched:
 
 - Teller/Plaid controllers
 - Teller/Plaid sync workers
-- `docs/vendor-integrations.md`
+- `docs/architecture/vendor-integrations.md`
 - tests for disabled behavior
 
 Acceptance criteria:

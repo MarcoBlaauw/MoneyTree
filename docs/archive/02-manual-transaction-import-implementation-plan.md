@@ -471,7 +471,7 @@ Create a deterministic fingerprint from normalized fields:
 
 Store a `source_fingerprint` or equivalent on committed transactions when imported manually.
 
-Use the shared transaction-identity foundation from `docs/00-transaction-identity-transfer-matching-prerequisites.md` rather than creating a parallel import-only duplicate model.
+Use the shared transaction-identity foundation from `docs/archive/00-transaction-identity-transfer-matching-prerequisites.md` rather than creating a parallel import-only duplicate model.
 
 ### Fuzzy Matching
 
@@ -794,7 +794,7 @@ Verify with real sample exports:
 
 Recommended implementation order:
 
-1. Complete the minimum transaction identity foundation from `docs/00-transaction-identity-transfer-matching-prerequisites.md` needed for safe duplicate detection, transfer matching, and reporting.
+1. Complete the minimum transaction identity foundation from `docs/archive/00-transaction-identity-transfer-matching-prerequisites.md` needed for safe duplicate detection, transfer matching, and reporting.
 2. Add schemas/migrations for batches and rows.
 3. Add generic CSV parser behavior, mapping validation, and staging flow.
 4. Add the first import UI in the existing Phoenix app shell.
