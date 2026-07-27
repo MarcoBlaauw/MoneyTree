@@ -13,6 +13,7 @@ defmodule MoneyTree.Application do
       MoneyTreeWeb.Telemetry,
       MoneyTree.Vault,
       MoneyTree.Repo,
+      MoneyTreeWeb.RateLimiter.Ets,
       {Oban, oban_config},
       {DNSCluster, query: Application.get_env(:money_tree, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: MoneyTree.PubSub},

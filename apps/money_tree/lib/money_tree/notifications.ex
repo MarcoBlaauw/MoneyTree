@@ -9,6 +9,7 @@ defmodule MoneyTree.Notifications do
   alias Ecto.Changeset
   alias MoneyTree.Accounts
   alias MoneyTree.Budgets
+  alias MoneyTree.Evaluations
   alias MoneyTree.Loans
   alias MoneyTree.Notifications.AlertPreference
   alias MoneyTree.Notifications.DeliveryAttempt
@@ -181,6 +182,7 @@ defmodule MoneyTree.Notifications do
   """
   @spec pending(User.t() | binary(), keyword()) :: [notification()]
   def pending(user, opts \\ []) do
+    _ = sync_evaluation_events(user, opts)
     durable = list_dashboard_events(user)
 
     card_balances = Accounts.running_card_balances(user, opts)
@@ -228,6 +230,34 @@ defmodule MoneyTree.Notifications do
       {:error, %Changeset{} = changeset} ->
         {:error, changeset}
     end
+  end
+
+  @doc """
+  Records durable notification events for current financial evaluation items.
+
+  The evaluation context remains responsible for deterministic status calculation.
+  This function only materializes unresolved dashboard events with stable dedupe
+  keys so repeated syncs do not create duplicate notifications.
+  """
+  @spec sync_evaluation_events(User.t() | binary(), keyword()) ::
+          {:ok, %{processed: non_neg_integer()}} | {:error, Changeset.t()}
+  def sync_evaluation_events(user, opts \\ []) do
+    user_id = resolve_user_id(user)
+    summary = Evaluations.status_summary(user, opts)
+    now = Keyword.get(opts, :now, DateTime.utc_now()) |> ensure_microsecond_precision()
+
+    summary.items
+    |> Enum.reduce_while({:ok, %{processed: 0}}, fn item, {:ok, acc} ->
+      attrs = evaluation_event_attrs(user_id, item, now)
+
+      case record_event(attrs) do
+        {:ok, _event} ->
+          {:cont, {:ok, %{acc | processed: acc.processed + 1}}}
+
+        {:error, %Changeset{} = changeset} ->
+          {:halt, {:error, changeset}}
+      end
+    end)
   end
 
   @doc """
@@ -296,6 +326,29 @@ defmodule MoneyTree.Notifications do
 
   defp maybe_filter_resolved(query, true), do: query
   defp maybe_filter_resolved(query, false), do: where(query, [event], is_nil(event.resolved_at))
+
+  defp evaluation_event_attrs(user_id, item, now) do
+    %{
+      user_id: user_id,
+      kind: "financial_evaluation",
+      status: item.status,
+      severity: item.severity,
+      title: item.title,
+      message: item.summary,
+      action: "Review evaluation",
+      event_date: DateTime.to_date(now),
+      occurred_at: now,
+      metadata: %{
+        "evaluation_item_id" => item.id,
+        "domain" => item.domain,
+        "resource_id" => item.resource_id,
+        "reasons" => item.reasons,
+        "source" => item.source,
+        "target_path" => item.target_path
+      },
+      dedupe_key: "evaluation:#{user_id}:#{item.id}:#{item.status}"
+    }
+  end
 
   @doc """
   Delivers an event immediately if it is due and allowed by preferences.
@@ -374,9 +427,9 @@ defmodule MoneyTree.Notifications do
 
       retryable_failures == [] and suppressed_failures != [] ->
         reasons =
-          suppressed_failures
-          |> Enum.map(fn {_status, channel, reason} -> "#{channel}: #{inspect(reason)}" end)
-          |> Enum.join(", ")
+          Enum.map_join(suppressed_failures, ", ", fn {_status, channel, reason} ->
+            "#{channel}: #{inspect(reason)}"
+          end)
 
         suppress_event(event, reasons)
         {:error, :suppressed}
@@ -386,9 +439,9 @@ defmodule MoneyTree.Notifications do
           DateTime.add(attempted_at, preferences.resend_interval_hours * 3_600, :second)
 
         last_error =
-          retryable_failures
-          |> Enum.map(fn {_status, channel, reason} -> "#{channel}: #{inspect(reason)}" end)
-          |> Enum.join(", ")
+          Enum.map_join(retryable_failures, ", ", fn {_status, channel, reason} ->
+            "#{channel}: #{inspect(reason)}"
+          end)
 
         event
         |> Changeset.change(
@@ -494,6 +547,10 @@ defmodule MoneyTree.Notifications do
     |> Oban.insert()
 
     :ok
+  end
+
+  defp ensure_microsecond_precision(%DateTime{} = datetime) do
+    %{datetime | microsecond: {elem(datetime.microsecond, 0), 6}}
   end
 
   defp to_notification(%Event{} = event) do
@@ -693,16 +750,14 @@ defmodule MoneyTree.Notifications do
   defp normalize_override_key(key) when is_binary(key) do
     normalized = String.trim(key)
 
-    cond do
-      normalized == "" ->
-        nil
-
-      true ->
-        try do
-          String.to_existing_atom(normalized)
-        rescue
-          ArgumentError -> nil
-        end
+    if normalized == "" do
+      nil
+    else
+      try do
+        String.to_existing_atom(normalized)
+      rescue
+        ArgumentError -> nil
+      end
     end
   end
 

@@ -1,213 +1,17 @@
 import Config
 
-base_teller_config = Application.get_env(:money_tree, MoneyTree.Teller, [])
+secret_provider = MoneyTree.Secrets.provider_from_env()
 
-default_next_upstream = [scheme: "http", host: "localhost", port: 3000, path: "/"]
-
-next_proxy_url = System.get_env("NEXT_PROXY_URL")
-
-env_upstream_overrides =
-  [:scheme, :host, :port, :path]
-  |> Enum.reduce([], fn key, acc ->
-    env_key = "NEXT_PROXY_" <> (key |> Atom.to_string() |> String.upcase())
-
-    case System.get_env(env_key) do
-      nil ->
-        acc
-
-      "" ->
-        acc
-
-      value ->
-        normalized =
-          case key do
-            :port -> String.to_integer(value)
-            _ -> value
-          end
-
-        Keyword.put(acc, key, normalized)
-    end
-  end)
-
-cond do
-  next_proxy_url ->
-    config :money_tree, MoneyTreeWeb.Plugs.NextProxy, upstream: next_proxy_url
-
-  env_upstream_overrides != [] ->
-    config :money_tree, MoneyTreeWeb.Plugs.NextProxy,
-      upstream: Keyword.merge(default_next_upstream, env_upstream_overrides)
-
-  true ->
-    :ok
+env = fn key ->
+  MoneyTree.Secrets.get(key, secret_provider)
 end
-
-client_timeout_overrides =
-  [
-    {:receive_timeout, System.get_env("NEXT_PROXY_RECEIVE_TIMEOUT_MS")},
-    {:pool_timeout, System.get_env("NEXT_PROXY_POOL_TIMEOUT_MS")}
-  ]
-  |> Enum.reduce([], fn
-    {_key, nil}, acc -> acc
-    {_key, ""}, acc -> acc
-    {key, value}, acc -> Keyword.put(acc, key, String.to_integer(value))
-  end)
-
-if client_timeout_overrides != [] do
-  existing =
-    Application.get_env(:money_tree, MoneyTreeWeb.Plugs.NextProxy, [])
-    |> Keyword.get(:client_opts, [])
-
-  merged_client_opts = Keyword.merge(existing, client_timeout_overrides)
-
-  config :money_tree, MoneyTreeWeb.Plugs.NextProxy, client_opts: merged_client_opts
-end
-
-if config_env() == :prod do
-  missing_teller_env =
-    [
-      "TELLER_CONNECT_APPLICATION_ID",
-      "TELLER_WEBHOOK_SECRET"
-    ]
-    |> Enum.filter(fn env -> System.get_env(env) in [nil, ""] end)
-
-  if missing_teller_env != [] do
-    raise """
-    environment variables #{Enum.join(missing_teller_env, ", ")} are required in production for Teller integration.
-    """
-  end
-end
-
-teller_env = fn key ->
-  case System.get_env(key) do
-    nil -> nil
-    "" -> nil
-    value -> value
-  end
-end
-
-resolve_runtime_path = fn path ->
-  path
-  |> Path.expand(File.cwd!())
-end
-
-validate_runtime_file! = fn path, label ->
-  expanded = resolve_runtime_path.(path)
-
-  if File.regular?(expanded) do
-    expanded
-  else
-    raise """
-    #{label} is configured as #{inspect(path)}, but no readable file exists at #{expanded}.
-    Update your .env to point at the correct Teller certificate/key path.
-    """
-  end
-end
-
-cert_file =
-  case teller_env.("TELLER_CERT_FILE") || teller_env.("TELLER_CERT_PATH") do
-    nil -> nil
-    path -> validate_runtime_file!.(path, "TELLER_CERT_FILE")
-  end
-
-key_file =
-  case teller_env.("TELLER_KEY_FILE") || teller_env.("TELLER_KEY_PATH") do
-    nil -> nil
-    path -> validate_runtime_file!.(path, "TELLER_KEY_FILE")
-  end
-
-cert_pem = teller_env.("TELLER_CERT_PEM")
-key_pem = teller_env.("TELLER_KEY_PEM")
-
-if config_env() == :prod do
-  cert_pair_present? =
-    (is_binary(cert_pem) and is_binary(key_pem)) or
-      (is_binary(cert_file) and is_binary(key_file))
-
-  if not cert_pair_present? do
-    raise """
-    Teller production configuration requires a client certificate and private key.
-    Set either TELLER_CERT_PEM and TELLER_KEY_PEM, or TELLER_CERT_FILE and TELLER_KEY_FILE.
-    """
-  end
-end
-
-teller_runtime_config =
-  [
-    connect_application_id: teller_env.("TELLER_CONNECT_APPLICATION_ID"),
-    webhook_secret: teller_env.("TELLER_WEBHOOK_SECRET"),
-    api_host: teller_env.("TELLER_API_HOST"),
-    connect_host: teller_env.("TELLER_CONNECT_HOST"),
-    webhook_host: teller_env.("TELLER_WEBHOOK_HOST"),
-    client_cert_pem: cert_pem,
-    client_key_pem: key_pem,
-    client_cert_file: cert_file,
-    client_key_file: key_file
-  ]
-  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-
-config :money_tree, MoneyTree.Teller, Keyword.merge(base_teller_config, teller_runtime_config)
-
-base_plaid_config = Application.get_env(:money_tree, MoneyTree.Plaid, [])
 
 parse_csv_env = fn value ->
   value
+  |> to_string()
   |> String.split(",")
   |> Enum.map(&String.trim/1)
   |> Enum.reject(&(&1 == ""))
-end
-
-plaid_products =
-  case teller_env.("PLAID_PRODUCTS") do
-    nil -> nil
-    csv -> parse_csv_env.(csv)
-  end
-
-plaid_country_codes =
-  case teller_env.("PLAID_COUNTRY_CODES") do
-    nil -> nil
-    csv -> parse_csv_env.(csv)
-  end
-
-plaid_api_host =
-  case teller_env.("PLAID_API_HOST") do
-    nil ->
-      case teller_env.("PLAID_ENV") do
-        "production" -> "https://production.plaid.com"
-        "development" -> "https://development.plaid.com"
-        _ -> "https://sandbox.plaid.com"
-      end
-
-    host ->
-      host
-  end
-
-plaid_runtime_config =
-  [
-    client_id: teller_env.("PLAID_CLIENT_ID"),
-    secret: teller_env.("PLAID_SECRET"),
-    environment: teller_env.("PLAID_ENV"),
-    products: plaid_products,
-    country_codes: plaid_country_codes,
-    redirect_uri: teller_env.("PLAID_REDIRECT_URI"),
-    webhook_secret: teller_env.("PLAID_WEBHOOK_SECRET"),
-    client_name: teller_env.("PLAID_CLIENT_NAME"),
-    language: teller_env.("PLAID_LANGUAGE"),
-    api_host: plaid_api_host
-  ]
-  |> Enum.reject(fn
-    {_key, nil} -> true
-    {_key, []} -> true
-    _ -> false
-  end)
-
-config :money_tree, MoneyTree.Plaid, Keyword.merge(base_plaid_config, plaid_runtime_config)
-
-ai_env = fn key ->
-  case System.get_env(key) do
-    nil -> nil
-    "" -> nil
-    value -> value
-  end
 end
 
 parse_bool_env = fn
@@ -220,6 +24,182 @@ parse_bool_env = fn
   _value ->
     false
 end
+
+base_provider_registry_config =
+  Application.get_env(:money_tree, MoneyTree.BankSync.ProviderRegistry, [])
+
+enabled_bank_sync_providers =
+  case env.("BANK_SYNC_ENABLED_PROVIDERS") do
+    nil -> Keyword.get(base_provider_registry_config, :enabled_providers, ["simplefin", "manual"])
+    value -> parse_csv_env.(value)
+  end
+
+bank_sync_primary_provider =
+  env.("BANK_SYNC_PRIMARY_PROVIDER") ||
+    Keyword.get(base_provider_registry_config, :primary_provider, "simplefin")
+
+config :money_tree, MoneyTree.BankSync.ProviderRegistry,
+  enabled_providers: enabled_bank_sync_providers,
+  primary_provider: bank_sync_primary_provider
+
+plaid_enabled? =
+  "plaid" in enabled_bank_sync_providers or parse_bool_env.(env.("PLAID_ENABLED"))
+
+simplefin_runtime_config =
+  [
+    create_url: env.("SIMPLEFIN_CREATE_URL"),
+    protocol_version: env.("SIMPLEFIN_PROTOCOL_VERSION"),
+    sync_interval_hours: env.("SIMPLEFIN_SYNC_INTERVAL_HOURS"),
+    max_requests_per_connection_per_day: env.("SIMPLEFIN_MAX_REQUESTS_PER_CONNECTION_PER_DAY"),
+    initial_sync_days: env.("SIMPLEFIN_INITIAL_SYNC_DAYS"),
+    include_pending: env.("SIMPLEFIN_INCLUDE_PENDING")
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  |> Enum.map(fn
+    {key, value}
+    when key in [:sync_interval_hours, :max_requests_per_connection_per_day, :initial_sync_days] ->
+      {key, String.to_integer(value)}
+
+    {:include_pending, value} ->
+      {:include_pending, parse_bool_env.(value)}
+
+    pair ->
+      pair
+  end)
+
+config :money_tree,
+       MoneyTree.SimpleFin,
+       Keyword.merge(
+         Application.get_env(:money_tree, MoneyTree.SimpleFin, []),
+         simplefin_runtime_config
+       )
+
+base_plaid_config = Application.get_env(:money_tree, MoneyTree.Plaid, [])
+
+plaid_products =
+  case env.("PLAID_PRODUCTS") do
+    nil -> nil
+    csv -> parse_csv_env.(csv)
+  end
+
+plaid_country_codes =
+  case env.("PLAID_COUNTRY_CODES") do
+    nil -> nil
+    csv -> parse_csv_env.(csv)
+  end
+
+plaid_api_host =
+  case env.("PLAID_API_HOST") do
+    nil ->
+      case env.("PLAID_ENV") do
+        "production" -> "https://production.plaid.com"
+        "development" -> "https://development.plaid.com"
+        _ -> "https://sandbox.plaid.com"
+      end
+
+    host ->
+      host
+  end
+
+plaid_runtime_config =
+  [
+    client_id: env.("PLAID_CLIENT_ID"),
+    secret: env.("PLAID_SECRET"),
+    environment: env.("PLAID_ENV"),
+    products: plaid_products,
+    country_codes: plaid_country_codes,
+    redirect_uri: env.("PLAID_REDIRECT_URI"),
+    webhook_secret: env.("PLAID_WEBHOOK_SECRET"),
+    client_name: env.("PLAID_CLIENT_NAME"),
+    language: env.("PLAID_LANGUAGE"),
+    api_host: plaid_api_host
+  ]
+  |> Enum.reject(fn
+    {_key, nil} -> true
+    {_key, []} -> true
+    _ -> false
+  end)
+
+config :money_tree, MoneyTree.Plaid, Keyword.merge(base_plaid_config, plaid_runtime_config)
+
+if config_env() == :prod and plaid_enabled? do
+  missing_plaid_env =
+    ["PLAID_CLIENT_ID", "PLAID_SECRET"]
+    |> Enum.filter(fn key -> env.(key) in [nil, ""] end)
+
+  if missing_plaid_env != [] do
+    raise """
+    environment variables #{Enum.join(missing_plaid_env, ", ")} are required in production when Plaid is enabled.
+    """
+  end
+end
+
+fred_env = env
+
+base_fred_config = Application.get_env(:money_tree, MoneyTree.Loans.RateProviders.Fred, [])
+
+fred_runtime_config =
+  [
+    api_key: fred_env.("FRED_API_KEY"),
+    base_url: fred_env.("FRED_BASE_URL")
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+config :money_tree,
+       MoneyTree.Loans.RateProviders.Fred,
+       Keyword.merge(base_fred_config, fred_runtime_config)
+
+marketcheck_enabled? = parse_bool_env.(env.("MARKETCHECK_ENABLED"))
+
+marketcheck_registry_config =
+  [
+    enabled_providers: if(marketcheck_enabled?, do: ["marketcheck"], else: []),
+    monthly_request_limit:
+      case env.("MARKETCHECK_MONTHLY_REQUEST_LIMIT") do
+        nil -> nil
+        value -> String.to_integer(value)
+      end,
+    refresh_interval_days:
+      case env.("MARKETCHECK_REFRESH_INTERVAL_DAYS") do
+        nil -> nil
+        value -> String.to_integer(value)
+      end
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+config :money_tree,
+       MoneyTree.Assets.ProviderRegistry,
+       Keyword.merge(
+         Application.get_env(:money_tree, MoneyTree.Assets.ProviderRegistry, []),
+         marketcheck_registry_config
+       )
+
+marketcheck_config =
+  [
+    api_key: env.("MARKETCHECK_API_KEY"),
+    base_url: env.("MARKETCHECK_BASE_URL"),
+    dealer_type: env.("MARKETCHECK_DEALER_TYPE")
+  ]
+  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+config :money_tree,
+       MoneyTree.Assets.VehicleValuationProviders.MarketCheck,
+       Keyword.merge(
+         Application.get_env(
+           :money_tree,
+           MoneyTree.Assets.VehicleValuationProviders.MarketCheck,
+           []
+         ),
+         marketcheck_config
+       )
+
+if config_env() == :prod and marketcheck_enabled? and env.("MARKETCHECK_API_KEY") in [nil, ""] do
+  raise """
+  environment variable MARKETCHECK_API_KEY is required in production when MarketCheck is enabled.
+  """
+end
+
+ai_env = env
 
 ai_runtime_config =
   [
@@ -266,24 +246,7 @@ if ai_runtime_config != [] or ollama_runtime_config != [] do
   config :money_tree, MoneyTree.AI, merged_ai_config
 end
 
-stripe_runtime_config =
-  [
-    connect_client_id: teller_env.("STRIPE_CONNECT_CLIENT_ID"),
-    connect_redirect_uri: teller_env.("STRIPE_CONNECT_REDIRECT_URI"),
-    authorize_host: teller_env.("STRIPE_CONNECT_HOST"),
-    connect_scope: teller_env.("STRIPE_CONNECT_SCOPE")
-  ]
-  |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-
-config :money_tree, MoneyTree.Stripe, stripe_runtime_config
-
-mailer_env = fn key ->
-  case System.get_env(key) do
-    nil -> nil
-    "" -> nil
-    value -> value
-  end
-end
+mailer_env = env
 
 mail_from_name = mailer_env.("MAILER_FROM_NAME") || "MoneyTree"
 mail_from_email = mailer_env.("MAILER_FROM_EMAIL") || "no-reply@moneytree.app"
@@ -432,7 +395,8 @@ if config_env() != :test do
     queues: [
       default: String.to_integer(default_limit),
       mailers: String.to_integer(mailer_limit),
-      reporting: String.to_integer(reporting_limit)
+      reporting: String.to_integer(reporting_limit),
+      market_data: 1
     ]
 
   if otlp_endpoint = System.get_env("OTEL_EXPORTER_OTLP_ENDPOINT") do
@@ -441,7 +405,7 @@ if config_env() != :test do
 end
 
 vault_key =
-  System.get_env("CLOAK_VAULT_KEY") ||
+  env.("CLOAK_VAULT_KEY") ||
     if config_env() == :prod do
       raise """
       environment variable CLOAK_VAULT_KEY is missing.
@@ -475,7 +439,7 @@ if System.get_env("PHX_SERVER") do
 end
 
 if config_env() == :prod do
-  database_url = System.get_env("DATABASE_URL")
+  database_url = env.("DATABASE_URL")
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
   repo_config =
@@ -484,16 +448,16 @@ if config_env() == :prod do
     else
       [
         username:
-          System.get_env("DATABASE_USERNAME") ||
+          env.("DATABASE_USERNAME") ||
             raise("environment variable DATABASE_USERNAME is missing."),
         password:
-          System.get_env("DATABASE_PASSWORD") ||
+          env.("DATABASE_PASSWORD") ||
             raise("environment variable DATABASE_PASSWORD is missing."),
         hostname:
-          System.get_env("DATABASE_HOST") ||
+          env.("DATABASE_HOST") ||
             raise("environment variable DATABASE_HOST is missing."),
         database:
-          System.get_env("DATABASE_NAME") ||
+          env.("DATABASE_NAME") ||
             raise("environment variable DATABASE_NAME is missing."),
         port: String.to_integer(System.get_env("DATABASE_PORT") || "5432")
       ]
@@ -504,17 +468,49 @@ if config_env() == :prod do
     |> Keyword.put(:pool_size, String.to_integer(System.get_env("POOL_SIZE") || "10"))
     |> Keyword.put(:socket_options, maybe_ipv6)
 
-  repo_config =
-    if System.get_env("DATABASE_SSL", "false") in ~w(true 1) do
-      Keyword.put_new(repo_config, :ssl, true)
+  # TLS is on by default in production (opt out with DATABASE_SSL=false for a
+  # deployment where the database is only reachable over a trusted private
+  # network/socket). When enabled, the server certificate is verified against
+  # the OS trust store by default too -- `ssl: true` alone only encrypts the
+  # connection, it does not verify who's on the other end, which is a
+  # well-known Postgrex/Ecto footgun. Operators whose database certificate
+  # doesn't chain to a public CA (self-signed, private CA) can opt out of
+  # verification specifically with DATABASE_SSL_VERIFY=false while keeping
+  # the connection encrypted.
+  database_ssl? = System.get_env("DATABASE_SSL", "true") in ~w(true 1)
+  database_ssl_verify? = System.get_env("DATABASE_SSL_VERIFY", "true") in ~w(true 1)
+  database_sni_host = (database_url && URI.parse(database_url).host) || env.("DATABASE_HOST")
+
+  maybe_put_sni = fn ssl_opts, host ->
+    if is_binary(host) and host != "" do
+      Keyword.put(ssl_opts, :server_name_indication, to_charlist(host))
     else
-      repo_config
+      ssl_opts
+    end
+  end
+
+  repo_config =
+    cond do
+      not database_ssl? ->
+        repo_config
+
+      database_ssl_verify? ->
+        ssl_opts =
+          [verify: :verify_peer, cacerts: :public_key.cacerts_get(), depth: 3]
+          |> maybe_put_sni.(database_sni_host)
+
+        repo_config
+        |> Keyword.put(:ssl, true)
+        |> Keyword.put(:ssl_opts, ssl_opts)
+
+      true ->
+        Keyword.put(repo_config, :ssl, true)
     end
 
   config :money_tree, MoneyTree.Repo, repo_config
 
   secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
+    env.("SECRET_KEY_BASE") ||
       raise """
       environment variable SECRET_KEY_BASE is missing.
       You can generate one by calling: mix phx.gen.secret

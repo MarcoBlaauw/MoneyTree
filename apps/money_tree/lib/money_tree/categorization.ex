@@ -7,6 +7,7 @@ defmodule MoneyTree.Categorization do
 
   alias Decimal
   alias MoneyTree.Accounts
+  alias MoneyTree.Categorization.Category
   alias MoneyTree.Categorization.CategoryRule
   alias MoneyTree.Categorization.UserOverride
   alias MoneyTree.Repo
@@ -14,6 +15,14 @@ defmodule MoneyTree.Categorization do
   alias MoneyTree.Users.User
 
   @manual_priority 10_000
+  @reserved_category_names ["uncategorized"]
+
+  @type category_attrs :: %{
+          optional(:name) => String.t(),
+          optional(:kind) => String.t(),
+          optional(:source) => String.t(),
+          optional(:active) => boolean()
+        }
 
   @type decision :: %{
           category: String.t(),
@@ -31,17 +40,203 @@ defmodule MoneyTree.Categorization do
     |> Repo.all()
   end
 
+  @spec list_categories(User.t() | binary()) :: [Category.t()]
+  def list_categories(user) do
+    Category
+    |> where([category], category.user_id == ^user_id(user) and category.active == true)
+    |> where([category], fragment("lower(?)", category.name) not in ^@reserved_category_names)
+    |> order_by([category], asc: fragment("lower(?)", category.name))
+    |> Repo.all()
+  end
+
+  @spec category_names(User.t() | binary()) :: [String.t()]
+  def category_names(user) do
+    user_id = user_id(user)
+
+    registry_names =
+      Category
+      |> where([category], category.user_id == ^user_id and category.active == true)
+      |> where([category], fragment("lower(?)", category.name) not in ^@reserved_category_names)
+      |> select([category], category.name)
+      |> Repo.all()
+
+    transaction_names =
+      Transaction
+      |> join(
+        :inner,
+        [transaction],
+        account in subquery(Accounts.accessible_accounts_query(user_id)),
+        on: transaction.account_id == account.id
+      )
+      |> where([transaction], not is_nil(transaction.category))
+      |> select([transaction], transaction.category)
+      |> distinct(true)
+      |> Repo.all()
+
+    rule_names =
+      CategoryRule
+      |> where([rule], rule.user_id == ^user_id)
+      |> select([rule], rule.category)
+      |> Repo.all()
+
+    (registry_names ++ transaction_names ++ rule_names)
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == "" or reserved_category?(&1)))
+    |> Enum.uniq_by(&String.downcase/1)
+    |> Enum.sort_by(&String.downcase/1)
+  end
+
+  @spec category_options(User.t() | binary()) :: [map()]
+  def category_options(user) do
+    user_id = user_id(user)
+
+    registry =
+      Category
+      |> where([category], category.user_id == ^user_id and category.active == true)
+      |> where([category], fragment("lower(?)", category.name) not in ^@reserved_category_names)
+      |> Repo.all()
+      |> Map.new(fn category ->
+        {normalize_category_key(category.name),
+         %{
+           name: category.name,
+           emoji: category.emoji || emoji_for_category(category.name, category.kind),
+           kind: category.kind,
+           source: category.source
+         }}
+      end)
+
+    category_names(user_id)
+    |> Enum.map(fn name ->
+      key = normalize_category_key(name)
+
+      Map.get(registry, key, %{
+        name: name,
+        emoji: emoji_for_category(name),
+        kind: "expense",
+        source: "inferred"
+      })
+    end)
+  end
+
+  @spec create_category(User.t() | binary(), map()) ::
+          {:ok, Category.t()} | {:error, Ecto.Changeset.t()}
+  def create_category(user, attrs) when is_map(attrs) do
+    attrs =
+      attrs
+      |> Map.new()
+      |> stringify_keys()
+      |> Map.put("user_id", user_id(user))
+      |> Map.put_new("source", "manual")
+
+    if reserved_category?(Map.get(attrs, "name")) do
+      changeset =
+        %Category{}
+        |> Category.changeset(attrs)
+        |> Ecto.Changeset.add_error(:name, "is reserved for uncategorized transactions")
+
+      {:error, changeset}
+    else
+      attrs
+      |> put_category_emoji()
+      |> insert_category()
+    end
+  end
+
+  defp put_category_emoji(attrs) do
+    attrs =
+      case Map.get(attrs, "emoji") do
+        emoji when is_binary(emoji) ->
+          if String.trim(emoji) == "" do
+            Map.put(
+              attrs,
+              "emoji",
+              emoji_for_category(Map.get(attrs, "name"), Map.get(attrs, "kind"))
+            )
+          else
+            attrs
+          end
+
+        _ ->
+          Map.put(
+            attrs,
+            "emoji",
+            emoji_for_category(Map.get(attrs, "name"), Map.get(attrs, "kind"))
+          )
+      end
+
+    attrs
+  end
+
+  defp insert_category(attrs) do
+    %Category{}
+    |> Category.changeset(attrs)
+    |> Repo.insert(
+      on_conflict: [
+        set: [
+          active: true,
+          kind: Map.get(attrs, "kind") || "expense",
+          source: Map.get(attrs, "source") || "manual",
+          emoji: Map.get(attrs, "emoji") || "🏷️",
+          updated_at: DateTime.utc_now()
+        ]
+      ],
+      conflict_target: {:unsafe_fragment, "(user_id, lower(name))"},
+      returning: true
+    )
+  end
+
+  @spec ensure_category(User.t() | binary(), String.t(), keyword()) ::
+          {:ok, Category.t()} | {:error, Ecto.Changeset.t()} | :ok
+  def ensure_category(user, category, opts \\ [])
+
+  def ensure_category(_user, category, _opts) when not is_binary(category), do: :ok
+
+  def ensure_category(user, category, opts) when is_binary(category) do
+    category = String.trim(category)
+
+    if category == "" or reserved_category?(category) do
+      :ok
+    else
+      create_category(user, %{
+        name: category,
+        emoji: emoji_for_category(category, Keyword.get(opts, :kind, "expense")),
+        kind: Keyword.get(opts, :kind, "expense"),
+        source: Keyword.get(opts, :source, "manual")
+      })
+    end
+  end
+
+  @spec delete_category(User.t() | binary(), binary()) ::
+          {:ok, Category.t()} | {:error, :not_found | Ecto.Changeset.t()}
+  def delete_category(user, category_id) do
+    case Repo.get_by(Category, id: category_id, user_id: user_id(user)) do
+      nil ->
+        {:error, :not_found}
+
+      category ->
+        category
+        |> Category.changeset(%{active: false})
+        |> Repo.update()
+    end
+  end
+
   @spec create_rule(User.t() | binary(), map()) ::
           {:ok, CategoryRule.t()} | {:error, Ecto.Changeset.t()}
   def create_rule(user, attrs) do
     attrs =
       attrs
       |> Map.new()
-      |> Map.put(:user_id, user_id(user))
+      |> stringify_keys()
+      |> Map.put("user_id", user_id(user))
 
-    %CategoryRule{}
-    |> CategoryRule.changeset(attrs)
-    |> Repo.insert()
+    with {:ok, rule} <-
+           %CategoryRule{}
+           |> CategoryRule.changeset(attrs)
+           |> Repo.insert() do
+      _ = ensure_category(user, rule.category, source: rule.source || "manual")
+      {:ok, rule}
+    end
   end
 
   @spec delete_rule(User.t() | binary(), binary()) ::
@@ -51,6 +246,16 @@ defmodule MoneyTree.Categorization do
       nil -> {:error, :not_found}
       rule -> Repo.delete(rule)
     end
+  end
+
+  @spec clear_rules(User.t() | binary()) :: non_neg_integer()
+  def clear_rules(user) do
+    {count, _} =
+      CategoryRule
+      |> where([rule], rule.user_id == ^user_id(user))
+      |> Repo.delete_all()
+
+    count
   end
 
   @spec apply_to_transaction(Transaction.t()) ::
@@ -72,10 +277,12 @@ defmodule MoneyTree.Categorization do
           {:ok, Transaction.t()} | {:error, :not_found | Ecto.Changeset.t()}
   def recategorize_transaction(user, transaction_id, category) do
     user_id = user_id(user)
+    category = normalize_category_assignment(category)
 
     with %Transaction{} = transaction <- fetch_user_transaction(user_id, transaction_id),
-         {:ok, _override} <- upsert_override(transaction, category),
-         {:ok, _rule} <- ensure_manual_rule(user_id, transaction, category),
+         {:ok, _override} <- upsert_override_or_clear(transaction, category),
+         {:ok, _rule} <- ensure_manual_rule_or_clear(user_id, transaction, category),
+         _ <- ensure_category(user_id, category, source: "manual"),
          {:ok, updated} <- apply_manual_decision(transaction, category) do
       {:ok, updated}
     else
@@ -223,23 +430,48 @@ defmodule MoneyTree.Categorization do
   end
 
   defp provider_decision(%Transaction{} = transaction) do
-    category = transaction.category || "Uncategorized"
+    category =
+      if uncategorized_value?(transaction.category),
+        do: "Uncategorized",
+        else: transaction.category
 
     %{
       category: category,
-      source: "provider",
-      confidence: if(is_binary(transaction.category), do: Decimal.new("0.70"), else: nil)
+      source: if(category == "Uncategorized", do: nil, else: "provider"),
+      confidence: if(category == "Uncategorized", do: nil, else: Decimal.new("0.70"))
     }
   end
 
   defp apply_manual_decision(%Transaction{} = transaction, category) do
+    attrs =
+      if is_nil(category) do
+        %{
+          category: nil,
+          categorization_source: nil,
+          categorization_confidence: nil
+        }
+      else
+        %{
+          category: category,
+          categorization_source: "manual",
+          categorization_confidence: Decimal.new("1.0")
+        }
+      end
+
     transaction
-    |> Transaction.changeset(%{
-      category: category,
-      categorization_source: "manual",
-      categorization_confidence: Decimal.new("1.0")
-    })
+    |> Transaction.changeset(attrs)
     |> Repo.update()
+  end
+
+  defp upsert_override_or_clear(%Transaction{} = transaction, nil) do
+    case Repo.get_by(UserOverride, transaction_id: transaction.id) do
+      nil -> {:ok, nil}
+      override -> Repo.delete(override)
+    end
+  end
+
+  defp upsert_override_or_clear(%Transaction{} = transaction, category) do
+    upsert_override(transaction, category)
   end
 
   defp upsert_override(%Transaction{} = transaction, category) do
@@ -264,6 +496,33 @@ defmodule MoneyTree.Categorization do
       ],
       returning: true
     )
+  end
+
+  defp ensure_manual_rule_or_clear(user_id, transaction, nil) do
+    delete_matching_manual_rule(user_id, transaction)
+    {:ok, nil}
+  end
+
+  defp ensure_manual_rule_or_clear(user_id, transaction, category) do
+    ensure_manual_rule(user_id, transaction, category)
+  end
+
+  defp delete_matching_manual_rule(user_id, %Transaction{} = transaction) do
+    regex =
+      case transaction.merchant_name do
+        merchant when is_binary(merchant) and merchant != "" ->
+          "^" <> Regex.escape(merchant) <> "$"
+
+        _ ->
+          nil
+      end
+
+    CategoryRule
+    |> where([rule], rule.user_id == ^user_id)
+    |> where([rule], rule.source == "manual")
+    |> where([rule], rule.priority == ^@manual_priority)
+    |> where([rule], rule.merchant_regex == ^regex)
+    |> Repo.delete_all()
   end
 
   defp ensure_manual_rule(user_id, %Transaction{} = transaction, category) do
@@ -317,6 +576,60 @@ defmodule MoneyTree.Categorization do
 
   defp user_id(%User{id: id}), do: id
   defp user_id(id) when is_binary(id), do: id
+
+  defp stringify_keys(attrs) do
+    Map.new(attrs, fn
+      {key, value} when is_atom(key) -> {Atom.to_string(key), value}
+      {key, value} -> {key, value}
+    end)
+  end
+
+  defp normalize_category_key(value) do
+    value
+    |> to_string()
+    |> String.trim()
+    |> String.downcase()
+  end
+
+  defp reserved_category?(value), do: normalize_category_key(value) in @reserved_category_names
+
+  defp uncategorized_value?(nil), do: true
+  defp uncategorized_value?(value) when is_binary(value), do: reserved_category?(value)
+  defp uncategorized_value?(_value), do: false
+
+  defp normalize_category_assignment(value) when is_binary(value) do
+    value = String.trim(value)
+
+    cond do
+      value == "" -> nil
+      reserved_category?(value) -> nil
+      true -> value
+    end
+  end
+
+  defp normalize_category_assignment(_value), do: nil
+
+  defp emoji_for_category(category, kind \\ nil)
+
+  defp emoji_for_category(category, kind) do
+    normalized = normalize_category_key(category)
+
+    cond do
+      normalized =~ "grocery" or normalized =~ "market" -> "🛒"
+      normalized =~ "dining" or normalized =~ "restaurant" or normalized =~ "coffee" -> "🍽️"
+      normalized =~ "fuel" or normalized =~ "gas" -> "⛽"
+      normalized =~ "utilit" or normalized =~ "electric" or normalized =~ "water" -> "💡"
+      normalized =~ "insurance" -> "🛡️"
+      normalized =~ "income" or kind == "income" -> "💵"
+      normalized =~ "transfer" or kind == "transfer" -> "🔁"
+      normalized =~ "credit card" -> "💳"
+      normalized =~ "loan" or normalized =~ "mortgage" -> "🏦"
+      normalized =~ "subscription" or normalized =~ "streaming" or normalized =~ "software" -> "🔄"
+      normalized =~ "medical" or normalized =~ "hospital" or normalized =~ "health" -> "🏥"
+      normalized =~ "fee" -> "🧾"
+      true -> "🏷️"
+    end
+  end
 
   @spec recategorize_all(User.t() | binary()) :: non_neg_integer()
   def recategorize_all(user) do

@@ -9,10 +9,10 @@ defmodule MoneyTree.Budgets do
   import Ecto.Query, warn: false
 
   alias Decimal
+  alias MoneyTree.Accounts
   alias MoneyTree.Budgets.Budget
   alias MoneyTree.Budgets.BudgetRevision
   alias MoneyTree.Budgets.Planner
-  alias MoneyTree.Accounts
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Users.User
@@ -64,6 +64,17 @@ defmodule MoneyTree.Budgets do
       currency: "USD"
     }
   ]
+
+  @budget_excluded_transaction_kinds ~w(
+    internal_transfer
+    credit_card_payment
+    loan_payment
+    escrow_property_tax_disbursement
+    escrow_homeowners_insurance_disbursement
+    escrow_flood_insurance_disbursement
+    escrow_other_disbursement
+    escrow_refund
+  )
 
   @doc """
   Lists the budgets that belong to the supplied user.
@@ -132,6 +143,84 @@ defmodule MoneyTree.Budgets do
   @spec change_budget(Budget.t(), map()) :: Ecto.Changeset.t()
   def change_budget(%Budget{} = budget, attrs \\ %{}) do
     Budget.changeset(budget, attrs)
+  end
+
+  @doc """
+  Builds budget drafts from recent categorized spending without mutating budgets.
+  """
+  @spec auto_create_budget_drafts(User.t() | binary(), keyword()) :: [map()]
+  def auto_create_budget_drafts(user, opts \\ []) do
+    months = Keyword.get(opts, :months, 6)
+    months = if is_integer(months) and months > 0, do: months, else: 6
+
+    anchor = Keyword.get(opts, :anchor_date, Date.utc_today())
+    since_date = anchor |> Date.beginning_of_month() |> Date.add(-30 * (months - 1))
+    since = DateTime.new!(since_date, ~T[00:00:00], "Etc/UTC")
+
+    existing_budget_names =
+      user
+      |> list_budgets()
+      |> Enum.map(&normalize_category_key(&1.name))
+      |> MapSet.new()
+
+    user
+    |> budgetable_spending_totals(since)
+    |> Enum.reject(fn %{category_key: category_key} ->
+      category_key in ["", "uncategorized"] or MapSet.member?(existing_budget_names, category_key)
+    end)
+    |> Enum.map(fn %{
+                     category: category,
+                     currency: currency,
+                     total: total,
+                     transaction_count: count
+                   } ->
+      suggested = total |> Decimal.div(Decimal.new(months)) |> Decimal.round(2)
+
+      %{
+        id: draft_id(category),
+        category: category,
+        period: :monthly,
+        currency: currency,
+        allocation_amount: suggested,
+        entry_type: :expense,
+        variability: :variable,
+        transaction_count: count,
+        explanation:
+          "#{months} month average from categorized spending, excluding transfers, payments, escrow, and excluded transactions."
+      }
+    end)
+    |> Enum.reject(&(Decimal.compare(&1.allocation_amount, Decimal.new("0")) in [:lt, :eq]))
+    |> Enum.sort_by(&Decimal.to_float(&1.allocation_amount), :desc)
+  end
+
+  @doc """
+  Creates a budget from a deterministic draft category if it is still available.
+  """
+  @spec create_budget_from_draft(User.t() | binary(), String.t(), keyword()) ::
+          {:ok, Budget.t()} | {:error, term()}
+  def create_budget_from_draft(user, category, opts \\ []) when is_binary(category) do
+    draft =
+      user
+      |> auto_create_budget_drafts(opts)
+      |> Enum.find(&(normalize_category_key(&1.category) == normalize_category_key(category)))
+
+    case draft do
+      nil ->
+        {:error, :draft_not_found}
+
+      draft ->
+        create_budget(user, %{
+          name: draft.category,
+          period: draft.period,
+          allocation_amount: draft.allocation_amount,
+          currency: draft.currency,
+          entry_type: draft.entry_type,
+          variability: draft.variability,
+          target_mode: :strict,
+          rollover_policy: :none,
+          priority: 0
+        })
+    end
   end
 
   @doc """
@@ -543,7 +632,9 @@ defmodule MoneyTree.Budgets do
   defp spending_by_category(user, %{since: since, until: until}) do
     from(transaction in Transaction,
       join: account in subquery(Accounts.accessible_accounts_query(user)),
-      on: transaction.account_id == account.id
+      on: transaction.account_id == account.id,
+      where: not transaction.excluded_from_spending,
+      where: transaction.transaction_kind not in ^@budget_excluded_transaction_kinds
     )
     |> maybe_filter_since(since)
     |> maybe_filter_until(until)
@@ -566,6 +657,33 @@ defmodule MoneyTree.Budgets do
             currency: existing.currency || currency
         }
       end)
+    end)
+  end
+
+  defp budgetable_spending_totals(user, since) do
+    from(transaction in Transaction,
+      join: account in subquery(Accounts.accessible_accounts_query(user)),
+      on: transaction.account_id == account.id,
+      where: not transaction.excluded_from_spending,
+      where: transaction.transaction_kind not in ^@budget_excluded_transaction_kinds,
+      where: not is_nil(transaction.category),
+      where: transaction.status == "posted",
+      where: transaction.amount < 0,
+      where: is_nil(transaction.posted_at) or transaction.posted_at >= ^since,
+      group_by: [transaction.category, transaction.currency],
+      select:
+        {transaction.category, transaction.currency, sum(fragment("ABS(?)", transaction.amount)),
+         count(transaction.id)}
+    )
+    |> Repo.all()
+    |> Enum.map(fn {category, currency, total, count} ->
+      %{
+        category: category,
+        category_key: normalize_category_key(category),
+        currency: currency || "USD",
+        total: cast_decimal(total),
+        transaction_count: count
+      }
     end)
   end
 
@@ -597,6 +715,17 @@ defmodule MoneyTree.Budgets do
       {:ok, decimal} -> decimal
       :error -> Decimal.new("0")
     end
+  end
+
+  defp draft_id(category), do: "category-" <> normalize_category_key(category)
+
+  defp normalize_category_key(nil), do: ""
+
+  defp normalize_category_key(category) do
+    category
+    |> to_string()
+    |> String.trim()
+    |> String.downcase()
   end
 
   defp derive_currency(user, budgets) do
@@ -695,8 +824,7 @@ defmodule MoneyTree.Budgets do
     value
     |> String.replace("_", " ")
     |> String.split(~r/\s+/, trim: true)
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join(" ")
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   defp humanize_value(value), do: value

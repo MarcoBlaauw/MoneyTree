@@ -299,8 +299,6 @@ defmodule MoneyTree.Plaid.Client do
     end)
   end
 
-  defp stringify_keys(_other), do: %{}
-
   defp retry?(status, retry_opts) do
     retry_for = Keyword.get(retry_opts, :retry_for, [])
     Enum.member?(retry_for, status)

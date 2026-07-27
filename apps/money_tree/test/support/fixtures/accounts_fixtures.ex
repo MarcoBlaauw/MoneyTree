@@ -3,11 +3,11 @@ defmodule MoneyTree.AccountsFixtures do
   Test helpers for creating users and sessions.
   """
 
+  alias Decimal
   alias MoneyTree.Accounts
   alias MoneyTree.Accounts.Account
   alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Repo
-  alias Decimal
 
   def unique_user_email do
     "user-#{System.unique_integer([:positive])}@example.com"
@@ -25,16 +25,17 @@ defmodule MoneyTree.AccountsFixtures do
     attrs = Map.new(attrs)
     email = Map.get(attrs, :email, unique_user_email())
     password = Map.get(attrs, :password, valid_password())
+    role = Map.get(attrs, :role, :member)
 
     params =
       attrs
       |> Map.put_new(:email, email)
       |> Map.put(:password, password)
       |> Map.put_new(:encrypted_full_name, Map.get(attrs, :full_name, "Fixture User"))
-      |> Map.put_new(:role, :member)
       |> Map.delete(:full_name)
+      |> Map.delete(:role)
 
-    {:ok, user} = Accounts.register_user(params)
+    {:ok, user} = Accounts.register_user_with_role(params, role)
 
     %{user | password: nil}
   end
@@ -47,6 +48,8 @@ defmodule MoneyTree.AccountsFixtures do
       currency: Map.get(attrs, :currency, "USD"),
       type: Map.get(attrs, :type, "depository"),
       subtype: Map.get(attrs, :subtype, "checking"),
+      internal_account_kind: Map.get(attrs, :internal_account_kind),
+      liability_type: Map.get(attrs, :liability_type),
       external_id: Map.get(attrs, :external_id, unique_account_external_id()),
       current_balance: Map.get(attrs, :current_balance, Decimal.new("0")),
       available_balance: Map.get(attrs, :available_balance, Decimal.new("0")),

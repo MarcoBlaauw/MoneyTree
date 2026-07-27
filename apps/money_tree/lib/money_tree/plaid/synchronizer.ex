@@ -11,6 +11,7 @@ defmodule MoneyTree.Plaid.Synchronizer do
   alias MoneyTree.Currency
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
+  alias MoneyTree.Plaid.Client
   alias MoneyTree.Recurring
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Fingerprints
@@ -34,7 +35,7 @@ defmodule MoneyTree.Plaid.Synchronizer do
       Keyword.get(
         opts,
         :client,
-        Application.get_env(:money_tree, :plaid_client, MoneyTree.Plaid.Client)
+        Application.get_env(:money_tree, :plaid_client, Client)
       )
 
     mode = Keyword.get(opts, :mode, "incremental")
@@ -449,16 +450,16 @@ defmodule MoneyTree.Plaid.Synchronizer do
 
   defp build_client(client), do: {:ok, client}
 
-  defp list_accounts(%MoneyTree.Plaid.Client{} = client, params) do
+  defp list_accounts(%Client{} = client, params) do
     access_token = params["access_token"] || params[:access_token]
-    MoneyTree.Plaid.Client.list_accounts(client, access_token, params)
+    Client.list_accounts(client, access_token, params)
   end
 
   defp list_accounts(client, params) when is_atom(client), do: client.list_accounts(params)
 
-  defp list_transactions(%MoneyTree.Plaid.Client{} = client, params) do
+  defp list_transactions(%Client{} = client, params) do
     access_token = params["access_token"] || params[:access_token]
-    MoneyTree.Plaid.Client.sync_transactions(client, access_token, params)
+    Client.sync_transactions(client, access_token, params)
   end
 
   defp list_transactions(client, params) when is_atom(client),

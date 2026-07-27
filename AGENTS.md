@@ -35,6 +35,64 @@ When asked for a plan:
 * Break work into small, independent, executable tasks
 * Note assumptions, blockers, and migration order
 * Prefer incremental rollout over large rewrites
+* If the plan is persisted in the repository, follow the documentation lifecycle below
+
+---
+
+## Documentation Planning And Lifecycle
+
+`docs/roadmap.md` is the canonical source for delivery status, sequencing, deferred work, and future work. Do not maintain a competing status list in `README.md`, an implementation plan, or an archived document.
+
+### Document Placement
+
+* Keep active implementation plans directly under `docs/`
+* Keep current architecture, scaffolding, technical references, research, and runbooks under `docs/architecture/`
+* Move completed, superseded, or redundant plans to `docs/archive/`
+* Keep `docs/architecture/README.md` and `docs/archive/README.md` current as the indexes for those folders
+* Treat archived documents as historical context, not as instructions for the current system
+
+### Creating Or Updating Plans
+
+Before creating a plan:
+
+1. Review `docs/roadmap.md`
+2. Review the active plans under `docs/`
+3. Review the architecture and archive indexes
+4. Extend an existing plan when it already owns the work instead of creating a duplicate
+
+A persisted implementation plan should include:
+
+* status and scope
+* links to the actual owning apps, modules, schemas, migrations, or routes
+* dependencies, sequencing, and migration order
+* small executable tasks
+* acceptance criteria and validation commands
+* deferred or explicitly out-of-scope work
+* migration requirements when schemas change
+
+Update `docs/roadmap.md` when work starts, pauses, changes priority, becomes blocked, is deferred, or is completed.
+
+### Completing Or Superseding Plans
+
+When a plan is completed or superseded:
+
+1. Update its status and describe the outcome or replacement
+2. Move it to `docs/archive/`
+3. Add or update its entry in `docs/archive/README.md`
+4. Update links that referenced its former location
+5. Carry unresolved work into the deferred or future section of `docs/roadmap.md`
+6. Confirm no active document still presents the archived plan as current
+
+When runtime architecture changes, update the affected files under `docs/architecture/`, its index, and the contributor-facing summary in `README.md`. Historical references may remain in archived plans when their archived status is clear.
+
+### Documentation Validation
+
+For documentation-only changes:
+
+* validate relative Markdown links
+* run `git diff --check`
+* search current documentation for removed apps, providers, routes, and paths
+* verify `docs/roadmap.md` and both documentation indexes agree with the filesystem
 
 ---
 
@@ -52,15 +110,15 @@ Before making changes, identify which app owns the behavior:
 
 * `apps/money_tree/test` → ExUnit tests and fixtures
 
-* `apps/next` → Next.js frontend
-
-* `apps/next/app` → routes, page components, frontend helpers
-
 * `apps/ui` → shared UI styling
 
-* `apps/contracts` → API specs and generated contract artifacts
-
 * `config` → shared umbrella/runtime config
+
+* `docs/roadmap.md` → canonical product and delivery status
+
+* `docs/architecture` → current technical references, research, and runbooks
+
+* `docs/archive` → completed, superseded, and redundant plans
 
 Do not assume this is a single-app repo. Work in the smallest relevant surface area.
 
@@ -77,7 +135,7 @@ Use the repository's development startup script when bringing the app up locally
   * builds shared UI (`@money-tree/ui`)
   * installs Elixir deps (`mix deps.get`)
   * applies database migrations (`mix ecto.migrate`, fallback `mix ecto.setup`)
-  * starts Phoenix and Next.js
+  * starts Phoenix
 
 Rules:
 
@@ -99,9 +157,7 @@ Before making changes, ALWAYS:
    * domain/business logic in contexts
    * Ecto schemas and queries
    * migrations
-   * Next.js app router and helpers
    * shared UI components
-   * contract definitions and generated outputs
 
 If unclear, make the safest assumption and proceed conservatively.
 
@@ -111,7 +167,6 @@ If unclear, make the safest assumption and proceed conservatively.
 
 * Make the smallest change necessary to complete the task
 * Reuse existing utilities and helpers whenever possible
-* Avoid duplicating logic across Phoenix and Next layers
 * Prefer editing existing files over creating new ones
 * Keep functions focused and readable
 * Add comments only where logic is non-obvious
@@ -174,7 +229,6 @@ If unclear, make the safest assumption and proceed conservatively.
 * Prefer progressive disclosure (details on demand)
 * Reuse existing UI components and patterns
 * Maintain consistency with the current design system
-* Determine whether logic belongs in LiveView or Next before implementing
 
 ---
 
@@ -248,7 +302,6 @@ Do not edit generated files directly.
 
 Instead:
 
-* edit `apps/contracts/specs/*` → regenerate outputs
 * edit `assets` → rebuild compiled outputs
 
 Never modify:
@@ -256,7 +309,6 @@ Never modify:
 * `_build`
 * `deps`
 * `node_modules`
-* `.next`
 * compiled/static outputs
 
 ---
@@ -277,9 +329,6 @@ Run the narrowest relevant validation when feasible:
 
 * backend tests: `mix test` or targeted tests
 * backend lint: `mix lint`
-* frontend tests: `pnpm --dir apps/next test`
-* frontend lint: `pnpm --dir apps/next lint`
-* contracts: `pnpm --dir apps/contracts verify`
 * root JS lint: `pnpm lint`
 
 Additional requirements:

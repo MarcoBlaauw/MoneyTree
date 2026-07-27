@@ -5,9 +5,9 @@ defmodule MoneyTree.ObligationsTest do
   import MoneyTree.ObligationsFixtures
 
   alias Decimal
+  alias MoneyTree.Notifications.Event
   alias MoneyTree.Obligations
   alias MoneyTree.Obligations.CheckWorker
-  alias MoneyTree.Notifications.Event
   alias MoneyTree.Repo
   alias Oban.Job
 

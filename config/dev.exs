@@ -67,4 +67,4 @@ config :swoosh, :api_client, false
 
 config :money_tree, Oban,
   peer: false,
-  queues: [default: 5, mailers: 2, reporting: 1]
+  queues: [default: 5, mailers: 2, reporting: 1, market_data: 1]

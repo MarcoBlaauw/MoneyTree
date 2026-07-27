@@ -14,7 +14,8 @@ test_db_port =
   System.get_env("TEST_DATABASE_PORT") || System.get_env("DATABASE_PORT") || "5432"
 
 test_db_pool_size =
-  System.get_env("TEST_DATABASE_POOL_SIZE") || "10"
+  System.get_env("TEST_DATABASE_POOL_SIZE") ||
+    Integer.to_string(max(System.schedulers_online(), 10))
 
 config :money_tree, MoneyTree.Repo,
   username: test_db_username,
@@ -54,7 +55,32 @@ config :money_tree, MoneyTree.AI,
     timeout_ms: 5000
   ]
 
+config :money_tree, MoneyTree.Loans.RateProviders.Fred,
+  base_url: "https://api.stlouisfed.org/fred",
+  api_key: nil,
+  timeout_ms: 5000
+
+config :money_tree, MoneyTree.Assets.ProviderRegistry,
+  enabled_providers: [],
+  monthly_request_limit: 450,
+  refresh_interval_days: 7
+
+config :money_tree, MoneyTree.Assets.VehicleValuationProviders.MarketCheck,
+  base_url: "https://api.marketcheck.com",
+  api_key: nil,
+  dealer_type: "independent",
+  timeout_ms: 5000
+
+config :money_tree, MoneyTree.BankSync.ProviderRegistry,
+  enabled_providers: ["simplefin", "manual", "plaid"],
+  primary_provider: "simplefin"
+
 config :money_tree, :disable_oban_tracing, true
+
+# The real limiter is exercised by dedicated rate-limiter tests; leaving it
+# active by default would make unrelated tests flaky/order-dependent since
+# they share the same ETS-backed counters across the test run.
+config :money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop
 
 config :logger, level: :warning
 

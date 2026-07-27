@@ -7,30 +7,104 @@ defmodule MoneyTree.ManualImports.XLSXParser do
 
   @type parse_result :: {:ok, [[String.t()]]} | {:error, String.t()}
 
+  # An .xlsx is a zip archive. Without these limits, a small crafted archive
+  # can decompress to gigabytes in memory (a "zip bomb") before a single byte
+  # of worksheet XML is ever parsed.
+  @max_entries 200
+  @max_entry_uncompressed_bytes 50_000_000
+  @max_total_uncompressed_bytes 100_000_000
+  @max_compression_ratio 200
+  @ratio_check_threshold_bytes 1_000_000
+
   @spec rows(binary()) :: parse_result()
   def rows(content) when is_binary(content) do
     with {:ok, files} <- unzip(content),
          {:ok, shared_strings} <- parse_shared_strings(files),
-         {:ok, worksheet_xml} <- first_worksheet_xml(files),
-         {:ok, rows} <- parse_rows(worksheet_xml, shared_strings) do
-      {:ok, rows}
+         {:ok, worksheet_xml} <- first_worksheet_xml(files) do
+      parse_rows(worksheet_xml, shared_strings)
     end
   end
 
   defp unzip(content) do
-    case :zip.unzip(content, [:memory]) do
-      {:ok, files} ->
-        normalized =
-          Enum.map(files, fn {path, data} ->
-            {path |> List.to_string(), data}
-          end)
+    with {:ok, entries} <- list_entries(content),
+         :ok <- validate_entries(entries) do
+      case :zip.unzip(content, [:memory]) do
+        {:ok, files} ->
+          normalized =
+            Enum.map(files, fn {path, data} ->
+              {path |> List.to_string(), data}
+            end)
 
-        {:ok, normalized}
+          {:ok, normalized}
 
-      {:error, _reason} ->
-        {:error, "xlsx file could not be read"}
+        {:error, _reason} ->
+          {:error, "xlsx file could not be read"}
+      end
     end
   end
+
+  defp list_entries(content) do
+    case :zip.list_dir(content) do
+      {:ok, entries} -> {:ok, Enum.filter(entries, &match?({:zip_file, _, _, _, _, _}, &1))}
+      {:error, _reason} -> {:error, "xlsx file could not be read"}
+    end
+  end
+
+  defp validate_entries(entries) do
+    if length(entries) > @max_entries do
+      {:error, "xlsx file has too many internal entries"}
+    else
+      validate_entry_sizes(entries, 0)
+    end
+  end
+
+  defp validate_entry_sizes([], _total_so_far), do: :ok
+
+  defp validate_entry_sizes([entry | rest], total_so_far) do
+    size = entry_uncompressed_size(entry)
+    comp_size = entry_compressed_size(entry)
+
+    with :ok <- validate_entry_size(size),
+         :ok <- validate_compression_ratio(size, comp_size),
+         {:ok, new_total} <- validate_running_total(total_so_far, size) do
+      validate_entry_sizes(rest, new_total)
+    end
+  end
+
+  defp validate_entry_size(size) when size > @max_entry_uncompressed_bytes,
+    do: {:error, "xlsx file contains an entry that is too large"}
+
+  defp validate_entry_size(_size), do: :ok
+
+  defp validate_compression_ratio(size, _comp_size) when size < @ratio_check_threshold_bytes,
+    do: :ok
+
+  defp validate_compression_ratio(_size, 0),
+    do: {:error, "xlsx file failed a compression-ratio safety check"}
+
+  defp validate_compression_ratio(size, comp_size) do
+    if size / comp_size > @max_compression_ratio do
+      {:error, "xlsx file failed a compression-ratio safety check"}
+    else
+      :ok
+    end
+  end
+
+  defp validate_running_total(total_so_far, size) do
+    new_total = total_so_far + size
+
+    if new_total > @max_total_uncompressed_bytes do
+      {:error, "xlsx file is too large once decompressed"}
+    else
+      {:ok, new_total}
+    end
+  end
+
+  defp entry_uncompressed_size({:zip_file, _name, file_info, _comment, _offset, _comp_size}),
+    do: elem(file_info, 1)
+
+  defp entry_compressed_size({:zip_file, _name, _file_info, _comment, _offset, comp_size}),
+    do: comp_size
 
   defp parse_shared_strings(files) do
     case Enum.find(files, fn {path, _data} -> path == "xl/sharedStrings.xml" end) do
@@ -187,11 +261,10 @@ defmodule MoneyTree.ManualImports.XLSXParser do
 
   defp text_nodes_to_string(nodes) when is_list(nodes) do
     nodes
-    |> Enum.map(fn
+    |> Enum.map_join(fn
       {:xmlText, _parents, _pos, _language, value, _type} -> List.to_string(value)
       other -> to_string_safe(other)
     end)
-    |> Enum.join("")
     |> String.trim()
     |> xml_unescape()
   end
@@ -261,8 +334,7 @@ defmodule MoneyTree.ManualImports.XLSXParser do
     |> Enum.map(fn [si_body] ->
       ~r/<(?:\w+:)?t\b[^>]*>(.*?)<\/(?:\w+:)?t>/s
       |> Regex.scan(si_body, capture: :all_but_first)
-      |> Enum.map(fn [text] -> xml_unescape(String.trim(text)) end)
-      |> Enum.join("")
+      |> Enum.map_join(fn [text] -> xml_unescape(String.trim(text)) end)
     end)
   end
 
@@ -339,8 +411,7 @@ defmodule MoneyTree.ManualImports.XLSXParser do
         type == "inlineStr" ->
           ~r/<(?:\w+:)?t\b[^>]*>(.*?)<\/(?:\w+:)?t>/s
           |> Regex.scan(body || "", capture: :all_but_first)
-          |> Enum.map(fn [text] -> xml_unescape(String.trim(text)) end)
-          |> Enum.join("")
+          |> Enum.map_join(fn [text] -> xml_unescape(String.trim(text)) end)
 
         true ->
           ~r/<(?:\w+:)?v>(.*?)<\/(?:\w+:)?v>/s

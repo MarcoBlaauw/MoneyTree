@@ -6,6 +6,7 @@ defmodule MoneyTree.Accounts do
   import Bitwise
   import Ecto.Query, warn: false
 
+  alias Decimal
   alias Ecto.Changeset
   alias Ecto.Multi
   alias MoneyTree.Accounts.Account
@@ -22,7 +23,6 @@ defmodule MoneyTree.Accounts do
   alias MoneyTree.Transactions
   alias MoneyTree.Users.User
   alias Swoosh.Email
-  alias Decimal
 
   @default_session_ttl 60 * 60 * 24 * 30
   @default_invitation_ttl 60 * 60 * 24 * 7
@@ -33,9 +33,61 @@ defmodule MoneyTree.Accounts do
   @default_user_page 1
   @default_user_per_page 25
   @max_user_per_page 100
+  @account_kind_options [
+    {"Checking", "checking"},
+    {"Savings", "savings"},
+    {"Credit card", "credit_card"},
+    {"Loan", "loan"},
+    {"Mortgage", "mortgage"},
+    {"Cash", "cash"},
+    {"Investment", "investment"},
+    {"Escrow", "escrow"},
+    {"Other", "other"}
+  ]
+  @liability_type_options [
+    {"Credit card", "credit_card"},
+    {"Auto loan", "auto_loan"},
+    {"Student loan", "student_loan"},
+    {"Pool loan", "pool_loan"},
+    {"Mortgage", "mortgage"},
+    {"Other loan", "other_loan"}
+  ]
+  @liability_account_kinds ~w(credit_card loan mortgage)
+
+  @doc """
+  Fixed MoneyTree-owned account classifications exposed to account edit forms.
+  """
+  @spec account_kind_options() :: [{String.t(), String.t()}]
+  def account_kind_options, do: @account_kind_options
+
+  @doc """
+  Fixed liability classifications exposed when the account category is a liability.
+  """
+  @spec liability_type_options() :: [{String.t(), String.t()}]
+  def liability_type_options, do: @liability_type_options
+
+  @spec liability_account_kind?(String.t() | nil) :: boolean()
+  def liability_account_kind?(kind), do: kind in @liability_account_kinds
+
+  @spec account_kind_label(Account.t() | String.t() | nil) :: String.t()
+  def account_kind_label(%Account{} = account),
+    do: account |> canonical_account_kind() |> account_kind_label()
+
+  def account_kind_label(kind) when is_binary(kind) do
+    @account_kind_options
+    |> Enum.find_value("Other", fn {label, value} ->
+      if value == kind, do: label
+    end)
+  end
+
+  def account_kind_label(_kind), do: "Other"
 
   @doc """
   Registers a new user, hashing the provided password with Argon2.
+
+  Always creates the user with the default `:member` role; any `:role`/`"role"`
+  key in `attrs` is ignored. This function is safe to expose to untrusted
+  callers (e.g. the public registration API).
   """
   @spec register_user(map()) :: {:ok, User.t()} | {:error, Changeset.t()}
   def register_user(attrs) when is_map(attrs) do
@@ -43,6 +95,21 @@ defmodule MoneyTree.Accounts do
     |> User.registration_changeset(attrs)
     |> put_password_hash()
     |> Repo.insert()
+  end
+
+  @doc """
+  Registers a new user and immediately assigns the given role.
+
+  For trusted, operator-only callers (admin CLI tasks, test fixtures) that
+  need to create a non-default-role user directly. Never expose this to
+  untrusted input.
+  """
+  @spec register_user_with_role(map(), atom() | String.t()) ::
+          {:ok, User.t()} | {:error, Changeset.t()}
+  def register_user_with_role(attrs, role) when is_map(attrs) do
+    with {:ok, %User{} = user} <- register_user(attrs) do
+      update_user_role(user, role)
+    end
   end
 
   @doc """
@@ -837,6 +904,51 @@ defmodule MoneyTree.Accounts do
   end
 
   @doc """
+  Updates editable account fields for an account owned by the user.
+  """
+  @spec update_owned_account(User.t() | binary(), binary(), map()) ::
+          {:ok, Account.t()} | {:error, :not_found | Changeset.t()}
+  def update_owned_account(user, account_id, attrs)
+      when is_binary(account_id) and is_map(attrs) do
+    with {:ok, account} <- fetch_owned_account(user, account_id) do
+      updates =
+        attrs
+        |> stringify_keys()
+        |> editable_account_updates(account)
+
+      account
+      |> Account.changeset(updates)
+      |> Repo.update()
+    end
+  end
+
+  def update_owned_account(_user, _account_id, _attrs), do: {:error, :not_found}
+
+  @doc """
+  Deletes an account owned by the user.
+
+  Associated transactions are deleted by the database foreign-key rule.
+  """
+  @spec delete_owned_account(User.t() | binary(), binary()) ::
+          {:ok, Account.t()} | {:error, :not_found | Changeset.t()}
+  def delete_owned_account(user, account_id) when is_binary(account_id) do
+    with {:ok, account} <- fetch_owned_account(user, account_id) do
+      Repo.delete(account)
+    end
+  end
+
+  def delete_owned_account(_user, _account_id), do: {:error, :not_found}
+
+  defp fetch_owned_account(user, account_id) do
+    user_id = normalize_user_id(user)
+
+    case Repo.get_by(Account, id: account_id, user_id: user_id) do
+      nil -> {:error, :not_found}
+      %Account{} = account -> {:ok, account}
+    end
+  end
+
+  @doc """
   Formats dashboard data for the provided user.
 
   The response includes masked balance strings that can be toggled in the LiveView
@@ -1049,7 +1161,7 @@ defmodule MoneyTree.Accounts do
         role: user.role
       },
       security: %{
-        multi_factor_enabled: Map.get(user, :multi_factor_enabled, false),
+        multi_factor_enabled: false,
         password_enabled: is_binary(user.password_hash) and user.password_hash != "",
         magic_link_enabled: true,
         passkeys_count: length(passkeys),
@@ -1392,6 +1504,8 @@ defmodule MoneyTree.Accounts do
       {:ok,
        webauthn_adapter().new_registration_challenge(
          build_webauthn_challenge_options(
+           origin: challenge.origin,
+           rp_id: challenge.rp_id,
            user_verification: challenge.user_verification,
            bytes: challenge_bytes
          )
@@ -1404,6 +1518,8 @@ defmodule MoneyTree.Accounts do
       {:ok,
        webauthn_adapter().new_authentication_challenge(
          build_webauthn_challenge_options(
+           origin: challenge.origin,
+           rp_id: challenge.rp_id,
            user_verification: challenge.user_verification,
            allow_credentials: webauthn_allow_credentials(user),
            bytes: challenge_bytes
@@ -1564,22 +1680,109 @@ defmodule MoneyTree.Accounts do
     String.to_existing_atom(field)
   rescue
     ArgumentError ->
-      raise ArgumentError, "unknown account order field: #{inspect(field)}"
+      reraise ArgumentError, "unknown account order field: #{inspect(field)}", __STACKTRACE__
   end
+
+  defp editable_account_updates(attrs, account) do
+    updates =
+      Map.take(attrs, [
+        "name",
+        "internal_account_kind",
+        "liability_type",
+        "include_in_cash_flow",
+        "include_in_net_worth"
+      ])
+
+    kind =
+      updates
+      |> Map.get("internal_account_kind", canonical_account_kind(account))
+      |> normalize_account_kind()
+
+    liability_type =
+      updates
+      |> Map.get("liability_type", account.liability_type)
+      |> normalize_liability_type(kind)
+
+    {type, subtype} = compatibility_type_subtype(kind, liability_type)
+
+    updates
+    |> Map.put("internal_account_kind", kind)
+    |> Map.put("liability_type", liability_type)
+    |> Map.put("type", type)
+    |> Map.put("subtype", subtype)
+  end
+
+  defp normalize_account_kind(kind) do
+    kind = downcase(kind)
+
+    if Enum.any?(@account_kind_options, fn {_label, value} -> value == kind end) do
+      kind
+    else
+      "other"
+    end
+  end
+
+  defp normalize_liability_type(value, kind) do
+    value = downcase(value)
+
+    valid? =
+      Enum.any?(@liability_type_options, fn {_label, option_value} -> option_value == value end)
+
+    cond do
+      not liability_account_kind?(kind) ->
+        nil
+
+      valid? ->
+        value
+
+      kind == "credit_card" ->
+        "credit_card"
+
+      kind == "mortgage" ->
+        "mortgage"
+
+      true ->
+        "other_loan"
+    end
+  end
+
+  defp compatibility_type_subtype("checking", _liability_type), do: {"depository", "checking"}
+  defp compatibility_type_subtype("savings", _liability_type), do: {"depository", "savings"}
+  defp compatibility_type_subtype("credit_card", _liability_type), do: {"credit", "credit_card"}
+  defp compatibility_type_subtype("mortgage", _liability_type), do: {"loan", "mortgage"}
+  defp compatibility_type_subtype("cash", _liability_type), do: {"cash", "cash"}
+  defp compatibility_type_subtype("investment", _liability_type), do: {"investment", "investment"}
+  defp compatibility_type_subtype("escrow", _liability_type), do: {"escrow", "escrow"}
+  defp compatibility_type_subtype("loan", "auto_loan"), do: {"loan", "auto_loan"}
+  defp compatibility_type_subtype("loan", "student_loan"), do: {"loan", "student_loan"}
+  defp compatibility_type_subtype("loan", "pool_loan"), do: {"loan", "pool_loan"}
+  defp compatibility_type_subtype("loan", "mortgage"), do: {"loan", "mortgage"}
+  defp compatibility_type_subtype("loan", _liability_type), do: {"loan", "other_loan"}
+  defp compatibility_type_subtype(_kind, _liability_type), do: {"account", "other"}
+
+  defp canonical_account_kind(%Account{internal_account_kind: kind})
+       when is_binary(kind) and kind != "",
+       do: normalize_account_kind(kind)
+
+  defp canonical_account_kind(%Account{} = account),
+    do: infer_internal_account_kind(account.type, account.subtype)
 
   defp infer_internal_account_kind(type, subtype) do
     downcased_type = downcase(type)
     downcased_subtype = downcase(subtype)
 
     cond do
+      String.contains?(downcased_type, "escrow") or String.contains?(downcased_subtype, "escrow") ->
+        "escrow"
+
       String.contains?(downcased_type, "credit") or String.contains?(downcased_subtype, "credit") ->
         "credit_card"
 
-      String.contains?(downcased_type, "loan") or String.contains?(downcased_subtype, "loan") ->
-        "loan"
-
       String.contains?(downcased_subtype, "mortgage") ->
         "mortgage"
+
+      String.contains?(downcased_type, "loan") or String.contains?(downcased_subtype, "loan") ->
+        "loan"
 
       String.contains?(downcased_subtype, "saving") ->
         "savings"
@@ -1589,6 +1792,9 @@ defmodule MoneyTree.Accounts do
 
       downcased_type in ["investment", "brokerage", "retirement"] ->
         "investment"
+
+      downcased_type in ["account", "other"] or downcased_subtype == "other" ->
+        "other"
 
       true ->
         "checking"
@@ -1723,10 +1929,13 @@ defmodule MoneyTree.Accounts do
   end
 
   defp asset_account?(account) do
+    kind = canonical_account_kind(account)
     type = downcase(account.type)
     subtype = downcase(account.subtype)
 
     cond do
+      kind in ["checking", "savings", "cash", "investment", "escrow"] -> true
+      kind in ["credit_card", "loan", "mortgage"] -> false
       card_account?(account) -> false
       loan_account?(account) -> false
       type in ["depository", "investment", "brokerage", "retirement", "cash"] -> true
@@ -1736,10 +1945,22 @@ defmodule MoneyTree.Accounts do
   end
 
   defp liability_account?(account) do
-    card_account?(account) or loan_account?(account) or downcase(account.type) in ["liability"]
+    kind = canonical_account_kind(account)
+
+    kind in ["credit_card", "loan", "mortgage"] or card_account?(account) or
+      loan_account?(account) or
+      downcase(account.type) in ["liability"]
   end
 
   defp card_account?(account) do
+    if canonical_account_kind(account) == "credit_card" do
+      true
+    else
+      provider_card_account?(account)
+    end
+  end
+
+  defp provider_card_account?(account) do
     type = downcase(account.type)
     subtype = downcase(account.subtype)
 
@@ -1748,6 +1969,16 @@ defmodule MoneyTree.Accounts do
   end
 
   defp loan_account?(account) do
+    kind = canonical_account_kind(account)
+
+    if kind in ["loan", "mortgage"] do
+      true
+    else
+      provider_loan_account?(account)
+    end
+  end
+
+  defp provider_loan_account?(account) do
     type = downcase(account.type)
     subtype = downcase(account.subtype)
 
@@ -1756,6 +1987,14 @@ defmodule MoneyTree.Accounts do
   end
 
   defp savings_account?(account) do
+    case canonical_account_kind(account) do
+      "savings" -> true
+      "checking" -> false
+      _other -> provider_savings_account?(account)
+    end
+  end
+
+  defp provider_savings_account?(account) do
     subtype = downcase(account.subtype)
     type = downcase(account.type)
 
@@ -1763,6 +2002,20 @@ defmodule MoneyTree.Accounts do
   end
 
   defp investment_account?(account) do
+    case canonical_account_kind(account) do
+      "investment" ->
+        true
+
+      kind
+      when kind in ["checking", "savings", "cash", "credit_card", "loan", "mortgage", "escrow"] ->
+        false
+
+      _other ->
+        provider_investment_account?(account)
+    end
+  end
+
+  defp provider_investment_account?(account) do
     type = downcase(account.type)
     subtype = downcase(account.subtype)
 
@@ -1771,11 +2024,25 @@ defmodule MoneyTree.Accounts do
   end
 
   defp account_group_label(account) do
+    case canonical_account_kind(account) do
+      "checking" -> "Checking"
+      "savings" -> "Savings"
+      "credit_card" -> "Credit Cards"
+      "loan" -> "Loans"
+      "mortgage" -> "Mortgages"
+      "cash" -> "Cash"
+      "investment" -> "Investments"
+      "escrow" -> "Escrow"
+      _other -> provider_account_group_label(account)
+    end
+  end
+
+  defp provider_account_group_label(account) do
     cond do
-      card_account?(account) -> "Credit Cards"
-      loan_account?(account) -> "Loans"
-      savings_account?(account) -> "Savings"
-      investment_account?(account) -> "Investments"
+      provider_card_account?(account) -> "Credit Cards"
+      provider_loan_account?(account) -> "Loans"
+      provider_savings_account?(account) -> "Savings"
+      provider_investment_account?(account) -> "Investments"
       asset_account?(account) -> titleize(account.type || "Assets")
       true -> "Accounts"
     end
@@ -1789,8 +2056,7 @@ defmodule MoneyTree.Accounts do
     |> String.replace("_", " ")
     |> String.downcase()
     |> String.split()
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join(" ")
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 
   defp downcase(nil), do: ""
@@ -2011,27 +2277,29 @@ defmodule MoneyTree.Accounts do
   defp resolve_invitee(%AccountInvitation{} = invitation, params) do
     password = Map.get(params, :password) || Map.get(params, "password")
 
-    with password when is_binary(password) <- password do
-      case get_user_by_email(invitation.email) do
-        nil ->
-          encrypted_full_name =
-            Map.get(params, :encrypted_full_name) || Map.get(params, "encrypted_full_name")
+    case password do
+      password when is_binary(password) ->
+        case get_user_by_email(invitation.email) do
+          nil ->
+            encrypted_full_name =
+              Map.get(params, :encrypted_full_name) || Map.get(params, "encrypted_full_name")
 
-          if is_binary(encrypted_full_name) do
-            register_user(%{
-              email: invitation.email,
-              password: password,
-              encrypted_full_name: encrypted_full_name
-            })
-          else
-            {:error, :full_name_required}
-          end
+            if is_binary(encrypted_full_name) do
+              register_user(%{
+                email: invitation.email,
+                password: password,
+                encrypted_full_name: encrypted_full_name
+              })
+            else
+              {:error, :full_name_required}
+            end
 
-        %User{} = _existing ->
-          authenticate_user(invitation.email, password)
-      end
-    else
-      _ -> {:error, :password_required}
+          %User{} = _existing ->
+            authenticate_user(invitation.email, password)
+        end
+
+      _ ->
+        {:error, :password_required}
     end
   end
 
@@ -2277,11 +2545,13 @@ defmodule MoneyTree.Accounts do
   end
 
   defp password_needs_rehash?(hash) when is_binary(hash) do
-    with {:ok, params} <- extract_argon2_params(hash) do
-      current = expected_argon2_params()
-      Enum.any?(current, fn {key, value} -> Map.get(params, key) != value end)
-    else
-      _ -> true
+    case extract_argon2_params(hash) do
+      {:ok, params} ->
+        current = expected_argon2_params()
+        Enum.any?(current, fn {key, value} -> Map.get(params, key) != value end)
+
+      _ ->
+        true
     end
   end
 
@@ -2293,9 +2563,8 @@ defmodule MoneyTree.Accounts do
       |> String.split("$")
       |> Enum.find(fn segment -> String.contains?(segment, "m=") end)
 
-    with %{} = params <- parse_params(params_segment) do
-      {:ok, params}
-    else
+    case parse_params(params_segment) do
+      %{} = params -> {:ok, params}
       _ -> {:error, :unknown_hash_format}
     end
   end

@@ -6,6 +6,7 @@ defmodule MoneyTree.AITest do
   alias Decimal
   alias MoneyTree.AI
   alias MoneyTree.ManualImports
+  alias MoneyTree.Obligations.Obligation
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
 
@@ -50,6 +51,14 @@ defmodule MoneyTree.AITest do
     assert "test-model:latest" in result.models
   end
 
+  test "test_connection refuses to run when AI is globally disabled", %{user: user} do
+    original = Application.get_env(:money_tree, MoneyTree.AI)
+    Application.put_env(:money_tree, MoneyTree.AI, Keyword.put(original, :enabled, false))
+    on_exit(fn -> Application.put_env(:money_tree, MoneyTree.AI, original) end)
+
+    assert {:error, :disabled} = AI.test_connection(user)
+  end
+
   test "categorization run creates pending suggestions", %{user: user, transaction: transaction} do
     assert {:ok, _preference} =
              AI.update_settings(user, %{
@@ -63,12 +72,47 @@ defmodule MoneyTree.AITest do
     assert Enum.any?(reloaded_runs, &(&1.id == run.id and &1.status == "completed"))
 
     suggestions = AI.list_suggestions(user, run_id: run.id)
-    assert length(suggestions) >= 1
+    assert suggestions != []
 
     suggestion = Enum.find(suggestions, &(&1.target_id == transaction.id))
     assert suggestion
     assert suggestion.suggestion_type == "set_category"
     assert suggestion.status == "pending"
+  end
+
+  test "categorization run can target one transaction", %{
+    user: user,
+    account: account,
+    transaction: transaction
+  } do
+    other_transaction =
+      %Transaction{}
+      |> Transaction.changeset(%{
+        account_id: account.id,
+        external_id: "tx-other-#{System.unique_integer([:positive])}",
+        source: "manual_import",
+        source_fingerprint: "fp-other-#{System.unique_integer([:positive])}",
+        normalized_fingerprint: "nfp-other-#{System.unique_integer([:positive])}",
+        posted_at: ~U[2026-04-26 10:00:00Z],
+        amount: Decimal.new("-15.00"),
+        currency: "USD",
+        description: "Other uncategorized transaction",
+        merchant_name: "OTHER",
+        category: nil,
+        status: "posted"
+      })
+      |> Repo.insert!()
+
+    assert {:ok, _preference} =
+             AI.update_settings(user, %{
+               "local_ai_enabled" => true,
+               "allow_ai_for_categorization" => true
+             })
+
+    assert {:ok, run} = AI.create_categorization_run(user, %{"transaction_id" => transaction.id})
+
+    assert run.input_scope["transaction_ids"] == [transaction.id]
+    refute other_transaction.id in run.input_scope["transaction_ids"]
   end
 
   test "accepting suggestion applies transaction category", %{
@@ -94,6 +138,154 @@ defmodule MoneyTree.AITest do
     updated_transaction = Repo.get!(Transaction, transaction.id)
     assert updated_transaction.category == "Groceries"
     assert updated_transaction.categorization_source == "model"
+  end
+
+  test "categorization prompt includes related accounts and auto-applies high confidence rich suggestions",
+       %{
+         user: user,
+         account: account,
+         transaction: transaction
+       } do
+    _credit_card =
+      account_fixture(user, %{
+        name: "Rewards Card",
+        type: "credit",
+        subtype: "credit_card",
+        internal_account_kind: "credit_card",
+        liability_type: "credit_card"
+      })
+
+    _mortgage =
+      account_fixture(user, %{
+        name: "Mortgage",
+        type: "loan",
+        subtype: "mortgage",
+        internal_account_kind: "mortgage",
+        liability_type: "mortgage"
+      })
+
+    assert {:ok, _preference} =
+             AI.update_settings(user, %{
+               "local_ai_enabled" => true,
+               "allow_ai_for_categorization" => true
+             })
+
+    Process.put(
+      :ai_test_provider_response,
+      {:ok,
+       %{
+         "suggestions" => [
+           %{
+             "transaction_id" => transaction.id,
+             "category" => "Subscription",
+             "transaction_kind" => "expense",
+             "recurring_candidate" => true,
+             "recurring_reason" => "same merchant appears to be a recurring charge",
+             "confidence" => 0.92,
+             "reason" => "subscription merchant"
+           }
+         ]
+       }}
+    )
+
+    on_exit(fn ->
+      Process.delete(:ai_test_provider_response)
+      Process.delete(:ai_test_provider_last_prompt)
+    end)
+
+    assert {:ok, run} = AI.create_categorization_run(user)
+
+    prompt = Process.get(:ai_test_provider_last_prompt)
+    assert prompt =~ "\"related_accounts\""
+    assert prompt =~ "Rewards Card"
+    assert prompt =~ "Mortgage"
+    assert prompt =~ "\"account\""
+
+    [suggestion] = AI.list_suggestions(user, run_id: run.id)
+    assert suggestion.status == "accepted"
+    assert suggestion.payload["transaction_kind"] == "expense"
+    assert suggestion.payload["recurring_candidate"] == true
+
+    updated_transaction = Repo.get!(Transaction, transaction.id)
+    assert updated_transaction.category == "Subscription"
+    assert updated_transaction.categorization_source == "model"
+    assert updated_transaction.transaction_kind == "expense"
+
+    obligation =
+      Repo.get_by!(Obligation, user_id: user.id, creditor_payee: transaction.merchant_name)
+
+    assert obligation.obligation_type == "subscription"
+    assert obligation.source == "model"
+    assert obligation.linked_funding_account_id == account.id
+  end
+
+  test "single transaction categorization accepts compact Ollama-style output without transaction id",
+       %{user: user, transaction: transaction} do
+    assert {:ok, _preference} =
+             AI.update_settings(user, %{
+               "local_ai_enabled" => true,
+               "allow_ai_for_categorization" => true
+             })
+
+    Process.put(
+      :ai_test_provider_response,
+      {:ok,
+       %{
+         "suggested_category" => "groceries",
+         "kind" => "expense",
+         "confidence" => 0.84,
+         "explanation" => "merchant is a grocery store"
+       }}
+    )
+
+    on_exit(fn ->
+      Process.delete(:ai_test_provider_response)
+    end)
+
+    assert {:ok, run} = AI.create_categorization_run(user, %{"transaction_id" => transaction.id})
+
+    [suggestion] = AI.list_suggestions(user, run_id: run.id)
+    assert suggestion.target_id == transaction.id
+    assert suggestion.payload["category"] == "Groceries"
+    assert suggestion.payload["transaction_kind"] == "expense"
+    assert suggestion.reason == "merchant is a grocery store"
+  end
+
+  test "categorization accepts transactions wrapper and id aliases", %{
+    user: user,
+    transaction: transaction
+  } do
+    assert {:ok, _preference} =
+             AI.update_settings(user, %{
+               "local_ai_enabled" => true,
+               "allow_ai_for_categorization" => true
+             })
+
+    Process.put(
+      :ai_test_provider_response,
+      {:ok,
+       %{
+         "transactions" => [
+           %{
+             "id" => transaction.id,
+             "category_name" => "medical",
+             "confidence" => 0.81,
+             "rationale" => "hospital merchant"
+           }
+         ]
+       }}
+    )
+
+    on_exit(fn ->
+      Process.delete(:ai_test_provider_response)
+    end)
+
+    assert {:ok, run} = AI.create_categorization_run(user)
+
+    [suggestion] = AI.list_suggestions(user, run_id: run.id)
+    assert suggestion.target_id == transaction.id
+    assert suggestion.payload["category"] == "Medical"
+    assert suggestion.reason == "hospital merchant"
   end
 
   test "import categorization run creates row suggestions and applies accepted category", %{
@@ -148,7 +340,7 @@ defmodule MoneyTree.AITest do
     assert Enum.any?(reloaded_runs, &(&1.id == run.id and &1.status == "completed"))
 
     suggestions = AI.list_suggestions(user, run_id: run.id)
-    assert length(suggestions) >= 1
+    assert suggestions != []
 
     suggestion = Enum.find(suggestions, &(&1.target_id == row.id))
     assert suggestion
@@ -214,7 +406,7 @@ defmodule MoneyTree.AITest do
     assert {:ok, run} = AI.create_import_categorization_run(user, batch.id)
 
     suggestions = AI.list_suggestions(user, run_id: run.id)
-    assert length(suggestions) >= 1
+    assert suggestions != []
 
     suggestion = Enum.find(suggestions, &(&1.target_id == row.id))
     assert suggestion

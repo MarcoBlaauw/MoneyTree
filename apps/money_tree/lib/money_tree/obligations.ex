@@ -11,7 +11,9 @@ defmodule MoneyTree.Obligations do
   alias MoneyTree.Obligations.CheckWorker
   alias MoneyTree.Obligations.Evaluator
   alias MoneyTree.Obligations.Obligation
+  alias MoneyTree.Recurring.Series
   alias MoneyTree.Repo
+  alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Users.User
   alias Oban
 
@@ -125,6 +127,110 @@ defmodule MoneyTree.Obligations do
   end
 
   @doc """
+  Creates an obligation from an AI-recognized recurring transaction when one does not
+  already exist for the same payee and funding account.
+  """
+  @spec create_from_transaction(User.t() | binary(), Transaction.t(), map()) :: result()
+  def create_from_transaction(user, %Transaction{} = transaction, attrs \\ %{})
+      when is_map(attrs) do
+    user_id = normalize_user_id(user)
+    transaction = Repo.preload(transaction, :account)
+    payee = recurring_payee(transaction, attrs)
+
+    existing =
+      Obligation
+      |> where(
+        [obligation],
+        obligation.user_id == ^user_id and
+          obligation.linked_funding_account_id == ^transaction.account_id and
+          fragment("lower(?)", obligation.creditor_payee) == ^String.downcase(payee)
+      )
+      |> Repo.one()
+
+    if existing do
+      {:ok, existing}
+    else
+      due_day =
+        case transaction.posted_at do
+          %DateTime{} = posted_at -> posted_at.day
+          _ -> Date.utc_today().day
+        end
+
+      amount =
+        transaction.amount
+        |> Decimal.abs()
+        |> Decimal.round(2)
+
+      create_obligation(user_id, %{
+        "creditor_payee" => payee,
+        "linked_funding_account_id" => transaction.account_id,
+        "due_rule" => "calendar_day",
+        "due_day" => due_day,
+        "minimum_due_amount" => amount,
+        "currency" => transaction.currency || transaction.account.currency || "USD",
+        "grace_period_days" => 0,
+        "active" => true,
+        "obligation_type" =>
+          Map.get(attrs, "obligation_type") || Map.get(attrs, :obligation_type) || "subscription",
+        "source" => Map.get(attrs, "source") || Map.get(attrs, :source) || "model"
+      })
+    end
+  end
+
+  @doc """
+  Creates obligation candidates from active recurring series that are not already linked.
+  """
+  @spec create_from_recurring_series(User.t() | binary(), Series.t()) :: result()
+  def create_from_recurring_series(user, %Series{} = series) do
+    series = Repo.preload(series, [:account, :last_transaction])
+
+    with %Transaction{} = transaction <- series.last_transaction,
+         {:ok, obligation} <-
+           create_from_transaction(user, transaction, %{
+             "obligation_type" => "other",
+             "source" => "recurring_detection"
+           }) do
+      obligation
+      |> Obligation.changeset(%{recurring_series_id: series.id})
+      |> Repo.update()
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Creates obligations from active/tentative recurring series that are not already linked.
+  """
+  @spec create_from_recurring_detections(User.t() | binary()) :: %{created: non_neg_integer()}
+  def create_from_recurring_detections(user) do
+    user_id = normalize_user_id(user)
+
+    linked_series_ids =
+      Obligation
+      |> where(
+        [obligation],
+        obligation.user_id == ^user_id and not is_nil(obligation.recurring_series_id)
+      )
+      |> select([obligation], obligation.recurring_series_id)
+      |> Repo.all()
+
+    created =
+      Series
+      |> where([series], series.user_id == ^user_id and series.status in ["active", "tentative"])
+      |> where([series], series.id not in ^linked_series_ids)
+      |> preload([:account, :last_transaction])
+      |> Repo.all()
+      |> Enum.reduce(0, fn series, count ->
+        case create_from_recurring_series(user_id, series) do
+          {:ok, _obligation} -> count + 1
+          {:error, _reason} -> count
+        end
+      end)
+
+    %{created: created}
+  end
+
+  @doc """
   Evaluates all active obligations for the provided day.
   """
   @spec check_all(Date.t()) :: :ok | {:error, term()}
@@ -169,6 +275,9 @@ defmodule MoneyTree.Obligations do
         minimum_due_amount:
           Accounts.format_money(obligation.minimum_due_amount, obligation.currency, []),
         grace_period_days: obligation.grace_period_days,
+        obligation_type: obligation.obligation_type,
+        source: obligation.source,
+        recurring_series_id: obligation.recurring_series_id,
         linked_funding_account_name:
           obligation.linked_funding_account && obligation.linked_funding_account.name,
         active: obligation.active
@@ -234,4 +343,18 @@ defmodule MoneyTree.Obligations do
 
   defp normalize_user_id(%User{id: user_id}), do: user_id
   defp normalize_user_id(user_id) when is_binary(user_id), do: user_id
+
+  defp recurring_payee(%Transaction{} = transaction, attrs) do
+    explicit = Map.get(attrs, "creditor_payee") || Map.get(attrs, :creditor_payee)
+
+    [explicit, transaction.merchant_name, transaction.description, "Recurring payment"]
+    |> Enum.find_value(fn
+      value when is_binary(value) ->
+        value = String.trim(value)
+        if value == "", do: nil, else: value
+
+      _ ->
+        nil
+    end)
+  end
 end

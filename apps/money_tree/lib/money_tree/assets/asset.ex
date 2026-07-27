@@ -7,13 +7,20 @@ defmodule MoneyTree.Assets.Asset do
 
   import Ecto.Changeset
 
-  alias MoneyTree.Accounts.Account
-  alias MoneyTree.Currency
   alias Decimal
+  alias MoneyTree.Accounts.Account
+  alias MoneyTree.Assets.AssetValuation
+  alias MoneyTree.Assets.ValuationProviderRun
+  alias MoneyTree.Assets.VehicleProfile
+  alias MoneyTree.Currency
+  alias MoneyTree.Loans.Loan
+  alias MoneyTree.Mortgages.Mortgage
+  alias MoneyTree.Users.User
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   @timestamps_opts [type: :utc_datetime_usec]
+  @asset_types ~w(vehicle real_estate equipment collectible other)
 
   schema "assets" do
     field :name, :string
@@ -27,13 +34,23 @@ defmodule MoneyTree.Assets.Asset do
     field :notes, :string
     field :acquired_on, :date
     field :last_valued_on, :date
+    field :acquisition_cost, :decimal
     field :document_refs, {:array, :string}, default: []
     field :documents_text, :string, virtual: true
 
     belongs_to :account, Account
+    belongs_to :user, User
+    belongs_to :linked_loan, Loan
+    belongs_to :linked_mortgage, Mortgage
+
+    has_one :vehicle_profile, VehicleProfile
+    has_many :valuations, AssetValuation
+    has_many :valuation_provider_runs, ValuationProviderRun
 
     timestamps()
   end
+
+  @type t :: %__MODULE__{}
 
   @doc false
   def changeset(asset, attrs) do
@@ -41,6 +58,9 @@ defmodule MoneyTree.Assets.Asset do
     |> maybe_seed_documents_text()
     |> cast(attrs, [
       :account_id,
+      :user_id,
+      :linked_loan_id,
+      :linked_mortgage_id,
       :name,
       :asset_type,
       :category,
@@ -52,12 +72,13 @@ defmodule MoneyTree.Assets.Asset do
       :notes,
       :acquired_on,
       :last_valued_on,
+      :acquisition_cost,
       :document_refs,
       :documents_text
     ])
     |> normalize_document_refs()
     |> validate_required([
-      :account_id,
+      :user_id,
       :name,
       :asset_type,
       :valuation_amount,
@@ -67,16 +88,23 @@ defmodule MoneyTree.Assets.Asset do
     |> update_change(:valuation_currency, &normalize_currency/1)
     |> validate_currency(:valuation_currency)
     |> validate_decimal(:valuation_amount)
+    |> validate_decimal(:acquisition_cost)
     |> validate_length(:name, min: 1, max: 160)
-    |> validate_length(:asset_type, min: 1, max: 120)
+    |> validate_asset_type(asset)
     |> validate_length(:category, max: 120)
     |> validate_length(:ownership_type, min: 1, max: 120)
     |> validate_length(:ownership_details, max: 500)
     |> validate_length(:location, max: 255)
     |> validate_length(:notes, max: 2000)
     |> validate_document_refs()
+    |> validate_single_linked_debt()
     |> foreign_key_constraint(:account_id)
+    |> foreign_key_constraint(:user_id)
+    |> foreign_key_constraint(:linked_loan_id)
+    |> foreign_key_constraint(:linked_mortgage_id)
   end
+
+  def asset_types, do: @asset_types
 
   defp maybe_seed_documents_text(%__MODULE__{documents_text: text} = asset) when is_binary(text),
     do: asset
@@ -163,10 +191,28 @@ defmodule MoneyTree.Assets.Asset do
     refs = get_field(changeset, :document_refs, [])
 
     Enum.reduce(Enum.with_index(refs, 1), changeset, fn {ref, index}, acc ->
-      cond do
-        byte_size(ref) > 255 -> add_error(acc, :document_refs, "entry #{index} is too long")
-        true -> acc
+      if byte_size(ref) > 255 do
+        add_error(acc, :document_refs, "entry #{index} is too long")
+      else
+        acc
       end
     end)
+  end
+
+  defp validate_asset_type(changeset, %__MODULE__{asset_type: existing_type}) do
+    allowed_types =
+      if existing_type in [nil, ""] or existing_type in @asset_types,
+        do: @asset_types,
+        else: [existing_type | @asset_types]
+
+    validate_inclusion(changeset, :asset_type, allowed_types)
+  end
+
+  defp validate_single_linked_debt(changeset) do
+    if get_field(changeset, :linked_loan_id) && get_field(changeset, :linked_mortgage_id) do
+      add_error(changeset, :linked_mortgage_id, "cannot be set when a loan is already linked")
+    else
+      changeset
+    end
   end
 end

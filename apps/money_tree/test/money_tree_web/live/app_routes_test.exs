@@ -7,12 +7,21 @@ defmodule MoneyTreeWeb.AppRoutesTest do
     test "redirects unauthenticated users", %{conn: conn} do
       paths = [
         ~p"/app/dashboard",
+        ~p"/app/notifications",
         ~p"/app/accounts",
         ~p"/app/accounts/connect",
         ~p"/app/transactions",
         ~p"/app/transactions/categorization",
         ~p"/app/obligations",
         ~p"/app/assets",
+        ~p"/app/loans",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000/refinance",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000/documents",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000/quotes",
+        ~p"/app/loans/00000000-0000-0000-0000-000000000000/alerts",
+        ~p"/app/mortgages",
+        ~p"/app/mortgages/00000000-0000-0000-0000-000000000000",
         ~p"/app/transfers",
         ~p"/app/budgets",
         ~p"/app/settings",
@@ -33,17 +42,26 @@ defmodule MoneyTreeWeb.AppRoutesTest do
 
       assert render(dashboard) =~ "Dashboard"
 
+      {:ok, notifications, _html} = live(authed_conn, ~p"/app/notifications")
+      assert render(notifications) =~ "Notification inbox"
+
       {:ok, accounts, _html} = live(authed_conn, ~p"/app/accounts")
-      assert render(accounts) =~ "Linked institutions"
+      assert render(accounts) =~ "Connected accounts"
 
       {:ok, transactions, _html} = live(authed_conn, ~p"/app/transactions")
       assert render(transactions) =~ "Recent transactions"
 
       {:ok, obligations, _html} = live(authed_conn, ~p"/app/obligations")
-      assert render(obligations) =~ "Obligations"
+      assert render(obligations) =~ "Bills &amp; Subscriptions"
 
       {:ok, assets, _html} = live(authed_conn, ~p"/app/assets")
       assert render(assets) =~ "Assets"
+
+      {:ok, loans, _html} = live(authed_conn, ~p"/app/loans")
+      assert render(loans) =~ "Loan Center"
+
+      {:ok, mortgages, _html} = live(authed_conn, ~p"/app/mortgages")
+      assert render(mortgages) =~ "Loan Center"
 
       {:ok, transfers, _html} = live(authed_conn, ~p"/app/transfers")
 

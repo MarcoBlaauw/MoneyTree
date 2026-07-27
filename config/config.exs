@@ -19,7 +19,7 @@ config :money_tree, MoneyTree.Accounts,
   webauthn_timeout_ms: 60_000,
   webauthn_challenge_ttl: 60 * 5
 
-config :money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Noop
+config :money_tree, :rate_limiter, MoneyTreeWeb.RateLimiter.Ets
 config :money_tree, :secure_cookies, true
 
 config :money_tree, MoneyTreeWeb.Endpoint,
@@ -32,21 +32,6 @@ config :money_tree, MoneyTreeWeb.Endpoint,
   pubsub_server: MoneyTree.PubSub,
   live_view: [signing_salt: "AQ0mt1V3", csp_nonce_assign_key: :csp_nonce]
 
-config :money_tree, MoneyTreeWeb.Plugs.NextProxy,
-  upstream: [scheme: "http", host: "localhost", port: 3000, path: "/"],
-  client_opts: [receive_timeout: :timer.seconds(15)]
-
-config :money_tree, MoneyTree.Teller,
-  api_host: "https://api.teller.io",
-  connect_host: "https://connect.teller.io",
-  timeout: :timer.seconds(10),
-  finch: MoneyTree.Finch,
-  telemetry_metadata: %{service: "money_tree", integration: "teller"},
-  client_cert_pem: nil,
-  client_key_pem: nil,
-  client_cert_file: nil,
-  client_key_file: nil
-
 config :money_tree, MoneyTree.Plaid,
   environment: "sandbox",
   api_host: "https://sandbox.plaid.com",
@@ -57,6 +42,21 @@ config :money_tree, MoneyTree.Plaid,
   timeout: :timer.seconds(10),
   finch: MoneyTree.Finch,
   telemetry_metadata: %{service: "money_tree", integration: "plaid"}
+
+config :money_tree, MoneyTree.BankSync.ProviderRegistry,
+  enabled_providers: ["simplefin", "manual"],
+  primary_provider: "simplefin"
+
+config :money_tree, MoneyTree.SimpleFin,
+  create_url: "https://bridge.simplefin.org/simplefin/create",
+  protocol_version: "2",
+  sync_interval_hours: 24,
+  max_requests_per_connection_per_day: 24,
+  initial_sync_days: 90,
+  include_pending: false,
+  timeout: :timer.seconds(10),
+  finch: MoneyTree.Finch,
+  telemetry_metadata: %{service: "money_tree", integration: "simplefin"}
 
 config :money_tree, MoneyTree.AI,
   enabled: false,
@@ -69,23 +69,43 @@ config :money_tree, MoneyTree.AI,
   ollama: [
     base_url: "http://localhost:11434",
     model: "llama3.1:8b",
-    timeout_ms: 60_000
+    timeout_ms: 120_000
   ]
+
+config :money_tree, MoneyTree.Loans.RateProviders.Fred,
+  base_url: "https://api.stlouisfed.org/fred",
+  api_key: nil,
+  timeout_ms: 15_000
+
+config :money_tree, MoneyTree.Assets.ProviderRegistry,
+  enabled_providers: [],
+  monthly_request_limit: 450,
+  refresh_interval_days: 7
+
+config :money_tree, MoneyTree.Assets.VehicleValuationProviders.MarketCheck,
+  base_url: "https://api.marketcheck.com",
+  api_key: nil,
+  dealer_type: "independent",
+  timeout_ms: 15_000
 
 config :money_tree, Oban,
   repo: MoneyTree.Repo,
   queues: [
     default: 10,
     mailers: 5,
-    reporting: 5
+    reporting: 5,
+    market_data: 1
   ],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 86_400},
     {Oban.Plugins.Lifeline, rescue_after: 60},
     {Oban.Plugins.Cron,
      crontab: [
-       {"*/30 * * * *", MoneyTree.Teller.SyncWorker, args: %{"mode" => "dispatch"}},
-       {"0 7 * * *", MoneyTree.Obligations.CheckWorker, args: %{}}
+       {"0 * * * *", MoneyTree.SimpleFin.SyncWorker, args: %{"mode" => "dispatch"}},
+       {"0 7 * * *", MoneyTree.Obligations.CheckWorker, args: %{}},
+       {"30 7 * * *", MoneyTree.Loans.Workers.RateImportWorker, args: %{"provider" => "fred"}},
+       {"15 8 * * *", MoneyTree.Assets.Workers.ValuationRefreshWorker,
+        args: %{"mode" => "dispatch", "provider" => "marketcheck"}}
      ]}
   ]
 

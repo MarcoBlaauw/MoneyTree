@@ -99,10 +99,27 @@ defmodule MoneyTree.RecurringTest do
     test "records missing-cycle and unusual-amount anomalies" do
       user = user_fixture()
       account = account_fixture(user, %{name: "Utilities"})
+      latest = DateTime.utc_now() |> DateTime.add(-60, :day) |> DateTime.truncate(:second)
 
-      insert_tx(account, "util-1", "-100.00", ~U[2025-06-01 00:00:00Z], "Power Co", "Utilities")
-      insert_tx(account, "util-2", "-100.00", ~U[2025-07-01 00:00:00Z], "Power Co", "Utilities")
-      insert_tx(account, "util-3", "-180.00", ~U[2025-08-01 00:00:00Z], "Power Co", "Utilities")
+      insert_tx(
+        account,
+        "util-1",
+        "-100.00",
+        DateTime.add(latest, -60, :day),
+        "Power Co",
+        "Utilities"
+      )
+
+      insert_tx(
+        account,
+        "util-2",
+        "-100.00",
+        DateTime.add(latest, -30, :day),
+        "Power Co",
+        "Utilities"
+      )
+
+      insert_tx(account, "util-3", "-180.00", latest, "Power Co", "Utilities")
 
       assert {:ok, _} = Recurring.detect_for_user(user.id)
 

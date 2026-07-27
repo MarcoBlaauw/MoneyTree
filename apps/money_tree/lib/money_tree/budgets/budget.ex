@@ -39,6 +39,8 @@ defmodule MoneyTree.Budgets.Budget do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(budget, attrs) do
     budget
@@ -114,14 +116,16 @@ defmodule MoneyTree.Budgets.Budget do
 
   defp validate_positive_decimal(changeset, field) do
     validate_change(changeset, field, fn ^field, value ->
-      with {:ok, %Decimal{} = decimal} <- Decimal.cast(value) do
-        if Decimal.compare(decimal, Decimal.new("0")) == :gt do
-          []
-        else
-          [{field, "must be greater than zero"}]
-        end
-      else
-        _ -> [{field, "must be a valid decimal number"}]
+      case Decimal.cast(value) do
+        {:ok, %Decimal{} = decimal} ->
+          if Decimal.compare(decimal, Decimal.new("0")) == :gt do
+            []
+          else
+            [{field, "must be greater than zero"}]
+          end
+
+        _ ->
+          [{field, "must be a valid decimal number"}]
       end
     end)
   end

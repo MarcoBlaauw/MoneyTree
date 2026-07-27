@@ -5,8 +5,6 @@ defmodule MoneyTreeWeb.Plugs.SetLoggerMetadata do
 
   @behaviour Plug
 
-  require Logger
-
   @impl true
   def init(opts), do: opts
 

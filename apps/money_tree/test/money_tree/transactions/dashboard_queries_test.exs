@@ -33,6 +33,28 @@ defmodule MoneyTree.Transactions.DashboardQueriesTest do
     assert rollup.total =~ "USD"
   end
 
+  test "escrow disbursements validate and are excluded from spending rollups", %{
+    user: user,
+    account: account
+  } do
+    escrow =
+      insert_transaction(account, Decimal.new("-900.00"),
+        category: "Property Tax",
+        transaction_kind: "escrow_property_tax_disbursement"
+      )
+
+    insert_transaction(account, Decimal.new("-1500.00"),
+      category: "Mortgage",
+      transaction_kind: "loan_payment"
+    )
+
+    assert escrow.excluded_from_spending
+
+    rollups = Transactions.category_rollups(user)
+    assert Enum.any?(rollups, &(&1.category == "Mortgage"))
+    refute Enum.any?(rollups, &(&1.category == "Property Tax"))
+  end
+
   test "subscription_spend recognises recurring spend", %{user: user, account: account} do
     insert_transaction(account, Decimal.new("30.00"),
       description: "Video Subscription",
@@ -55,6 +77,7 @@ defmodule MoneyTree.Transactions.DashboardQueriesTest do
       posted_at: DateTime.utc_now(),
       description: Map.get(opts, :description, "Txn"),
       category: Map.get(opts, :category),
+      transaction_kind: Map.get(opts, :transaction_kind, "unknown"),
       status: "posted",
       account_id: account.id
     }

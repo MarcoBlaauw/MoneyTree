@@ -29,6 +29,8 @@ defmodule MoneyTree.Institutions.Institution do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(institution, attrs) do
     institution

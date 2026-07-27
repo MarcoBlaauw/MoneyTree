@@ -98,4 +98,89 @@ defmodule MoneyTree.CategorizationTest do
       assert future_choice.category == "ManualChoice"
     end
   end
+
+  describe "category registry and rule maintenance" do
+    test "categories are user scoped and user rules can be cleared without deleting system rules" do
+      user = AccountsFixtures.user_fixture()
+      other_user = AccountsFixtures.user_fixture()
+
+      assert {:ok, category} =
+               Categorization.create_category(user, %{name: " Subscriptions ", kind: "expense"})
+
+      assert {:ok, _other_category} =
+               Categorization.create_category(other_user, %{name: "Other", kind: "expense"})
+
+      assert [listed] = Categorization.list_categories(user)
+      assert listed.id == category.id
+      assert listed.name == "Subscriptions"
+      assert listed.emoji == "🔄"
+
+      assert [%{name: "Subscriptions", emoji: "🔄"}] = Categorization.category_options(user)
+
+      assert {:ok, _user_rule} =
+               Categorization.create_rule(user, %{
+                 category: "Subscriptions",
+                 merchant_regex: "Netflix",
+                 priority: 100
+               })
+
+      Repo.insert!(
+        CategoryRule.changeset(%CategoryRule{}, %{
+          category: "System",
+          merchant_regex: "System",
+          priority: 1,
+          source: "rule"
+        })
+      )
+
+      assert Categorization.clear_rules(user) == 1
+      assert Categorization.list_rules(user) == []
+
+      assert Repo.one(
+               from rule in CategoryRule,
+                 where: is_nil(rule.user_id) and rule.category == "System"
+             )
+
+      assert {:ok, hidden} = Categorization.delete_category(user, category.id)
+      refute hidden.active
+      assert Categorization.list_categories(user) == []
+    end
+
+    test "uncategorized is reserved and manual saves clear category state" do
+      user = AccountsFixtures.user_fixture()
+      account = AccountsFixtures.account_fixture(user, %{type: "depository"})
+
+      transaction =
+        %Transaction{}
+        |> Transaction.changeset(%{
+          account_id: account.id,
+          external_id: "txn-reserved-uncategorized",
+          amount: Decimal.new("-12.00"),
+          currency: "USD",
+          posted_at: DateTime.utc_now(),
+          description: "Unknown merchant",
+          merchant_name: "Unknown",
+          category: "Dining",
+          categorization_source: "manual",
+          categorization_confidence: Decimal.new("1.0"),
+          status: "posted"
+        })
+        |> Repo.insert!()
+
+      assert {:error, changeset} =
+               Categorization.create_category(user, %{name: "Uncategorized", kind: "expense"})
+
+      assert "is reserved for uncategorized transactions" in errors_on(changeset).name
+
+      assert {:ok, cleared} =
+               Categorization.recategorize_transaction(user, transaction.id, "Uncategorized")
+
+      assert is_nil(cleared.category)
+      assert is_nil(cleared.categorization_source)
+      assert is_nil(cleared.categorization_confidence)
+      assert Categorization.list_categories(user) == []
+      assert Categorization.list_rules(user) == []
+      assert Repo.get_by(UserOverride, transaction_id: transaction.id) == nil
+    end
+  end
 end

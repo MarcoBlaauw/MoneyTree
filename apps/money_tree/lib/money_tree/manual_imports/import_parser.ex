@@ -79,9 +79,7 @@ defmodule MoneyTree.ManualImports.ImportParser do
   end
 
   defp tabular_rows_to_csv(rows) do
-    rows
-    |> Enum.map(fn row -> row |> Enum.map(&csv_escape/1) |> Enum.join(",") end)
-    |> Enum.join("\n")
+    Enum.map_join(rows, "\n", fn row -> Enum.map_join(row, ",", &csv_escape/1) end)
   end
 
   defp trim_to_detected_header_row(rows) when is_list(rows) do

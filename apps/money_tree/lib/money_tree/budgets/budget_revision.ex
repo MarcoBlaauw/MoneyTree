@@ -28,6 +28,8 @@ defmodule MoneyTree.Budgets.BudgetRevision do
     timestamps(updated_at: false)
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(revision, attrs) do
     revision

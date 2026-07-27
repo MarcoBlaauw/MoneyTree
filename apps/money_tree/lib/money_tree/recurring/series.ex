@@ -38,6 +38,8 @@ defmodule MoneyTree.Recurring.Series do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   def changeset(series, attrs) do
     series
     |> cast(attrs, [

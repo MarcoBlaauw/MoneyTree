@@ -13,15 +13,6 @@ defmodule MoneyTreeWeb.Router do
     plug MoneyTreeWeb.Plugs.FetchCurrentUser
   end
 
-  pipeline :browser_proxy do
-    plug :accepts, ["html"]
-    plug :fetch_session
-    plug :fetch_live_flash
-    plug :put_root_layout, {MoneyTreeWeb.Layouts, :root}
-    plug :put_secure_browser_headers
-    plug MoneyTreeWeb.Plugs.FetchCurrentUser
-  end
-
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -41,23 +32,10 @@ defmodule MoneyTreeWeb.Router do
   scope "/api", MoneyTreeWeb do
     pipe_through :api
 
-    get "/healthz", HealthController, :health
-    get "/metrics", HealthController, :metrics
+    get "/healthz", HealthController, :public_health
     post "/register", AuthController, :register
     post "/login", AuthController, :login
     post "/invitations/:token/accept", InvitationController, :accept
-
-    scope "/teller" do
-      post "/webhook", TellerWebhookController, :webhook
-
-      scope "/" do
-        pipe_through :api_auth
-
-        post "/connect_token", TellerController, :connect_token
-        post "/exchange", TellerController, :exchange
-        post "/revoke", TellerController, :revoke
-      end
-    end
 
     scope "/" do
       pipe_through :api_auth
@@ -86,6 +64,7 @@ defmodule MoneyTreeWeb.Router do
              SettingsController,
              :revoke_webauthn_credential
 
+      get "/evaluations/status-summary", EvaluationController, :status_summary
       get "/obligations", ObligationController, :index
       post "/obligations", ObligationController, :create
       get "/obligations/:id", ObligationController, :show
@@ -96,11 +75,49 @@ defmodule MoneyTreeWeb.Router do
       get "/mortgages/:id", MortgageController, :show
       put "/mortgages/:id", MortgageController, :update
       delete "/mortgages/:id", MortgageController, :delete
+      get "/loans/:loan_id/refinance_scenarios", RefinanceScenarioController, :index
+      post "/loans/:loan_id/refinance_scenarios", RefinanceScenarioController, :create
+      get "/refinance_scenarios/:id", RefinanceScenarioController, :show
+      put "/refinance_scenarios/:id", RefinanceScenarioController, :update
+      delete "/refinance_scenarios/:id", RefinanceScenarioController, :delete
+      post "/refinance_scenarios/:id/fee_items", RefinanceScenarioController, :create_fee_item
+      post "/refinance_scenarios/:id/analyze", RefinanceScenarioController, :analyze
+      get "/loans/:loan_id/documents", LoanDocumentController, :index
+      post "/loans/:loan_id/documents", LoanDocumentController, :create
+      get "/loan_documents/:id", LoanDocumentController, :show
+      post "/loan_documents/:id/extract", LoanDocumentController, :extract
+      post "/loan_document_extractions/:id/confirm", LoanDocumentController, :confirm_extraction
+      post "/loan_document_extractions/:id/reject", LoanDocumentController, :reject_extraction
+      post "/loan_document_extractions/:id/apply", LoanDocumentController, :apply_extraction
+
+      post "/loan_document_extractions/:id/create_lender_quote",
+           LoanDocumentController,
+           :create_lender_quote
+
+      post "/loan_document_extractions/:id/create_scenario",
+           LoanDocumentController,
+           :create_scenario
+
+      get "/loans/:loan_id/lender_quotes", LenderQuoteController, :index
+      post "/loans/:loan_id/lender_quotes", LenderQuoteController, :create
+      get "/lender_quotes/:id", LenderQuoteController, :show
+      put "/lender_quotes/:id", LenderQuoteController, :update
+      post "/lender_quotes/:id/convert", LenderQuoteController, :convert
+      get "/loans/:loan_id/alert_rules", LoanAlertRuleController, :index
+      post "/loans/:loan_id/alert_rules", LoanAlertRuleController, :create
+      post "/loans/:loan_id/alert_rules/evaluate", LoanAlertRuleController, :evaluate_all
+      put "/loan_alert_rules/:id", LoanAlertRuleController, :update
+      delete "/loan_alert_rules/:id", LoanAlertRuleController, :delete
+      post "/loan_alert_rules/:id/evaluate", LoanAlertRuleController, :evaluate
       post "/accounts/:account_id/invitations", InvitationController, :create
       delete "/accounts/:account_id/invitations/:id", InvitationController, :revoke
       get "/categorization/rules", CategorizationController, :list_rules
       post "/categorization/rules", CategorizationController, :create_rule
+      delete "/categorization/rules", CategorizationController, :clear_rules
       delete "/categorization/rules/:id", CategorizationController, :delete_rule
+      get "/categorization/categories", CategorizationController, :list_categories
+      post "/categorization/categories", CategorizationController, :create_category
+      delete "/categorization/categories/:id", CategorizationController, :delete_category
       post "/categorization/recategorize", CategorizationController, :recategorize
       get "/ai/settings", AIController, :settings
       put "/ai/settings", AIController, :update_settings
@@ -122,6 +139,23 @@ defmodule MoneyTreeWeb.Router do
       patch "/manual-imports/:id/rows", ManualImportController, :update_rows
       post "/manual-imports/:id/commit", ManualImportController, :commit
       post "/manual-imports/:id/rollback", ManualImportController, :rollback
+
+      get "/simplefin/config", SimpleFinController, :config
+      get "/simplefin/connections", SimpleFinController, :connections
+      post "/simplefin/claim", SimpleFinController, :claim
+
+      post "/simplefin/connections/:connection_id/imports/confirm",
+           SimpleFinController,
+           :confirm_import
+
+      post "/simplefin/sync", SimpleFinController, :sync
+      delete "/simplefin/connections/:connection_id", SimpleFinController, :revoke
+
+      get "/legacy-bank-connections", LegacyBankConnectionController, :index
+
+      post "/legacy-bank-connections/:connection_id/purge-credentials",
+           LegacyBankConnectionController,
+           :purge_credentials
     end
 
     scope "/plaid" do
@@ -135,12 +169,6 @@ defmodule MoneyTreeWeb.Router do
       end
     end
 
-    scope "/stripe" do
-      pipe_through :api_auth
-
-      post "/session", StripeController, :session
-    end
-
     scope "/kyc" do
       pipe_through :api_auth
 
@@ -151,6 +179,10 @@ defmodule MoneyTreeWeb.Router do
       pipe_through :api_owner
 
       get "/dashboard", AuthController, :owner_dashboard
+      get "/healthz", HealthController, :health
+      get "/metrics", HealthController, :metrics
+      get "/security/secret-backend", Owner.SecretBackendController, :show
+      post "/security/secret-backend/revalidate", Owner.SecretBackendController, :revalidate
       resources "/users", Owner.UserController, only: [:index, :show, :update, :delete]
     end
   end
@@ -168,12 +200,6 @@ defmodule MoneyTreeWeb.Router do
     delete "/logout", SessionController, :delete
   end
 
-  scope "/app/react" do
-    pipe_through [:browser_proxy, :require_authenticated_user]
-
-    forward "/", MoneyTreeWeb.Plugs.NextProxy
-  end
-
   scope "/", MoneyTreeWeb do
     pipe_through [:browser, :require_authenticated_user]
 
@@ -187,16 +213,35 @@ defmodule MoneyTreeWeb.Router do
     live_session :app,
       on_mount: [MoneyTreeWeb.Plugs.RequireAuthenticatedUser] do
       live "/app/dashboard", DashboardLive
+      live "/app/notifications", NotificationsLive.Index
       live "/app/accounts", AccountsLive.Index
       live "/app/transactions", TransactionsLive.Index
       live "/app/transactions/categorization", CategorizationLive.Index
       live "/app/obligations", ObligationsLive.Index
       live "/app/assets", AssetsLive.Index
+      live "/app/loans", LoansLive.Index, :index
+      live "/app/loans/:loan_id", LoansLive.Index, :detail
+      live "/app/loans/:loan_id/refinance", LoansLive.Index, :refinance
+      live "/app/loans/:loan_id/documents", LoansLive.Index, :documents
+      live "/app/loans/:loan_id/quotes", LoansLive.Index, :quotes
+      live "/app/loans/:loan_id/alerts", LoansLive.Index, :alerts
+      live "/app/mortgages", LoansLive.Index, :index
+      live "/app/mortgages/:loan_id", LoansLive.Index, :detail
       live "/app/transfers", TransfersLive
       live "/app/budgets", BudgetLive.Index
       live "/app/import-export", ImportExportLive.Index
       live "/app/settings", SettingsLive, :index
       live "/app/settings/:section", SettingsLive, :section
+      live "/app/evaluations", EvaluationsLive.Index
+      live "/app/link-bank", LinkBankLive.Index
+    end
+
+    live_session :app_owner,
+      on_mount: [
+        MoneyTreeWeb.Plugs.RequireAuthenticatedUser,
+        MoneyTreeWeb.Plugs.RequireOwner
+      ] do
+      live "/app/owner/users", OwnerUsersLive.Index
     end
   end
 

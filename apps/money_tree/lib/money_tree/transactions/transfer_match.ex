@@ -33,6 +33,8 @@ defmodule MoneyTree.Transactions.TransferMatch do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(match, attrs) do
     match

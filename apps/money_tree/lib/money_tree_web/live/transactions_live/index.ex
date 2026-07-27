@@ -136,12 +136,14 @@ defmodule MoneyTreeWeb.TransactionsLive.Index do
                 <input type="hidden" name="transaction_id" value={transaction.id} />
                 <div>
                   <label class="text-sm font-medium text-zinc-700" for={"category-#{transaction.id}"}>Category</label>
-                  <input id={"category-#{transaction.id}"}
-                         type="text"
-                         name="category"
-                         value={transaction.category || ""}
-                         class="input"
-                         placeholder="Uncategorized" />
+                  <select id={"category-#{transaction.id}"} name="category" class="input">
+                    <option value="Uncategorized">🏷️ Uncategorized</option>
+                    <option :for={category <- @category_options}
+                            value={category.name}
+                            selected={category.name == transaction.category}>
+                      <%= category.emoji %> <%= category.name %>
+                    </option>
+                  </select>
                 </div>
                 <button type="submit" class="btn">Save</button>
               </.form>
@@ -165,7 +167,10 @@ defmodule MoneyTreeWeb.TransactionsLive.Index do
     transactions =
       Transactions.paginate_for_user(current_user, page: socket.assigns.page, per_page: @per_page)
 
-    assign(socket, transactions: transactions)
+    assign(socket,
+      transactions: transactions,
+      category_options: Categorization.category_options(current_user)
+    )
   end
 
   defp status_badge_class("pending"),

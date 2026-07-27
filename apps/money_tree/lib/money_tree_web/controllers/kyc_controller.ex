@@ -1,9 +1,9 @@
 defmodule MoneyTreeWeb.KycController do
-  use MoneyTreeWeb, :controller
-
   @moduledoc """
   Generates vendor agnostic KYC sessions while redacting sensitive applicant data.
   """
+
+  use MoneyTreeWeb, :controller
 
   alias Ecto.UUID
 
@@ -68,7 +68,7 @@ defmodule MoneyTreeWeb.KycController do
     case String.split(value, "@", parts: 2) do
       [local, domain] ->
         visible = String.slice(local, -1, 1)
-        masked_local = "***" <> (visible || "")
+        masked_local = "***" <> visible
         masked_local <> "@" <> domain
 
       _ ->

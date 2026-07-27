@@ -1,6 +1,7 @@
 defmodule MoneyTree.Institutions.ConnectionTest do
   use MoneyTree.DataCase, async: true
 
+  alias Ecto.Adapters.SQL
   alias MoneyTree.AccountsFixtures
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
@@ -31,6 +32,18 @@ defmodule MoneyTree.Institutions.ConnectionTest do
       refute Map.has_key?(errors_on(changeset), :webhook_secret)
       assert changeset.changes.sync_cursor == "next-cursor"
     end
+
+    test "accepts simplefin provider while rejecting unknown providers" do
+      attrs = %{
+        user_id: Ecto.UUID.generate(),
+        institution_id: Ecto.UUID.generate(),
+        provider: "simplefin"
+      }
+
+      assert Connection.changeset(%Connection{}, attrs).valid?
+
+      refute Connection.changeset(%Connection{}, Map.put(attrs, :provider, "unknown")).valid?
+    end
   end
 
   describe "encrypted credentials" do
@@ -44,7 +57,7 @@ defmodule MoneyTree.Institutions.ConnectionTest do
         })
 
       raw_value =
-        Ecto.Adapters.SQL.query!(
+        SQL.query!(
           Repo,
           "select encrypted_credentials from institution_connections where id = $1::uuid",
           [Ecto.UUID.dump!(connection.id)]
@@ -55,21 +68,6 @@ defmodule MoneyTree.Institutions.ConnectionTest do
       assert connection.encrypted_credentials == "super-secret"
       refute raw_value == "super-secret"
       refute raw_value == nil
-    end
-  end
-
-  describe "rotate_webhook_secret/2" do
-    test "rotates and persists a new secret" do
-      user = AccountsFixtures.user_fixture()
-      connection = InstitutionsFixtures.connection_fixture(user)
-      original_secret = connection.webhook_secret
-
-      assert {:ok, updated, new_secret} =
-               Institutions.rotate_webhook_secret(user, connection.id)
-
-      assert byte_size(new_secret) >= 32
-      assert updated.webhook_secret == new_secret
-      refute new_secret == original_secret
     end
   end
 
@@ -108,9 +106,8 @@ defmodule MoneyTree.Institutions.ConnectionTest do
       connection: connection
     } do
       assert {:error, :not_found} =
-               Institutions.update_connection_tokens(member, %{
-                 connection_id: connection.id,
-                 teller_user_id: "shared-user"
+               Institutions.update_connection(member, connection.id, %{
+                 metadata: %{"status" => "active", "note" => "shared-user"}
                })
     end
   end

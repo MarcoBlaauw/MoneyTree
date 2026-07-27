@@ -69,7 +69,7 @@ defmodule MoneyTreeWeb.CoreComponents do
     ~H"""
     <div class="flex flex-col gap-1">
       <label :if={@label} for={@field.id} class="text-sm font-medium text-zinc-700">
-        <%= @label || Phoenix.Naming.humanize(@field.field) %>
+        <%= @label %>
       </label>
       <input :if={@type in [:text, :email, :password, :number]}
              type={@type}
@@ -125,6 +125,20 @@ defmodule MoneyTreeWeb.CoreComponents do
       </div>
     </header>
     """
+  end
+
+  ## Modal Chrome
+
+  def dialog_backdrop_class do
+    "fixed inset-0 z-40 bg-zinc-950/35 backdrop-blur-sm"
+  end
+
+  def dialog_panel_class(:lg) do
+    "fixed left-1/2 top-6 z-50 max-h-[calc(100vh-3rem)] w-[min(54rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl"
+  end
+
+  def dialog_panel_class(_size) do
+    "fixed left-1/2 top-8 z-50 max-h-[calc(100vh-4rem)] w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl"
   end
 
   ## Icon Component

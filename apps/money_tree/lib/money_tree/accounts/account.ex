@@ -8,8 +8,8 @@ defmodule MoneyTree.Accounts.Account do
   import Ecto.Changeset
   import Ecto.Query
 
-  alias MoneyTree.Accounts.AccountMembership
   alias Decimal
+  alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Currency
   alias MoneyTree.Encrypted.Binary
   alias MoneyTree.Institutions.Connection
@@ -20,8 +20,8 @@ defmodule MoneyTree.Accounts.Account do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
   @timestamps_opts [type: :utc_datetime_usec]
-  @internal_account_kinds ~w(checking savings credit_card loan mortgage cash investment other)
-  @liability_types ~w(credit_card auto_loan student_loan pool_loan mortgage)
+  @internal_account_kinds ~w(checking savings credit_card loan mortgage cash investment escrow other)
+  @liability_types ~w(credit_card auto_loan student_loan pool_loan mortgage other_loan)
 
   schema "accounts" do
     field(:name, :string)
@@ -62,6 +62,8 @@ defmodule MoneyTree.Accounts.Account do
 
     timestamps()
   end
+
+  @type t :: %__MODULE__{}
 
   @doc false
   def changeset(account, attrs) do
@@ -105,7 +107,7 @@ defmodule MoneyTree.Accounts.Account do
     |> validate_length(:name, min: 1, max: 120)
     |> validate_length(:type, min: 1, max: 60)
     |> validate_length(:subtype, max: 60)
-    |> validate_length(:external_id, max: 120)
+    |> validate_length(:external_id, max: 512)
     |> validate_length(:internal_account_kind, max: 60)
     |> validate_length(:liability_type, max: 60)
     |> validate_length(:fee_schedule, max: 2000)

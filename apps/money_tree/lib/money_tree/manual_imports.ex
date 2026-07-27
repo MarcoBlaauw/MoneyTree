@@ -5,6 +5,7 @@ defmodule MoneyTree.ManualImports do
 
   import Ecto.Query, warn: false
 
+  alias Decimal
   alias Ecto.Multi
   alias MoneyTree.Accounts
   alias MoneyTree.Accounts.Account
@@ -15,11 +16,10 @@ defmodule MoneyTree.ManualImports do
   alias MoneyTree.Transactions
   alias MoneyTree.Transactions.DuplicateDetector
   alias MoneyTree.Transactions.Fingerprints
+  alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Transactions.TransferMatch
   alias MoneyTree.Transactions.TransferMatcher
-  alias MoneyTree.Transactions.Transaction
   alias MoneyTree.Users.User
-  alias Decimal
 
   @auto_transfer_lookback_days 7
   @auto_transfer_match_threshold Decimal.new("0.95")
@@ -316,13 +316,7 @@ defmodule MoneyTree.ManualImports do
           row.description || row.original_description || row.merchant_name ||
             "Imported transaction"
 
-        transaction_kind =
-          case row.direction do
-            "income" -> "income"
-            "expense" -> "expense"
-            "transfer" -> "internal_transfer"
-            _ -> "unknown"
-          end
+        transaction_kind = infer_transaction_kind(row)
 
         attrs =
           %{
@@ -704,6 +698,52 @@ defmodule MoneyTree.ManualImports do
     do: {:ok, account_id}
 
   defp ensure_account_for_commit(_batch), do: {:error, :account_required}
+
+  defp infer_transaction_kind(row) do
+    text =
+      [
+        row.description,
+        row.original_description,
+        row.merchant_name,
+        row.category_name_snapshot
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" ")
+      |> String.downcase()
+
+    cond do
+      String.contains?(text, "escrow") and String.contains?(text, "refund") ->
+        "escrow_refund"
+
+      String.contains?(text, "escrow") and
+          (String.contains?(text, "property tax") or String.contains?(text, "tax disbursement") or
+             String.contains?(text, "taxes")) ->
+        "escrow_property_tax_disbursement"
+
+      String.contains?(text, "escrow") and
+          (String.contains?(text, "homeowners") or String.contains?(text, "homeowner") or
+             String.contains?(text, "home insurance")) ->
+        "escrow_homeowners_insurance_disbursement"
+
+      String.contains?(text, "escrow") and String.contains?(text, "flood") ->
+        "escrow_flood_insurance_disbursement"
+
+      String.contains?(text, "escrow") ->
+        "escrow_other_disbursement"
+
+      row.direction == "income" ->
+        "income"
+
+      row.direction == "expense" ->
+        "expense"
+
+      row.direction == "transfer" ->
+        "internal_transfer"
+
+      true ->
+        "unknown"
+    end
+  end
 
   defp resolve_user_id(%User{id: user_id}), do: user_id
   defp resolve_user_id(user_id) when is_binary(user_id), do: user_id

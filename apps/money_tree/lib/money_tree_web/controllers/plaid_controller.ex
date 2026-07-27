@@ -1,12 +1,13 @@
 defmodule MoneyTreeWeb.PlaidController do
-  use MoneyTreeWeb, :controller
-
   @moduledoc """
   Issues Plaid Link tokens and exchanges public tokens into persisted connections.
   """
 
+  use MoneyTreeWeb, :controller
+
   alias Ecto.Association.NotLoaded
   alias Ecto.Changeset
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
   alias MoneyTree.Institutions.Institution
@@ -16,10 +17,14 @@ defmodule MoneyTreeWeb.PlaidController do
   def link_token(conn, params) do
     user = conn.assigns.current_user
 
-    with {:ok, payload} <-
+    with :ok <- ensure_enabled(),
+         {:ok, payload} <-
            plaid_client().create_link_token(build_link_token_request(user, params)) do
       json(conn, %{data: payload})
     else
+      {:error, :provider_disabled} ->
+        disabled(conn)
+
       {:error, error} ->
         render_plaid_error(conn, error)
     end
@@ -28,7 +33,8 @@ defmodule MoneyTreeWeb.PlaidController do
   def exchange(conn, %{"public_token" => public_token} = params) do
     user = conn.assigns.current_user
 
-    with {:ok, institution_id} <- fetch_or_create_institution_id(params),
+    with :ok <- ensure_enabled(),
+         {:ok, institution_id} <- fetch_or_create_institution_id(params),
          {:ok, exchange_payload} <- plaid_client().exchange_public_token(public_token),
          {:ok, connection} <- persist_connection(user, institution_id, exchange_payload, params),
          :ok <- schedule_initial_sync(connection) do
@@ -42,6 +48,9 @@ defmodule MoneyTreeWeb.PlaidController do
 
       {:error, :institution_not_found} ->
         conn |> put_status(:not_found) |> json(%{error: "institution not found"})
+
+      {:error, :provider_disabled} ->
+        disabled(conn)
 
       {:error, %Changeset{} = changeset} ->
         conn
@@ -71,6 +80,16 @@ defmodule MoneyTreeWeb.PlaidController do
       {:ok, %Connection{} = connection} -> Institutions.update_connection(user, connection, attrs)
       {:error, :not_found} -> Institutions.create_connection(user, institution_id, attrs)
     end
+  end
+
+  defp ensure_enabled do
+    if ProviderRegistry.enabled?("plaid"), do: :ok, else: {:error, :provider_disabled}
+  end
+
+  defp disabled(conn) do
+    conn
+    |> put_status(:service_unavailable)
+    |> json(%{error: "Plaid is disabled for new connections"})
   end
 
   defp build_link_token_request(user, params) do

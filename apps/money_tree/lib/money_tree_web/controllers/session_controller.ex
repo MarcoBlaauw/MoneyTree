@@ -1,18 +1,22 @@
 defmodule MoneyTreeWeb.SessionController do
   use MoneyTreeWeb, :controller
 
+  import Phoenix.Component, only: [to_form: 1, to_form: 2]
+
   alias MoneyTree.Accounts
   alias MoneyTree.Audit
   alias MoneyTreeWeb.Auth
   alias MoneyTreeWeb.RateLimiter
-  require Logger
 
-  import Phoenix.Component, only: [to_form: 1, to_form: 2]
+  require Logger
 
   plug :redirect_if_authenticated when action in [:new, :create]
 
   @login_limit 5
   @login_period_seconds 60
+
+  @auth_action_limit 5
+  @auth_action_period_seconds 60
 
   def new(conn, _params) do
     render(conn, :new,
@@ -70,15 +74,31 @@ defmodule MoneyTreeWeb.SessionController do
   end
 
   def request_magic_link(conn, %{"magic_link" => %{"email" => email}}) do
-    :ok =
-      Accounts.request_magic_link(email, session_metadata(conn, %{"context" => "web_magic_link"}))
+    bucket = {:magic_link, normalize_email(email), maybe_client_ip(conn)}
 
-    conn
-    |> put_flash(:info, "If that email exists, a sign-in link has been sent.")
-    |> render(:new,
-      form: to_form(%{"email" => email}, as: :session),
-      magic_link_form: to_form(%{"email" => email}, as: :magic_link)
-    )
+    case RateLimiter.check(bucket, @auth_action_limit, @auth_action_period_seconds) do
+      :ok ->
+        :ok =
+          Accounts.request_magic_link(
+            email,
+            session_metadata(conn, %{"context" => "web_magic_link"})
+          )
+
+        conn
+        |> put_flash(:info, "If that email exists, a sign-in link has been sent.")
+        |> render(:new,
+          form: to_form(%{"email" => email}, as: :session),
+          magic_link_form: to_form(%{"email" => email}, as: :magic_link)
+        )
+
+      {:error, :rate_limited} ->
+        conn
+        |> put_flash(:error, "Too many attempts. Please try again later.")
+        |> render(:new,
+          form: to_form(%{"email" => email}, as: :session),
+          magic_link_form: to_form(%{"email" => email}, as: :magic_link)
+        )
+    end
   end
 
   def request_magic_link(conn, _params) do
@@ -91,6 +111,21 @@ defmodule MoneyTreeWeb.SessionController do
   end
 
   def request_webauthn_options(conn, %{"webauthn" => %{"email" => email} = params}) do
+    bucket = {:webauthn_options, normalize_email(email), maybe_client_ip(conn)}
+
+    case RateLimiter.check(bucket, @auth_action_limit, @auth_action_period_seconds) do
+      :ok -> do_request_webauthn_options(conn, email, params)
+      {:error, :rate_limited} -> rate_limited_json(conn)
+    end
+  end
+
+  def request_webauthn_options(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "email is required"})
+  end
+
+  defp do_request_webauthn_options(conn, email, params) do
     case Accounts.get_user_by_email(email) do
       %{} = user ->
         case Accounts.create_webauthn_authentication_options(
@@ -113,16 +148,25 @@ defmodule MoneyTreeWeb.SessionController do
     end
   end
 
-  def request_webauthn_options(conn, _params) do
-    conn
-    |> put_status(:bad_request)
-    |> json(%{error: "email is required"})
-  end
-
   def consume_webauthn(
         conn,
         %{"webauthn" => %{"email" => email, "challenge_id" => challenge_id} = params}
       ) do
+    bucket = {:webauthn_consume, normalize_email(email), maybe_client_ip(conn)}
+
+    case RateLimiter.check(bucket, @auth_action_limit, @auth_action_period_seconds) do
+      :ok -> do_consume_webauthn(conn, email, challenge_id, params)
+      {:error, :rate_limited} -> rate_limited_json(conn)
+    end
+  end
+
+  def consume_webauthn(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "email and challenge are required"})
+  end
+
+  defp do_consume_webauthn(conn, email, challenge_id, params) do
     case Accounts.get_user_by_email(email) do
       %{} = user ->
         case Accounts.authenticate_with_webauthn(user, challenge_id, params) do
@@ -172,13 +216,16 @@ defmodule MoneyTreeWeb.SessionController do
     end
   end
 
-  def consume_webauthn(conn, _params) do
-    conn
-    |> put_status(:bad_request)
-    |> json(%{error: "email and challenge are required"})
+  def consume_magic_link(conn, %{"token" => token}) do
+    bucket = {:magic_link_consume, maybe_client_ip(conn)}
+
+    case RateLimiter.check(bucket, @auth_action_limit, @auth_action_period_seconds) do
+      :ok -> do_consume_magic_link(conn, token)
+      {:error, :rate_limited} -> rate_limited_flash(conn)
+    end
   end
 
-  def consume_magic_link(conn, %{"token" => token}) do
+  defp do_consume_magic_link(conn, token) do
     case Accounts.consume_magic_link(token) do
       {:ok, user} ->
         {:ok, _session, session_token} =
@@ -268,6 +315,21 @@ defmodule MoneyTreeWeb.SessionController do
 
   defp maybe_client_ip(%Plug.Conn{remote_ip: tuple}) do
     tuple |> :inet.ntoa() |> to_string()
+  end
+
+  defp rate_limited_json(conn) do
+    conn
+    |> put_status(:too_many_requests)
+    |> json(%{error: "rate limit exceeded"})
+  end
+
+  defp rate_limited_flash(conn) do
+    conn
+    |> put_flash(:error, "Too many attempts. Please try again later.")
+    |> render(:new,
+      form: to_form(%{}, as: :session),
+      magic_link_form: to_form(%{}, as: :magic_link)
+    )
   end
 
   defp put_auth_cookie(conn, token) do

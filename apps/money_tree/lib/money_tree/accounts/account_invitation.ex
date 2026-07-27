@@ -30,6 +30,8 @@ defmodule MoneyTree.Accounts.AccountInvitation do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(invitation, attrs) do
     invitation

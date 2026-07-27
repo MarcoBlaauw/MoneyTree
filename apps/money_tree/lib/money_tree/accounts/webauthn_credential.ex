@@ -37,6 +37,8 @@ defmodule MoneyTree.Accounts.WebAuthnCredential do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(credential, attrs) do
     credential

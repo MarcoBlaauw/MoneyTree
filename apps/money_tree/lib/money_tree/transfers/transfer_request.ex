@@ -24,6 +24,8 @@ defmodule MoneyTree.Transfers.TransferRequest do
     field :destination_account, :any, virtual: true
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def changeset(transfer, attrs, opts \\ []) do
     accounts = Keyword.get(opts, :accounts, [])

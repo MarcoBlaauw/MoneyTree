@@ -21,7 +21,7 @@ defmodule MoneyTree.Institutions.Connection do
     field :encrypted_credentials, Binary
     field :webhook_secret, Binary
     field :metadata, Map
-    field :provider, :string, default: "teller"
+    field :provider, :string, default: "simplefin"
     field :provider_metadata, :map
 
     field :teller_enrollment_id, :string
@@ -42,6 +42,8 @@ defmodule MoneyTree.Institutions.Connection do
 
     timestamps()
   end
+
+  @type t :: %__MODULE__{}
 
   @doc false
   def changeset(connection, attrs) do
@@ -67,7 +69,7 @@ defmodule MoneyTree.Institutions.Connection do
     |> validate_required([:user_id, :institution_id, :provider])
     |> normalize_cursor()
     |> update_change(:provider, &normalize_provider/1)
-    |> validate_inclusion(:provider, ["teller", "plaid"])
+    |> validate_inclusion(:provider, ["simplefin", "plaid", "teller"])
     |> validate_length(:teller_enrollment_id, max: 120)
     |> validate_length(:teller_user_id, max: 120)
     |> validate_length(:sync_cursor, max: 1024)

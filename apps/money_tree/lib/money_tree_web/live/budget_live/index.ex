@@ -18,6 +18,7 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
        budget_changeset: Budgets.change_budget(%Budget{}),
        budget_form_mode: :new,
        budget_editing: nil,
+       budget_drafts: [],
        period_options: period_options(),
        entry_type_options: entry_type_options(),
        variability_options: variability_options(),
@@ -35,6 +36,40 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
        budget_editing: nil,
        budget_changeset: Budgets.change_budget(%Budget{})
      )}
+  end
+
+  def handle_event(
+        "auto-create-budgets",
+        _params,
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    drafts = Budgets.auto_create_budget_drafts(current_user)
+
+    {:noreply,
+     socket
+     |> assign(budget_drafts: drafts)
+     |> put_flash(:info, "Generated #{length(drafts)} budget drafts.")}
+  end
+
+  def handle_event(
+        "create-budget-draft",
+        %{"category" => category},
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    case Budgets.create_budget_from_draft(current_user, category) do
+      {:ok, _budget} ->
+        {:noreply,
+         socket
+         |> assign_budget_rows(current_user)
+         |> assign(budget_drafts: Budgets.auto_create_budget_drafts(current_user))
+         |> put_flash(:info, "Budget created from draft.")}
+
+      {:error, :draft_not_found} ->
+        {:noreply, put_flash(socket, :error, "Budget draft is no longer available.")}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Unable to create budget from draft.")}
+    end
   end
 
   def handle_event(
@@ -190,6 +225,7 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
     <section class="space-y-6">
       <.header title="Budgets" subtitle="Create and track targets across spending categories.">
         <:actions>
+          <button class="btn" type="button" phx-click="auto-create-budgets">Auto-create budgets</button>
           <button class="btn btn-outline" type="button" phx-click="new-budget">New budget</button>
         </:actions>
       </.header>
@@ -213,6 +249,27 @@ defmodule MoneyTreeWeb.BudgetLive.Index do
             </li>
             <li :if={Enum.empty?(@planner_recommendations)} class="rounded-lg border border-dashed border-zinc-200 p-4 text-zinc-500">
               No recommendations yet.
+            </li>
+          </ul>
+
+          <h2 class="text-lg font-semibold text-zinc-900">Budget drafts</h2>
+          <ul class="space-y-3 text-sm">
+            <li :for={draft <- @budget_drafts}
+                class="rounded-lg border border-sky-100 bg-sky-50 p-3">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="font-semibold text-sky-950"><%= draft.category %></p>
+                  <p class="text-xs text-sky-800"><%= draft.explanation %></p>
+                  <p class="mt-1 text-xs text-sky-700">
+                    Suggested <%= draft.currency %> <%= Decimal.to_string(draft.allocation_amount, :normal) %>
+                    from <%= draft.transaction_count %> transactions
+                  </p>
+                </div>
+                <button class="btn btn-xs" type="button" phx-click="create-budget-draft" phx-value-category={draft.category}>Create</button>
+              </div>
+            </li>
+            <li :if={Enum.empty?(@budget_drafts)} class="rounded-lg border border-dashed border-zinc-200 p-4 text-zinc-500">
+              No budget drafts generated yet.
             </li>
           </ul>
 

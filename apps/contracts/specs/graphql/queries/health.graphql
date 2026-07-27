@@ -1,7 +1,0 @@
-query Health {
-  health {
-    status
-    timestamp
-    version
-  }
-}

@@ -1,8 +1,10 @@
 import "phoenix_html";
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
+import PlaidLink from "./hooks/plaid_link";
 
 const Hooks = window.MoneyTreeHooks || {};
+Hooks.PlaidLink = PlaidLink;
 
 const decodeBase64Url = (value) => {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -237,6 +239,34 @@ liveSocket.connect();
 window.LiveSocket = liveSocket;
 window.MoneyTreeHooks = Hooks;
 
+const scrollIntoViewById = (id, attempt = 0) => {
+  const target = document.getElementById(id);
+
+  if (!target) {
+    if (attempt < 5) {
+      window.requestAnimationFrame(() => scrollIntoViewById(id, attempt + 1));
+    }
+
+    return;
+  }
+
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  try {
+    target.focus({ preventScroll: true });
+  } catch (_error) {
+    target.focus();
+  }
+};
+
+window.addEventListener("phx:scroll-into-view", (event) => {
+  const id = event.detail?.id;
+
+  if (id) {
+    scrollIntoViewById(id);
+  }
+});
+
 const mountLoginPasskeys = () => {
   const root = document.querySelector("[data-webauthn-login]");
 
@@ -313,8 +343,49 @@ const mountSecurityPasskeysFromDom = () => {
   document.querySelectorAll("#security-settings").forEach((root) => mountSecurityPasskeys(root));
 };
 
+const mountAppSidebar = () => {
+  const shell = document.querySelector("[data-app-shell]");
+  const sidebar = document.querySelector("[data-app-sidebar]");
+  const closeButton = document.querySelector("[data-app-sidebar-close]");
+  const openButton = document.querySelector("[data-app-sidebar-open]");
+
+  if (!shell || !sidebar || !closeButton || !openButton || shell.dataset.sidebarMounted === "true") {
+    return;
+  }
+
+  shell.dataset.sidebarMounted = "true";
+
+  const positionOpenButton = () => {
+    const shellLeft = shell.getBoundingClientRect().left;
+    openButton.style.left = `${Math.max(16, shellLeft + 16)}px`;
+  };
+
+  const setCollapsed = (collapsed) => {
+    if (collapsed) {
+      positionOpenButton();
+      sidebar.style.display = "none";
+      openButton.classList.remove("hidden");
+      openButton.classList.add("lg:inline-flex");
+    } else {
+      sidebar.style.display = "";
+      openButton.classList.add("hidden");
+      openButton.classList.remove("lg:inline-flex");
+    }
+
+    window.localStorage.setItem("moneytree.sidebarCollapsed", collapsed ? "true" : "false");
+  };
+
+  setCollapsed(window.localStorage.getItem("moneytree.sidebarCollapsed") === "true");
+
+  closeButton.addEventListener("click", () => setCollapsed(true));
+  openButton.addEventListener("click", () => setCollapsed(false));
+  window.addEventListener("resize", positionOpenButton);
+};
+
 document.addEventListener("DOMContentLoaded", mountLoginPasskeys);
 document.addEventListener("DOMContentLoaded", mountSecurityPasskeysFromDom);
+document.addEventListener("DOMContentLoaded", mountAppSidebar);
 window.addEventListener("phx:page-loading-stop", mountSecurityPasskeysFromDom);
+window.addEventListener("phx:page-loading-stop", mountAppSidebar);
 
 export { Hooks, liveSocket };

@@ -8,12 +8,12 @@ defmodule MoneyTree.Users.User do
   import Ecto.Changeset
   import Ecto.Query
 
-  alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Accounts.Account
-  alias MoneyTree.Encrypted.Binary
+  alias MoneyTree.Accounts.AccountMembership
   alias MoneyTree.Accounts.MagicLinkToken
   alias MoneyTree.Accounts.WebAuthnChallenge
   alias MoneyTree.Accounts.WebAuthnCredential
+  alias MoneyTree.Encrypted.Binary
   alias MoneyTree.Sessions.Session
 
   @roles [:owner, :member, :advisor]
@@ -47,10 +47,15 @@ defmodule MoneyTree.Users.User do
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
   @doc false
   def registration_changeset(user, attrs) do
+    attrs = Map.drop(attrs, [:role, "role"])
+
     user
     |> changeset(attrs)
+    |> put_change(:role, :member)
     |> validate_required([:password])
   end
 

@@ -8,8 +8,8 @@ defmodule MoneyTree.ManualImportsTest do
   alias MoneyTree.ManualImports
   alias MoneyTree.ManualImports.Batch
   alias MoneyTree.Repo
-  alias MoneyTree.Transactions.TransferMatch
   alias MoneyTree.Transactions.Transaction
+  alias MoneyTree.Transactions.TransferMatch
 
   setup do
     user = user_fixture()
@@ -97,6 +97,35 @@ defmodule MoneyTree.ManualImportsTest do
     assert transaction.source == "manual_import"
     assert transaction.manual_import_batch_id == batch.id
     assert transaction.manual_import_row_id == row.id
+  end
+
+  test "commit_batch/2 classifies escrow tax disbursements outside spending", %{
+    user: user,
+    account: account
+  } do
+    {:ok, batch} = ManualImports.create_batch(user, %{account_id: account.id})
+
+    {:ok, _} =
+      ManualImports.stage_rows(user, batch.id, [
+        %{
+          posted_at: ~U[2026-04-20 10:00:00Z],
+          description: "Escrow property tax disbursement",
+          amount: Decimal.new("-950.00"),
+          currency: "USD",
+          direction: "expense",
+          category_name_snapshot: "Property Tax",
+          review_decision: "accept"
+        }
+      ])
+
+    assert {:ok, committed_batch} = ManualImports.commit_batch(user, batch.id)
+    assert committed_batch.committed_count == 1
+
+    [row] = ManualImports.list_rows(user, batch.id)
+    transaction = Repo.get!(Transaction, row.committed_transaction_id)
+
+    assert transaction.transaction_kind == "escrow_property_tax_disbursement"
+    assert transaction.excluded_from_spending
   end
 
   test "commit_batch/2 excludes exact duplicates by source transaction id", %{

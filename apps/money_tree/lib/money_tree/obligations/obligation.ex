@@ -18,6 +18,8 @@ defmodule MoneyTree.Obligations.Obligation do
   @timestamps_opts [type: :utc_datetime_usec]
 
   @due_rules ~w(calendar_day last_day_of_month)
+  @obligation_types ~w(subscription utility insurance housing debt_payment tax_or_fee membership other)
+  @sources ~w(manual model recurring_detection import)
 
   schema "obligations" do
     field :creditor_payee, :string
@@ -28,15 +30,23 @@ defmodule MoneyTree.Obligations.Obligation do
     field :grace_period_days, :integer, default: 0
     field :alert_preferences, :map, default: %{}
     field :active, :boolean, default: true
+    field :obligation_type, :string, default: "other"
+    field :source, :string, default: "manual"
 
     belongs_to :user, User
     belongs_to :linked_funding_account, Account
+    belongs_to :recurring_series, MoneyTree.Recurring.Series
 
     has_many :notification_events, Event
 
     timestamps()
   end
 
+  @type t :: %__MODULE__{}
+
+  # linked_funding_account_id is intentionally not in validate_required: the FK is
+  # ON DELETE SET NULL so the obligation survives deletion of its funding account.
+  # MoneyTree.Obligations.create_obligation/2 enforces it up front for new records.
   @doc false
   def changeset(obligation, attrs) do
     obligation
@@ -49,8 +59,11 @@ defmodule MoneyTree.Obligations.Obligation do
       :grace_period_days,
       :alert_preferences,
       :active,
+      :obligation_type,
+      :source,
       :user_id,
-      :linked_funding_account_id
+      :linked_funding_account_id,
+      :recurring_series_id
     ])
     |> validate_required([
       :creditor_payee,
@@ -58,12 +71,15 @@ defmodule MoneyTree.Obligations.Obligation do
       :minimum_due_amount,
       :currency,
       :grace_period_days,
-      :user_id,
-      :linked_funding_account_id
+      :obligation_type,
+      :source,
+      :user_id
     ])
     |> update_change(:currency, &normalize_currency/1)
     |> validate_length(:creditor_payee, min: 1, max: 160)
     |> validate_inclusion(:due_rule, @due_rules)
+    |> validate_inclusion(:obligation_type, @obligation_types)
+    |> validate_inclusion(:source, @sources)
     |> validate_due_day()
     |> validate_number(:grace_period_days, greater_than_or_equal_to: 0, less_than_or_equal_to: 31)
     |> validate_decimal(:minimum_due_amount, min: Decimal.new("0.01"))
@@ -71,11 +87,13 @@ defmodule MoneyTree.Obligations.Obligation do
     |> validate_currency(:currency)
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:linked_funding_account_id)
+    |> foreign_key_constraint(:recurring_series_id)
     |> check_constraint(:due_day, name: :obligations_due_day_check)
     |> check_constraint(:grace_period_days, name: :obligations_grace_period_days_check)
   end
 
   def due_rules, do: @due_rules
+  def obligation_types, do: @obligation_types
 
   defp validate_due_day(changeset) do
     due_rule = get_field(changeset, :due_rule)

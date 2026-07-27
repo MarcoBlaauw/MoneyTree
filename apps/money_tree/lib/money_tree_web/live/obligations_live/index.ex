@@ -15,7 +15,7 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
     {:ok,
      socket
      |> assign(
-       page_title: "Obligations",
+       page_title: "Bills & Subscriptions",
        selected_event: nil,
        obligation_form_open?: false,
        obligation_form_mode: :new,
@@ -41,6 +41,19 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
        obligation_editing_obligation: nil,
        obligation_changeset: Obligations.change_obligation(%Obligation{})
      )}
+  end
+
+  def handle_event(
+        "create-from-recurring-detections",
+        _params,
+        %{assigns: %{current_user: current_user}} = socket
+      ) do
+    %{created: created} = Obligations.create_from_recurring_detections(current_user)
+
+    {:noreply,
+     socket
+     |> load_page(current_user)
+     |> put_flash(:info, "Created #{created} obligations from recurring detections.")}
   end
 
   def handle_event("cancel-obligation", _params, socket) do
@@ -175,9 +188,10 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
   def render(assigns) do
     ~H"""
     <section class="space-y-6">
-      <.header title="Obligations" subtitle="Track recurring payment commitments and the alerts around them.">
+      <.header title="Bills & Subscriptions" subtitle="Track recurring bills, subscriptions, and the alerts around them.">
         <:actions>
-          <button type="button" class="btn btn-outline" phx-click="new-obligation">Add obligation</button>
+          <button type="button" class="btn" phx-click="create-from-recurring-detections">Create from detections</button>
+          <button type="button" class="btn btn-outline" phx-click="new-obligation">Add bill or subscription</button>
         </:actions>
       </.header>
 
@@ -224,6 +238,12 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
                   <%= if obligation.active, do: "Active", else: "Paused" %>
                 </span>
               </div>
+              <p class="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <%= obligation_type_label(obligation.obligation_type) %>
+                <%= if obligation.source && obligation.source != "manual" do %>
+                  • <%= String.replace(obligation.source, "_", " ") %>
+                <% end %>
+              </p>
 
               <dl class="grid gap-3 text-sm sm:grid-cols-2">
                 <div class="rounded-lg bg-white px-3 py-2">
@@ -251,7 +271,7 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
             </li>
 
             <li :if={Enum.empty?(@obligations)} class="rounded-xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500">
-              No obligations configured yet. Add your first recurring payment rule.
+              No bills or subscriptions yet. Add your first recurring payment.
             </li>
           </ul>
         </div>
@@ -260,7 +280,7 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
           <div class="flex items-start justify-between gap-3">
             <div>
               <h2 class="text-lg font-semibold text-zinc-900">
-                <%= if @obligation_form_mode == :edit, do: "Edit obligation", else: "Add obligation" %>
+                <%= if @obligation_form_mode == :edit, do: "Edit bill or subscription", else: "Add bill or subscription" %>
               </h2>
               <p class="text-sm text-zinc-500">Configure due cadence, minimum amount, and linked funding source.</p>
             </div>
@@ -270,7 +290,7 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
           </div>
 
           <div :if={!@obligation_form_open?} class="rounded-xl border border-dashed border-zinc-200 p-6 text-center text-sm text-zinc-500">
-            Choose “Add obligation” to create a new rule, or edit one from the list.
+            Choose “Add bill or subscription” to create a new rule, or edit one from the list.
           </div>
 
           <.simple_form :if={@obligation_form_open?}
@@ -301,6 +321,14 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
                 <p :for={error <- errors_on(@obligation_changeset, :due_rule)} class="text-sm text-red-600"><%= error %></p>
               </div>
 
+              <div>
+                <label class="text-sm font-medium text-zinc-700" for="obligation_obligation_type">Type</label>
+                <select id="obligation_obligation_type" name="obligation[obligation_type]" class="input">
+                  <%= Phoenix.HTML.Form.options_for_select(obligation_type_options(), f[:obligation_type].value || "other") %>
+                </select>
+                <p :for={error <- errors_on(@obligation_changeset, :obligation_type)} class="text-sm text-red-600"><%= error %></p>
+              </div>
+
               <.input field={f[:due_day]} label="Due day" type={:number} min="1" max="31" />
               <.input field={f[:minimum_due_amount]} label="Minimum due amount" type={:number} step="0.01" min="0.01" />
               <.input field={f[:grace_period_days]} label="Grace period days" type={:number} min="0" max="31" />
@@ -310,7 +338,7 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
             <div class="flex justify-end gap-2">
               <button type="button" class="btn btn-outline" phx-click="cancel-obligation">Cancel</button>
               <button type="submit" class="btn">
-                <%= if @obligation_form_mode == :edit, do: "Save changes", else: "Add obligation" %>
+                <%= if @obligation_form_mode == :edit, do: "Save changes", else: "Add bill or subscription" %>
               </button>
             </div>
           </.simple_form>
@@ -469,6 +497,19 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
     ]
   end
 
+  defp obligation_type_options do
+    [
+      {"Subscription", "subscription"},
+      {"Utility", "utility"},
+      {"Insurance", "insurance"},
+      {"Housing", "housing"},
+      {"Debt payment", "debt_payment"},
+      {"Tax or fee", "tax_or_fee"},
+      {"Membership", "membership"},
+      {"Other recurring bill", "other"}
+    ]
+  end
+
   defp errors_on(changeset, field) do
     changeset
     |> Ecto.Changeset.traverse_errors(fn {message, opts} ->
@@ -507,6 +548,15 @@ defmodule MoneyTreeWeb.ObligationsLive.Index do
   defp due_label(%{due_rule: "last_day_of_month"}), do: "on the last day of the month"
   defp due_label(%{due_day: day}) when is_integer(day), do: "on day #{day}"
   defp due_label(_obligation), do: "by configured rule"
+
+  defp obligation_type_label(nil), do: "Other"
+
+  defp obligation_type_label(type) do
+    type
+    |> to_string()
+    |> String.replace("_", " ")
+    |> String.capitalize()
+  end
 
   defp event_status_label("due_today"), do: "Due today"
   defp event_status_label("overdue"), do: "Overdue"

@@ -407,6 +407,52 @@ defmodule MoneyTree.BudgetsTest do
       assert length(recommendations) == 1
       assert hd(recommendations).budget_name == "Utilities"
     end
+
+    test "auto_create_budget_drafts excludes transfers payments escrow and existing budgets", %{
+      user: user
+    } do
+      account = account_fixture(user)
+
+      {:ok, _budget} =
+        Budgets.create_budget(user, %{
+          name: "Dining",
+          period: :monthly,
+          allocation_amount: "400.00",
+          currency: "USD",
+          entry_type: :expense,
+          variability: :variable
+        })
+
+      insert_transaction(account, %{amount: Decimal.new("-120.00"), category: "Groceries"})
+      insert_transaction(account, %{amount: Decimal.new("-90.00"), category: "Groceries"})
+      insert_transaction(account, %{amount: Decimal.new("-45.00"), category: "Dining"})
+
+      insert_transaction(account, %{
+        amount: Decimal.new("-500.00"),
+        category: "Transfer",
+        transaction_kind: "credit_card_payment"
+      })
+
+      insert_transaction(account, %{
+        amount: Decimal.new("-800.00"),
+        category: "Mortgage",
+        excluded_from_spending: true
+      })
+
+      [draft] = Budgets.auto_create_budget_drafts(user, months: 6, anchor_date: Date.utc_today())
+
+      assert draft.category == "Groceries"
+      assert Decimal.compare(draft.allocation_amount, Decimal.new("35.00")) == :eq
+
+      assert {:ok, %Budget{name: "Groceries"}} =
+               Budgets.create_budget_from_draft(user, "Groceries",
+                 months: 6,
+                 anchor_date: Date.utc_today()
+               )
+
+      assert Budgets.auto_create_budget_drafts(user, months: 6, anchor_date: Date.utc_today()) ==
+               []
+    end
   end
 
   defp insert_transaction(%Account{} = account, attrs) do
@@ -418,6 +464,8 @@ defmodule MoneyTree.BudgetsTest do
       posted_at: Map.get(attrs, :posted_at, DateTime.utc_now()),
       description: Map.get(attrs, :description, "Budget Test"),
       category: Map.get(attrs, :category),
+      transaction_kind: Map.get(attrs, :transaction_kind, "unknown"),
+      excluded_from_spending: Map.get(attrs, :excluded_from_spending, false),
       status: "posted",
       account_id: account.id
     }

@@ -9,6 +9,44 @@ defmodule MoneyTreeWeb.CategorizationController do
     json(conn, %{data: rules})
   end
 
+  def list_categories(%{assigns: %{current_user: current_user}} = conn, _params) do
+    categories =
+      current_user |> Categorization.list_categories() |> Enum.map(&serialize_category/1)
+
+    json(conn, %{data: categories})
+  end
+
+  def create_category(%{assigns: %{current_user: current_user}} = conn, %{"category" => params}) do
+    case Categorization.create_category(current_user, params) do
+      {:ok, category} ->
+        conn
+        |> put_status(:created)
+        |> json(%{data: serialize_category(category)})
+
+      {:error, %Changeset{} = changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{errors: Changeset.traverse_errors(changeset, &translate_error/1)})
+    end
+  end
+
+  def create_category(conn, params), do: create_category(conn, %{"category" => params})
+
+  def delete_category(%{assigns: %{current_user: current_user}} = conn, %{"id" => id}) do
+    case Categorization.delete_category(current_user, id) do
+      {:ok, _} ->
+        send_resp(conn, :no_content, "")
+
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{error: "category not found"})
+
+      {:error, %Changeset{} = changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{errors: Changeset.traverse_errors(changeset, &translate_error/1)})
+    end
+  end
+
   def create_rule(%{assigns: %{current_user: current_user}} = conn, params) do
     case Categorization.create_rule(current_user, params) do
       {:ok, rule} ->
@@ -28,6 +66,11 @@ defmodule MoneyTreeWeb.CategorizationController do
       {:ok, _} -> send_resp(conn, :no_content, "")
       {:error, :not_found} -> conn |> put_status(:not_found) |> json(%{error: "rule not found"})
     end
+  end
+
+  def clear_rules(%{assigns: %{current_user: current_user}} = conn, _params) do
+    count = Categorization.clear_rules(current_user)
+    json(conn, %{data: %{deleted_count: count}})
   end
 
   def recategorize(%{assigns: %{current_user: current_user}} = conn, %{
@@ -66,6 +109,17 @@ defmodule MoneyTreeWeb.CategorizationController do
       priority: rule.priority,
       confidence: rule.confidence,
       source: rule.source
+    }
+  end
+
+  defp serialize_category(category) do
+    %{
+      id: category.id,
+      name: category.name,
+      emoji: category.emoji,
+      kind: category.kind,
+      source: category.source,
+      active: category.active
     }
   end
 

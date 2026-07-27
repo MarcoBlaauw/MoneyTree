@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.MoneyTree.CreateUser do
+  @shortdoc "Create a user with the desired role"
+
   @moduledoc """
   Creates a MoneyTree user via the command line.
 
@@ -7,7 +9,6 @@ defmodule Mix.Tasks.MoneyTree.CreateUser do
 
   The role defaults to `owner`, which is the highest level of access in the app.
   """
-  @shortdoc "Create a user with the desired role"
 
   use Mix.Task
 
@@ -29,12 +30,11 @@ defmodule Mix.Tasks.MoneyTree.CreateUser do
     attrs =
       %{
         email: email,
-        password: password,
-        role: role
+        password: password
       }
       |> maybe_put_full_name(opts[:name])
 
-    case Accounts.register_user(attrs) do
+    case Accounts.register_user_with_role(attrs, role) do
       {:ok, user} ->
         Mix.shell().info("✔ Created user #{user.email} with role #{user.role}.")
 
@@ -81,7 +81,7 @@ defmodule Mix.Tasks.MoneyTree.CreateUser do
   defp resolve_role(role), do: Mix.raise(role_error_message(role))
 
   defp role_error_message(provided) do
-    valid = User.roles() |> Enum.map(&Atom.to_string/1) |> Enum.join(", ")
+    valid = Enum.map_join(User.roles(), ", ", &Atom.to_string/1)
     "Invalid role #{inspect(provided)}. Valid roles: #{valid}"
   end
 

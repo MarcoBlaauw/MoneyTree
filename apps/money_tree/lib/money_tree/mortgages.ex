@@ -126,9 +126,8 @@ defmodule MoneyTree.Mortgages do
 
   def update_mortgage(user, mortgage_id, attrs)
       when is_binary(mortgage_id) and is_map(attrs) do
-    with {:ok, mortgage} <- fetch_mortgage(user, mortgage_id),
-         {:ok, updated} <- update_mortgage(user, mortgage, attrs) do
-      {:ok, updated}
+    with {:ok, mortgage} <- fetch_mortgage(user, mortgage_id) do
+      update_mortgage(user, mortgage, attrs)
     end
   end
 
@@ -138,9 +137,8 @@ defmodule MoneyTree.Mortgages do
   @spec delete_mortgage(User.t() | binary(), Mortgage.t() | binary()) ::
           {:ok, Mortgage.t()} | {:error, :not_found}
   def delete_mortgage(user, %Mortgage{} = mortgage) do
-    with :ok <- authorize_mortgage(user, mortgage),
-         {:ok, deleted} <- Repo.delete(mortgage) do
-      {:ok, deleted}
+    with :ok <- authorize_mortgage(user, mortgage) do
+      Repo.delete(mortgage)
     end
   end
 

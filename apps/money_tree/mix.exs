@@ -5,7 +5,7 @@ defmodule MoneyTree.MixProject do
     [
       app: :money_tree,
       version: "0.1.0",
-      elixir: "~> 1.16",
+      elixir: "~> 1.20",
       build_path: "../../_build",
       config_path: "../../config/config.exs",
       deps_path: "../../deps",
@@ -14,6 +14,11 @@ defmodule MoneyTree.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
+      hex: [
+        # Cowboy 2.16+ rejects unsafe response headers before cowlib can emit them,
+        # and MoneyTree does not use cowlib's client-side cookie encoder.
+        ignore_advisories: ["CVE-2026-43966", "CVE-2026-43969"]
+      ],
       releases: releases(),
       dialyzer: dialyzer()
     ]
@@ -38,35 +43,35 @@ defmodule MoneyTree.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:argon2_elixir, "~> 4.0"},
-      {:cloak_ecto, "~> 1.3"},
-      {:dns_cluster, "~> 0.1.1"},
-      {:ecto_sql, "~> 3.13.5"},
-      {:finch, "~> 0.21.0"},
-      {:gettext, "~> 0.20"},
-      {:jason, "~> 1.2"},
-      {:lazy_html, ">= 0.1.0", only: :test},
-      {:oban, "~> 2.21.1"},
+      {:argon2_elixir, "~> 4.1.3"},
+      {:cloak_ecto, "~> 1.3.0"},
+      {:dns_cluster, "~> 0.2.0"},
+      {:ecto_sql, "~> 3.14.0"},
+      {:finch, "~> 0.23.0"},
+      {:gettext, "~> 1.0.2"},
+      {:jason, "~> 1.4.5"},
+      {:lazy_html, "~> 0.1.12", only: :test},
+      {:oban, "~> 2.23.0"},
       {:opentelemetry_exporter, "~> 1.10.0"},
       {:opentelemetry_ecto, "~> 1.2"},
-      {:opentelemetry_oban, "~> 1.1.1"},
-      {:opentelemetry_phoenix, "~> 1.1"},
-      {:phoenix, "~> 1.7.10"},
+      {:opentelemetry_oban, "~> 1.2.0"},
+      {:opentelemetry_phoenix, "~> 2.0.1"},
+      {:phoenix, "~> 1.8.9"},
       {:phoenix_ecto, "~> 4.7.0"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_dashboard, "~> 0.8.2"},
-      {:phoenix_live_view, "~> 1.0"},
+      {:phoenix_live_view, "~> 1.2.7"},
       {:phoenix_view, "~> 2.0"},
-      {:plug_cowboy, "~> 2.8.0"},
-      {:postgrex, "~> 0.22.0"},
-      {:req, "~> 0.5.17"},
-      {:credo, "~> 1.7.17", only: [:dev, :test], runtime: false},
+      {:plug_cowboy, "~> 2.9.0"},
+      {:postgrex, "~> 0.22.3"},
+      {:req, "~> 0.6.3"},
+      {:credo, "~> 1.7.19", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4.7", only: [:dev], runtime: false},
       {:mail, "~> 0.4"},
       {:mua, "~> 0.2.3"},
       {:wax_, "~> 0.7.0"},
-      {:swoosh, "~> 1.24.0"},
-      {:telemetry_metrics, "~> 0.6"},
+      {:swoosh, "~> 1.26.3"},
+      {:telemetry_metrics, "~> 1.1.0"},
       {:telemetry_poller, "~> 1.0"}
     ]
   end
@@ -95,7 +100,7 @@ defmodule MoneyTree.MixProject do
     [
       plt_file: {:no_warn_file, "priv/plts/money_tree.plt"},
       plt_add_apps: [:mix, :iex],
-      flags: [:error_handling, :race_conditions, :underspecs]
+      flags: [:error_handling, :underspecs]
     ]
   end
 

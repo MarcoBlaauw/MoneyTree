@@ -9,8 +9,13 @@ defmodule MoneyTreeWeb.Layouts do
       %{label: "Accounts", path: ~p"/app/accounts", page_title: "Accounts & Institutions"},
       %{label: "Transactions", path: ~p"/app/transactions", page_title: "Transactions"},
       %{label: "Budgets", path: ~p"/app/budgets", page_title: "Budgets"},
-      %{label: "Obligations", path: ~p"/app/obligations", page_title: "Obligations"},
+      %{
+        label: "Bills & Subscriptions",
+        path: ~p"/app/obligations",
+        page_title: "Bills & Subscriptions"
+      },
       %{label: "Assets", path: ~p"/app/assets", page_title: "Assets"},
+      %{label: "Loan Center", path: ~p"/app/loans", page_title: "Loan Center"},
       %{label: "Transfers", path: ~p"/app/transfers", page_title: "Transfers"},
       %{label: "Settings", path: ~p"/app/settings", page_title: "Settings"}
     ]
@@ -18,10 +23,17 @@ defmodule MoneyTreeWeb.Layouts do
 
   def workspace_nav_items do
     [
-      %{label: "Connect institution", path: "/app/react/link-bank"},
+      %{label: "Manage institutions", path: "/app/link-bank"},
       %{label: "Categorization rules", path: "/app/transactions/categorization"},
       %{label: "Import / Export", path: "/app/import-export"},
+      %{label: "Evaluations", path: "/app/evaluations"},
       %{label: "Security settings", path: "/app/settings/security"}
+    ]
+  end
+
+  def owner_nav_items do
+    [
+      %{label: "Users", path: "/app/owner/users"}
     ]
   end
 

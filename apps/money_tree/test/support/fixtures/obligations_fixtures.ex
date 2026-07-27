@@ -3,12 +3,12 @@ defmodule MoneyTree.ObligationsFixtures do
   Helpers for creating obligations and matching transactions during tests.
   """
 
+  import MoneyTree.AccountsFixtures
+
   alias Decimal
   alias MoneyTree.Obligations
   alias MoneyTree.Repo
   alias MoneyTree.Transactions.Transaction
-
-  import MoneyTree.AccountsFixtures
 
   def obligation_fixture(user, attrs \\ %{}) do
     attrs = Map.new(attrs)

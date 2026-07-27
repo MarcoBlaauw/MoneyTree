@@ -3,6 +3,7 @@ defmodule MoneyTree.Synchronization do
   Coordinates provider-agnostic synchronization workflows.
   """
 
+  alias MoneyTree.BankSync.ProviderRegistry
   alias MoneyTree.Institutions
   alias MoneyTree.Institutions.Connection
   alias Oban
@@ -11,7 +12,13 @@ defmodule MoneyTree.Synchronization do
 
   @spec schedule_initial_sync(Connection.t()) :: :ok | {:error, term()}
   def schedule_initial_sync(%Connection{} = connection) do
-    enqueue_connection_sync(connection, "initial", unique_period: 300)
+    # Called every time an import review is confirmed, not just once at claim time
+    # (e.g. approving newly discovered SimpleFIN accounts). Oban's uniqueness check
+    # treats any existing job matching these keys within the period as a duplicate
+    # and silently skips insertion, so this window only needs to be long enough to
+    # absorb an accidental double form submission -- a long window would silently
+    # swallow a later, legitimate confirmation's sync.
+    enqueue_connection_sync(connection, "initial", unique_period: 5)
   end
 
   @spec schedule_incremental_sync(Connection.t(), keyword()) :: :ok | {:error, term()}
@@ -25,21 +32,37 @@ defmodule MoneyTree.Synchronization do
     unique_period = Keyword.get(opts, :unique_period, @default_unique_period)
     provider = Keyword.get(opts, :provider)
 
-    Institutions.list_connections_for_sync(provider: provider)
-    |> Enum.reduce_while(:ok, fn connection, acc ->
-      case schedule_incremental_sync(connection,
-             schedule_in: schedule_in,
-             unique_period: unique_period
-           ) do
-        :ok -> {:cont, acc}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
+    if provider_disabled?(provider) do
+      :ok
+    else
+      Institutions.list_connections_for_sync(provider: provider)
+      |> Enum.filter(&ProviderRegistry.enabled?(&1.provider))
+      |> Enum.reduce_while(:ok, fn connection, acc ->
+        case schedule_incremental_sync(connection,
+               schedule_in: schedule_in,
+               unique_period: unique_period
+             ) do
+          :ok -> {:cont, acc}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+    end
   end
 
   defp enqueue_connection_sync(%Connection{} = connection, mode, opts) do
     provider = provider_name(connection)
 
+    if ProviderRegistry.enabled?(provider) do
+      do_enqueue_connection_sync(connection, provider, mode, opts)
+    else
+      {:error, :provider_disabled}
+    end
+  end
+
+  defp provider_disabled?(nil), do: false
+  defp provider_disabled?(provider), do: not ProviderRegistry.enabled?(provider)
+
+  defp do_enqueue_connection_sync(%Connection{} = connection, provider, mode, opts) do
     args =
       %{
         "connection_id" => connection.id,
@@ -65,11 +88,16 @@ defmodule MoneyTree.Synchronization do
     end
   end
 
+  def sync_worker_module("simplefin"), do: MoneyTree.SimpleFin.SyncWorker
   def sync_worker_module("plaid"), do: MoneyTree.Plaid.SyncWorker
-  def sync_worker_module(_), do: MoneyTree.Teller.SyncWorker
+
+  def sync_worker_module(provider),
+    do: raise(ArgumentError, "no sync worker registered for provider #{inspect(provider)}")
 
   defp provider_name(%Connection{provider: provider}) when is_binary(provider), do: provider
-  defp provider_name(_), do: "teller"
+
+  defp provider_name(%Connection{} = connection),
+    do: raise(ArgumentError, "connection #{connection.id} has no provider set")
 
   defp maybe_put(opts, _key, nil), do: opts
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)

@@ -1,4 +1,5 @@
 defmodule MoneyTree.Accounts.WebAuthn.FakeAdapter do
+  @moduledoc false
   @behaviour MoneyTree.Accounts.WebAuthnAdapter
 
   def new_registration_challenge(opts) do
