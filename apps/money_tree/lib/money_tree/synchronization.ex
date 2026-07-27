@@ -12,7 +12,13 @@ defmodule MoneyTree.Synchronization do
 
   @spec schedule_initial_sync(Connection.t()) :: :ok | {:error, term()}
   def schedule_initial_sync(%Connection{} = connection) do
-    enqueue_connection_sync(connection, "initial", unique_period: 300)
+    # Called every time an import review is confirmed, not just once at claim time
+    # (e.g. approving newly discovered SimpleFIN accounts). Oban's uniqueness check
+    # treats any existing job matching these keys within the period as a duplicate
+    # and silently skips insertion, so this window only needs to be long enough to
+    # absorb an accidental double form submission -- a long window would silently
+    # swallow a later, legitimate confirmation's sync.
+    enqueue_connection_sync(connection, "initial", unique_period: 5)
   end
 
   @spec schedule_incremental_sync(Connection.t(), keyword()) :: :ok | {:error, term()}
